@@ -5,7 +5,8 @@ channels:
   - pytorch
   - numba
 dependencies:
-  - python   
+  - python
+  - black
   - pip
   - pytorch=1.8
   - scipy
@@ -18,7 +19,7 @@ dependencies:
   - pandas
   - swig
   - pip:
-    - git+https://github.com/peproctor/PyVisiLibity.git
-    - git+https://github.com/peproctor/REU_rl.git
-    - gym==0.20.0
-    - ./gym_rad_search
+      - git+https://github.com/peproctor/PyVisiLibity.git
+      - git+https://github.com/peproctor/REU_rl.git
+      - gym==0.20.0
+      - ./gym_rad_search
