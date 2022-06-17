@@ -1,7 +1,5 @@
 # Models
-train/
-raw/
-gifs/
+models/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

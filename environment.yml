@@ -5,9 +5,9 @@ channels:
   - pytorch
   - numba
 dependencies:
-  - python=3.7   
+  - python   
   - pip
-  - pytorch-cpu=1.8
+  - pytorch=1.8
   - scipy
   - psutil
   - mpi4py
@@ -16,5 +16,9 @@ dependencies:
   - matplotlib
   - numba
   - pandas
+  - swig
   - pip:
-    - -r requirements.txt
+    - git+https://github.com/peproctor/PyVisiLibity.git
+    - git+https://github.com/peproctor/REU_rl.git
+    - gym==0.20.0
+    - ./gym_rad_search
