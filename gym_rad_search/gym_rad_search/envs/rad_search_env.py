@@ -24,16 +24,44 @@ DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold
 
 EPSILON = 0.0000001
 
+Metadata: TypeAlias = TypedDict(
+    "Metadata", {"render.modes": list[str], "video.frames_per_second": int}
+)
+Interval: TypeAlias = tuple[float, float]
+Dimensions: TypeAlias = tuple[Interval, Interval, Interval, Interval]
+
 
 class RadSearch(gym.Env):
-    Metadata: TypeAlias = TypedDict(
-        "Metadata", {"render.modes": list[str], "video.frames_per_second": int}
-    )
-    metadata: Metadata = {"render.modes": ["human"], "video.frames_per_second": FPS}
-    Interval: TypeAlias = tuple[float, float]
-    Dimensions: TypeAlias = tuple[Interval, Interval, Interval, Interval]
+    # Values set in the constructor
+    action_space: spaces.Discrete
+    area_obs: Interval
+    bounds: npt.NDArray[np.float64]
+    coord_noise: bool
+    max_dist: float
+    np_random: np.random.Generator
+    obstruct: Literal[-1, 0, 1]
+    search_area: npt.NDArray[np.float64]
 
+    # Values with default values which are not set in the constructor
+    _max_episode_steps: int = 120
+    a_size: int = 8
+    bkg_bnd: npt.NDArray[np.float64] = np.array([10, 51])
+    bkg_intensity: None = None
     continuous: bool = False
+    det_sto: None = None
+    done: bool = False
+    dwell_time: int = 1
+    epoch_cnt: int = 0
+    epoch_end: bool = True
+    int_bnd: npt.NDArray[np.float64] = np.array([1e6, 10e6])
+    intensity: None = None
+    iter_count: int = 0
+    meas_sto: None = None
+    metadata: Metadata = {"render.modes": ["human"], "video.frames_per_second": FPS}
+    observation_space: spaces.Box = spaces.Box(0, np.inf, shape=(11,), dtype=np.float32)
+    oob_count: int = 0
+    prev_det_dist: None = None
+    viewer: None = None
 
     # bbox is the "bounding box"
     # Dimensions of radiation source search area in cm, decreased by area_obs param. to ensure visilibity graph setup is valid.
@@ -54,9 +82,9 @@ class RadSearch(gym.Env):
         obstruct: Literal[-1, 0, 1] = 0,
         coord_noise: bool = False,
     ):
-        self.np_random: np.random.Generator = seed
-        self.bounds: npt.NDArray[np.float64] = np.asarray(bbox)
-        self.search_area: npt.NDArray[np.float64] = np.array(
+        self.np_random = seed
+        self.bounds = np.asarray(bbox)
+        self.search_area = np.array(
             [
                 [self.bounds[0][0] + area_obs[0], self.bounds[0][1] + area_obs[0]],
                 [self.bounds[1][0] - area_obs[1], self.bounds[1][1] + area_obs[0]],
@@ -64,32 +92,12 @@ class RadSearch(gym.Env):
                 [self.bounds[3][0] + area_obs[0], self.bounds[3][1] - area_obs[1]],
             ]
         )
-        self.area_obs: RadSearch.Interval = area_obs
-        self.obstruct: Literal[-1, 0, 1] = obstruct
-        self.viewer = None
-        self.intensity = None
-        self.bkg_intensity = None
-        self.prev_det_dist = None
-        self.iter_count: int = 0
-        self.oob_count: int = 0
-        self.epoch_end: bool = True
-        self.epoch_cnt: int = 0
-        self.dwell_time: int = 1
-        self.det_sto = None
-        self.meas_sto = None
-        self.max_dist: float = math.sqrt(
+        self.area_obs = area_obs
+        self.obstruct = obstruct
+        self.max_dist = math.sqrt(
             self.search_area[2][0] ** 2 + self.search_area[2][1] ** 2
         )
-        self._max_episode_steps: int = 120
-        self.coord_noise: bool = coord_noise
-        self.done: bool = False
-        self.int_bnd: npt.NDArray[np.float64] = np.array([1e6, 10e6])
-        self.bkg_bnd: npt.NDArray[np.float64] = np.array([10, 51])
-        self.a_size: int = 8
-
-        self.observation_space: spaces.Box = spaces.Box(
-            0, np.inf, shape=(11,), dtype=np.float32
-        )
+        self.coord_noise = coord_noise
         self.action_space: spaces.Discrete = spaces.Discrete(self.a_size)
 
     def step(self, action):
