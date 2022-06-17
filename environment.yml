@@ -5,7 +5,7 @@ channels:
   - pytorch
   - numba
 dependencies:
-  - python
+  - python=3.9
   - black
   - pip
   - pytorch=1.8
