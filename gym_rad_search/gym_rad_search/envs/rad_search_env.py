@@ -1,10 +1,8 @@
-from inspect import BoundArguments
 import gym
 import numpy as np
 import numpy.typing as npt
 import math
 import matplotlib.pyplot as plt
-from pandas import Interval
 import visilibity as vis
 import os
 from gym import spaces
@@ -12,7 +10,7 @@ import matplotlib.animation as animation
 from matplotlib.ticker import FormatStrFormatter
 from matplotlib.animation import PillowWriter
 from matplotlib.patches import Polygon
-from typing import Any, Literal, TypeVar, TypedDict
+from typing import Callable, Literal, TypedDict
 from typing_extensions import TypeAlias
 
 FPS = 50
@@ -29,6 +27,16 @@ Metadata: TypeAlias = TypedDict(
 )
 Interval: TypeAlias = tuple[float, float]
 Dimensions: TypeAlias = tuple[Interval, Interval, Interval, Interval]
+# These actions correspond to:
+# 0: left
+# 1: up and left
+# 2: up
+# 3: up and right
+# 4: right
+# 5: down and right
+# 6: down
+# 7: down and left
+Action: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7]
 
 
 class RadSearch(gym.Env):
@@ -251,106 +259,47 @@ class RadSearch(gym.Env):
 
         return self.step(None)[0]
 
-    def check_action(self, action):
+    def check_action(self, action: Action) -> bool:
         """
         Method that checks which direction to move the detector based on the action.
         If the action moves the detector into an obstruction, the detector position
         will be reset to the prior position.
         """
-        in_obs = False
-        if action == 0:
-            # left
-            self.dwell_time = 1
-            self.detector.set_x(self.det_coords[0] - DET_STEP)
-            in_obs = self.in_obstruction()
-            if in_obs:
-                self.detector.set_x(self.det_coords[0])
-            else:
-                self.det_coords[0] = self.detector.x()
+        in_obs: bool = False
+        # TODO: self.dwell_time is not referenced elsewhere in the file except for reset
+        # It is not used, nor modified from its original value, so it is safe to remove
 
-        elif action == 1:
-            # up left
-            self.dwell_time = 1
-            self.detector.set_y(self.det_coords[1] + DET_STEP_FRAC)
-            self.detector.set_x(self.det_coords[0] - DET_STEP_FRAC)
-            in_obs = self.in_obstruction()
-            if in_obs:
-                self.detector.set_y(self.det_coords[1])
-                self.detector.set_x(self.det_coords[0])
-            else:
-                self.det_coords[1] = self.detector.y()
-                self.det_coords[0] = self.detector.x()
+        # 0: (-1)*DET_STEP     *x, ( 0)*DET_STEP     *y
+        # 1: (-1)*DET_STEP_FRAC*x, (+1)*DET_STEP_FRAC*y
+        # 2: ( 0)*DET_STEP     *x, (+1)*DET_STEP     *y
+        # 3: (+1)*DET_STEP_FRAC*x, (+1)*DET_STEP_FRAC*y
+        # 4: (+1)*DET_STEP     *x, ( 0)*DET_STEP     *y
+        # 5: (+1)*DET_STEP_FRAC*x, (-1)*DET_STEP_FRAC*y
+        # 6: ( 0)*DET_STEP     *x, (-1)*DET_STEP     *y
+        # 7: (-1)*DET_STEP_FRAC*x, (-1)*DET_STEP_FRAC*y
 
-        elif action == 2:
-            # up
-            self.dwell_time = 1
-            self.detector.set_y(self.det_coords[1] + DET_STEP)
-            in_obs = self.in_obstruction()
-            if in_obs:
-                self.detector.set_y(self.det_coords[1])
-            else:
-                self.det_coords[1] = self.detector.y()
+        # The signs of the y-coeffecients follow the signs of sin(pi * (1 - action/4))
+        # The signs of the x-coefficients follow the signs of cos(pi * (1 - action/4)) = sin(pi * (1 - (action - 2)/4))
+        y_step_coeffs: Callable[[int], int] = lambda y: round(
+            math.sin(math.pi * (1.0 - y / 4.0))
+        )
+        y_step_coeff = y_step_coeffs(action)
+        x_step_coeff = y_step_coeffs((action - 2) % 8)
 
-        elif action == 3:
-            # up right
-            self.dwell_time = 1
-            self.detector.set_y(self.det_coords[1] + DET_STEP_FRAC)
-            self.detector.set_x(self.det_coords[0] + DET_STEP_FRAC)
-            in_obs = self.in_obstruction()
-            if in_obs:
-                self.detector.set_y(self.det_coords[1])
-                self.detector.set_x(self.det_coords[0])
-            else:
-                self.det_coords[1] = self.detector.y()
-                self.det_coords[0] = self.detector.x()
+        # If action is odd, then we are moving on the diagonal and so our step size is smaller.
+        # Otherwise, we're moving solely in a cardinal direction.
+        step_size: float = DET_STEP if action % 2 == 0 else DET_STEP_FRAC
 
-        elif action == 4:
-            # right
-            self.dwell_time = 1
-            self.detector.set_x(self.det_coords[0] + DET_STEP)
-            in_obs = self.in_obstruction()
-            if in_obs:
-                self.detector.set_x(self.det_coords[0])
-            else:
-                self.det_coords[0] = self.detector.x()
-
-        elif action == 5:
-            # down right
-            self.dwell_time = 1
-            self.detector.set_y(self.det_coords[1] - DET_STEP_FRAC)
-            self.detector.set_x(self.det_coords[0] + DET_STEP_FRAC)
-            in_obs = self.in_obstruction()
-            if in_obs:
-                self.detector.set_y(self.det_coords[1])
-                self.detector.set_x(self.det_coords[0])
-            else:
-                self.det_coords[1] = self.detector.y()
-                self.det_coords[0] = self.detector.x()
-
-        elif action == 6:
-            # down
-            self.dwell_time = 1
-            self.detector.set_y(self.det_coords[1] - DET_STEP)
-            in_obs = self.in_obstruction()
-            if in_obs:
-                self.detector.set_y(self.det_coords[1])
-            else:
-                self.det_coords[1] = self.detector.y()
-
-        elif action == 7:
-            # down left
-            self.dwell_time = 1
-            self.detector.set_y(self.det_coords[1] - DET_STEP_FRAC)
-            self.detector.set_x(self.det_coords[0] - DET_STEP_FRAC)
-            in_obs = self.in_obstruction()
-            if in_obs:
-                self.detector.set_y(self.det_coords[1])
-                self.detector.set_x(self.det_coords[0])
-            else:
-                self.det_coords[1] = self.detector.y()
-                self.det_coords[0] = self.detector.x()
+        self.detector.set_y(self.det_coords[1] + y_step_coeff * step_size)
+        self.detector.set_x(self.det_coords[0] + x_step_coeff * step_size)
+        in_obs = self.in_obstruction()
+        if in_obs:
+            self.detector.set_y(self.det_coords[1])
+            self.detector.set_x(self.det_coords[0])
         else:
-            self.dwell_time = 1
+            self.det_coords[1] = self.detector.y()
+            self.det_coords[0] = self.detector.x()
+
         return in_obs
 
     def create_obs(self):
