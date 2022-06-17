@@ -3,6 +3,7 @@ import numpy as np
 import numpy.typing as npt
 import math
 import matplotlib.pyplot as plt
+from torch import float64
 import visilibity as vis
 import os
 from gym import spaces
@@ -10,7 +11,7 @@ import matplotlib.animation as animation
 from matplotlib.ticker import FormatStrFormatter
 from matplotlib.animation import PillowWriter
 from matplotlib.patches import Polygon
-from typing import Callable, Literal, TypedDict
+from typing import Any, Callable, Literal, TypedDict
 from typing_extensions import TypeAlias
 
 FPS = 50
@@ -49,27 +50,39 @@ class RadSearch(gym.Env):
     np_random: np.random.Generator
     obstruct: Literal[-1, 0, 1]
     search_area: npt.NDArray[np.float64]
+    # TODO: self.det_coords isn't initialized until reset() is called.
+    det_coords: npt.NDArray[np.float64]
+    # TODO: self.src_coords isn't initialized until reset() is called.
+    src_coords: npt.NDArray[np.float64]
 
     # Values with default values which are not set in the constructor
     _max_episode_steps: int = 120
     a_size: int = 8
     bkg_bnd: npt.NDArray[np.float64] = np.array([10, 51])
+    # TODO: self.bkg_intensity isn't initialized until reset() is called but is used in step.
     bkg_intensity: None = None
     continuous: bool = False
-    det_sto: None = None
+    det_sto: list[npt.NDArray[np.float64]] = []
     done: bool = False
     dwell_time: int = 1
     epoch_cnt: int = 0
     epoch_end: bool = True
     int_bnd: npt.NDArray[np.float64] = np.array([1e6, 10e6])
+    # TODO: self.intensity isn't initialized until reset() is called but is used in step.
     intensity: None = None
     iter_count: int = 0
-    meas_sto: None = None
+    meas_sto: list[float] = []
     metadata: Metadata = {"render.modes": ["human"], "video.frames_per_second": FPS}
     observation_space: spaces.Box = spaces.Box(0, np.inf, shape=(11,), dtype=np.float32)
     oob_count: int = 0
-    prev_det_dist: None = None
+    # TODO: self.prev_det_dist isn't initialized until reset() is called but is used in step.
+    prev_det_dist: float = None
     viewer: None = None
+    # TODO: self.sp_dist is declared and defined in step.
+    sp_dist: float = None
+    # TODO: self.euc_dist is declared and defined in step.
+    euc_dist: float = None
+    intersect: bool = False
 
     # bbox is the "bounding box"
     # Dimensions of radiation source search area in cm, decreased by area_obs param. to ensure visilibity graph setup is valid.
@@ -108,7 +121,9 @@ class RadSearch(gym.Env):
         self.coord_noise = coord_noise
         self.action_space: spaces.Discrete = spaces.Discrete(self.a_size)
 
-    def step(self, action):
+    def step(
+        self, action: Action
+    ) -> tuple[npt.NDArray[float64], float, bool, dict[Any, Any]]:
         """
         Method that takes an action and updates the detector position accordingly.
         Returns an observation, reward, and whether the termination criteria is met.
@@ -116,28 +131,34 @@ class RadSearch(gym.Env):
         # Move detector and make sure it is not in an obstruction
         in_obs = self.check_action(action)
         if not in_obs:
+            # TODO: self.det_coords isn't initialized until reset() is called.
             if np.any(self.det_coords < (self.search_area[0])) or np.any(
                 self.det_coords > (self.search_area[2])
             ):
                 self.oob = True
                 self.oob_count += 1
 
-            self.sp_dist = self.world.shortest_path(
+            # Returns the length of a Polyline, which is a double
+            # https://github.com/tsaoyu/PyVisiLibity/blob/80ce1356fa31c003e29467e6f08ffdfbd74db80f/visilibity.cpp#L1398
+            self.sp_dist: float = self.world.shortest_path(
                 self.source, self.detector, self.vis_graph, EPSILON
             ).length()
-            self.euc_dist = ((self.det_coords - self.src_coords) ** 2).sum()
+            # TODO: self.src_coords isn't initialized until reset() is called.
+            self.euc_dist: float = ((self.det_coords - self.src_coords) ** 2).sum()
             self.intersect = self.is_intersect()
-            if self.intersect:
-                meas = self.np_random.poisson(self.bkg_intensity)
-            else:
-                meas = self.np_random.poisson(
-                    lam=(self.intensity / self.euc_dist + self.bkg_intensity)
-                )
+            # TODO: self.bkg_intensity isn't initialized until reset() is called.
+            # TODO: self.intensity isn't initialized until reset() is called.
+            meas: float = self.np_random.poisson(
+                self.bkg_intensity
+                if self.intersect
+                else self.intensity / self.euc_dist + self.bkg_intensity
+            )
 
             # Reward logic
             if self.sp_dist < 110:
                 reward = 0.1
                 self.done = True
+            # TODO: self.prev_det_dist isn't initialized until reset() is called.
             elif self.sp_dist < self.prev_det_dist:
                 reward = 0.1
                 self.prev_det_dist = self.sp_dist
@@ -147,38 +168,40 @@ class RadSearch(gym.Env):
         else:
             # If detector starts on obs. edge, it won't have the sp_dist calculated
             if self.iter_count > 0:
-                if self.intersect:
-                    meas = self.np_random.poisson(self.bkg_intensity)
-                else:
-                    meas = self.np_random.poisson(
-                        lam=(self.intensity / self.euc_dist + self.bkg_intensity)
-                    )
+                meas: float = self.np_random.poisson(
+                    self.bkg_intensity
+                    if self.intersect
+                    else self.intensity / self.euc_dist + self.bkg_intensity
+                )
             else:
                 self.sp_dist = self.prev_det_dist
                 self.euc_dist = ((self.det_coords - self.src_coords) ** 2).sum()
                 self.intersect = self.is_intersect()
-                if self.intersect:
-                    meas = self.np_random.poisson(self.bkg_intensity)
-                else:
-                    meas = self.np_random.poisson(
-                        lam=(self.intensity / self.euc_dist + self.bkg_intensity)
-                    )
+                meas: float = self.np_random.poisson(
+                    self.bkg_intensity
+                    if self.intersect
+                    else self.intensity / self.euc_dist + self.bkg_intensity
+                )
 
             reward = -0.5 * self.sp_dist / (self.max_dist)
 
         # If detector coordinate noise is desired
         if self.coord_noise:
-            noise = self.np_random.normal(scale=5, size=len(self.det_coords))
+            noise: npt.NDArray[np.float64] = self.np_random.normal(
+                scale=5, size=len(self.det_coords)
+            )
         else:
-            noise = np.zeros(len(self.det_coords))
+            noise: npt.NDArray[np.float64] = np.zeros(len(self.det_coords))
 
         # Scale detector coordinates by search area of the DRL algorithm
-        det_coord_scaled = (self.det_coords + noise) / self.search_area[2][1]
+        det_coord_scaled: npt.NDArray[np.float64] = (
+            self.det_coords + noise
+        ) / self.search_area[2][1]
 
         # Observation with the radiation meas., detector coords and detector-obstruction range meas.
-        state = np.append(meas, det_coord_scaled)
+        state: npt.NDArray[np.float64] = np.append(meas, det_coord_scaled)
         if self.num_obs > 0:
-            sensor_meas = self.dist_sensors()
+            sensor_meas: npt.NDArray[np.float64] = self.dist_sensors()
             state = np.append(state, sensor_meas)
         else:
             state = np.append(state, np.zeros(self.a_size))
@@ -186,7 +209,7 @@ class RadSearch(gym.Env):
         self.det_sto.append(self.det_coords.copy())
         self.meas_sto.append(meas)
         self.iter_count += 1
-        return state, np.round(reward, 2), self.done, {}
+        return state, round(reward, 2), self.done, {}
 
     def reset(self):
         """
