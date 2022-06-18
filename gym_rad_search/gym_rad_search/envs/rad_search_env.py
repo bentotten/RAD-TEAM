@@ -11,7 +11,7 @@ import matplotlib.animation as animation
 from matplotlib.ticker import FormatStrFormatter
 from matplotlib.animation import PillowWriter
 from matplotlib.patches import Polygon
-from typing import Any, Callable, Literal, TypedDict
+from typing import Any, Callable, Literal, Optional, TypedDict
 from typing_extensions import TypeAlias
 
 FPS = 50
@@ -45,8 +45,11 @@ class RadSearch(gym.Env):
     action_space: spaces.Discrete
     area_obs: Interval
     bounds: npt.NDArray[np.float64]
+    bbox: list[vis.Point]
     coord_noise: bool
+    env_ls: list[vis.Polygon]
     max_dist: float
+    poly: list[vis.Polygon]
     np_random: np.random.Generator
     obstruct: Literal[-1, 0, 1]
     search_area: npt.NDArray[np.float64]
@@ -54,13 +57,18 @@ class RadSearch(gym.Env):
     det_coords: npt.NDArray[np.float64]
     # TODO: self.src_coords isn't initialized until reset() is called.
     src_coords: npt.NDArray[np.float64]
+    walls: vis.Polygon
+    world: vis.Environment
+    vis_graph: vis.Visibility_Graph
+    # TODO: self.intensity isn't initialized until reset() is called but is used in step.
+    intensity: int
+    # TODO: self.bkg_intensity isn't initialized until reset() is called but is used in step.
+    bkg_intensity: int
 
     # Values with default values which are not set in the constructor
     _max_episode_steps: int = 120
     a_size: int = 8
     bkg_bnd: npt.NDArray[np.float64] = np.array([10, 51])
-    # TODO: self.bkg_intensity isn't initialized until reset() is called but is used in step.
-    bkg_intensity: None = None
     continuous: bool = False
     det_sto: list[npt.NDArray[np.float64]] = []
     done: bool = False
@@ -68,13 +76,12 @@ class RadSearch(gym.Env):
     epoch_cnt: int = 0
     epoch_end: bool = True
     int_bnd: npt.NDArray[np.float64] = np.array([1e6, 10e6])
-    # TODO: self.intensity isn't initialized until reset() is called but is used in step.
-    intensity: None = None
     iter_count: int = 0
     meas_sto: list[float] = []
     metadata: Metadata = {"render.modes": ["human"], "video.frames_per_second": FPS}
     observation_space: spaces.Box = spaces.Box(0, np.inf, shape=(11,), dtype=np.float32)
     oob_count: int = 0
+    oob: bool = False
     # TODO: self.prev_det_dist isn't initialized until reset() is called but is used in step.
     prev_det_dist: float = None
     viewer: None = None
@@ -122,7 +129,7 @@ class RadSearch(gym.Env):
         self.action_space: spaces.Discrete = spaces.Discrete(self.a_size)
 
     def step(
-        self, action: Action
+        self, action: Optional[Action]
     ) -> tuple[npt.NDArray[float64], float, bool, dict[Any, Any]]:
         """
         Method that takes an action and updates the detector position accordingly.
@@ -211,7 +218,7 @@ class RadSearch(gym.Env):
         self.iter_count += 1
         return state, round(reward, 2), self.done, {}
 
-    def reset(self):
+    def reset(self) -> npt.NDArray[float64]:
         """
         Method to reset the environment.
         If epoch_end flag is True, then all components of the environment are resampled
@@ -225,50 +232,40 @@ class RadSearch(gym.Env):
         self.dwell_time = 1
 
         if self.epoch_end:
-            if self.obstruct == 0:
-                self.num_obs = 0
-            elif self.obstruct < 0:
+            if self.obstruct == -1:
                 self.num_obs = self.np_random.integers(1, 6)
+            elif self.obstruct == 0:
+                self.num_obs = 0
             else:
                 self.num_obs = self.obstruct
-            self.ext_ls = [[] for _ in range(self.num_obs)]
+
             self.create_obs()
-            self.bbox = [
-                vis.Point(self.bounds[jj][0], self.bounds[jj][1])
-                for jj in range(len(self.bounds))
-            ]
+            self.bbox: list[vis.Point] = list(
+                map(lambda tuple: vis.Point(*tuple), self.bounds)
+            )
             self.walls = vis.Polygon(self.bbox)
-            self.env_ls = [solid for solid in self.poly]
-            self.env_ls.insert(0, self.walls)
+
+            # TODO: self.poly isn't initialized yet
+            self.env_ls: list[vis.Polygon] = [self.walls, *self.poly]
+
             # Create Visilibity environment
             self.world = vis.Environment(self.env_ls)
+
             # Create Visilibity graph to speed up shortest path computation
             self.vis_graph = vis.Visibility_Graph(self.world, EPSILON)
             self.epoch_cnt += 1
-            (
-                self.source,
-                self.detector,
-                self.det_coords,
-                self.src_coords,
-            ) = self.sample_source_loc_pos()
-            self.intensity = self.np_random.integers(self.int_bnd[0], self.int_bnd[1])
-            self.bkg_intensity = self.np_random.integers(
-                self.bkg_bnd[0], self.bkg_bnd[1]
-            )
             self.epoch_end = False
-        else:
-            (
-                self.source,
-                self.detector,
-                self.det_coords,
-                self.src_coords,
-            ) = self.sample_source_loc_pos()
-            self.intensity = self.np_random.integers(self.int_bnd[0], self.int_bnd[1])
-            self.bkg_intensity = self.np_random.integers(
-                self.bkg_bnd[0], self.bkg_bnd[1]
-            )
 
-        self.prev_det_dist = self.world.shortest_path(
+        (
+            self.source,
+            self.detector,
+            self.det_coords,
+            self.src_coords,
+        ) = self.sample_source_loc_pos()
+        self.intensity = self.np_random.integers(self.int_bnd[0], self.int_bnd[1])
+        self.bkg_intensity = self.np_random.integers(self.bkg_bnd[0], self.bkg_bnd[1])
+
+        self.prev_det_dist: float = self.world.shortest_path(
             self.source, self.detector, self.vis_graph, EPSILON
         ).length()
         self.det_sto = []
@@ -282,15 +279,16 @@ class RadSearch(gym.Env):
 
         return self.step(None)[0]
 
-    def check_action(self, action: Action) -> bool:
+    def check_action(self, action: Optional[Action]) -> bool:
         """
         Method that checks which direction to move the detector based on the action.
         If the action moves the detector into an obstruction, the detector position
         will be reset to the prior position.
         """
         in_obs: bool = False
-        # TODO: self.dwell_time is not referenced elsewhere in the file except for reset
-        # It is not used, nor modified from its original value, so it is safe to remove
+
+        if action is None:
+            return in_obs
 
         # 0: (-1)*DET_STEP     *x, ( 0)*DET_STEP     *y
         # 1: (-1)*DET_STEP_FRAC*x, (+1)*DET_STEP_FRAC*y
