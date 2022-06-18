@@ -19,7 +19,7 @@ dependencies:
   - pandas
   - swig
   - pip:
-      - git+https://github.com/peproctor/PyVisiLibity.git
-      - git+https://github.com/peproctor/REU_rl.git
+      - git+https://github.com/peproctor/PyVisiLibity.git@c76020079110231f882f38f61b3ab25d01de21f0
+      - git+https://github.com/peproctor/REU_rl.git@350797ef99bf8405a95f8b8b7e1be3292ce41d11
       - gym==0.20.0
       - ./gym_rad_search
