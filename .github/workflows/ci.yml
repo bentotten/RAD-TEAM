@@ -5,8 +5,12 @@ on:
     branches:
       - main
 
+defaults:
+  run:
+    shell: bash -l {0}
+
 jobs:
-  test:
+  ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -16,10 +20,18 @@ jobs:
           environment-file: environment.yml
           environment-name: ppo_rad
       - name: Run Python
-        shell: bash -l {0}
         run: |
           cd algos/ppo/
-          python ppo.py --seed 0 --cpu 1 --exp_name exp1 --epochs 10 &> tee ../../output.txt
+          python ppo.py --seed 0 --cpu 1 --exp_name exp1 --epochs 10 | tee ../../output.txt
+      - name: Log output to summary
+        run: |
+          echo "# Epoch results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "```log" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          cat output.txt >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "```" >> $GITHUB_STEP_SUMMARY
       - uses: actions/upload-artifact@v3
         with:
           path: |
