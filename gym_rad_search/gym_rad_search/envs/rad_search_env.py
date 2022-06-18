@@ -388,7 +388,9 @@ class RadSearch(gym.Env):
                 obs_coord = np.array([])
             intersect = False
 
-    def sample_source_loc_pos(self):
+    def sample_source_loc_pos(
+        self,
+    ) -> tuple[vis.Point, vis.Point, npt.NDArray[np.double], npt.NDArray[np.double]]:
         """
         Method that randomly generate the detector and source starting locations.
         Locations can not be inside obstructions and must be at least 1000 cm apart
@@ -397,12 +399,11 @@ class RadSearch(gym.Env):
         src_clear = False
         resamp = False
         jj = 0
-        source = np.zeros(2, dtype=np.double)
-        det = np.zeros(2, dtype=np.double)
-        source = self.np_random.integers(
+        source: npt.NDArray[np.double] = self.np_random.integers(
             self.search_area[0][0], self.search_area[1][0], size=2
         ).astype(np.double)
-        det = self.np_random.integers(
+        src_point: vis.Point = vis.Point(source[0], source[1])
+        det: npt.NDArray[np.double] = self.np_random.integers(
             self.search_area[0][0], self.search_area[1][0], size=2
         ).astype(np.double)
         det_point = vis.Point(det[0], det[1])
@@ -432,7 +433,7 @@ class RadSearch(gym.Env):
                     self.search_area[0][0], self.search_area[1][0], size=2
                 ).astype(np.double)
             src_point = vis.Point(source[0], source[1])
-            L = vis.Line_Segment(det_point, src_point)
+            L: vis.Line_Segment = vis.Line_Segment(det_point, src_point)
             while not resamp and jj < self.num_obs:
                 if src_point._in(self.poly[jj], EPSILON):
                     resamp = True
