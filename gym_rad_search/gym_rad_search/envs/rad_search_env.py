@@ -457,7 +457,7 @@ class RadSearch(gym.Env):
 
         return src_point, det_point, det, source
 
-    def is_intersect(self, threshold=0.001):
+    def is_intersect(self, threshold: float = 0.001) -> bool:
         """
         Method that checks if the line of sight is blocked by any obstructions in the environment.
         """
