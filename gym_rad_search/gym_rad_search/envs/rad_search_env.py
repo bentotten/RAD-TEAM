@@ -10,7 +10,7 @@ import matplotlib.animation as animation
 from matplotlib.ticker import FormatStrFormatter
 from matplotlib.animation import PillowWriter
 from matplotlib.patches import Polygon
-from typing import Any, Callable, Literal, Optional, TypedDict
+from typing import Any, Callable, Literal, Optional, TypedDict, cast, get_args
 from typing_extensions import TypeAlias
 
 FPS = 50
@@ -37,6 +37,34 @@ Dimensions: TypeAlias = tuple[Interval, Interval, Interval, Interval]
 # 6: down
 # 7: down and left
 Action: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7]
+
+
+# 0: (-1)*DET_STEP     *x, ( 0)*DET_STEP     *y
+# 1: (-1)*DET_STEP_FRAC*x, (+1)*DET_STEP_FRAC*y
+# 2: ( 0)*DET_STEP     *x, (+1)*DET_STEP     *y
+# 3: (+1)*DET_STEP_FRAC*x, (+1)*DET_STEP_FRAC*y
+# 4: (+1)*DET_STEP     *x, ( 0)*DET_STEP     *y
+# 5: (+1)*DET_STEP_FRAC*x, (-1)*DET_STEP_FRAC*y
+# 6: ( 0)*DET_STEP     *x, (-1)*DET_STEP     *y
+# 7: (-1)*DET_STEP_FRAC*x, (-1)*DET_STEP_FRAC*y
+
+# If action is odd, then we are moving on the diagonal and so our step size is smaller.
+# Otherwise, we're moving solely in a cardinal direction.
+def get_step_size(action: Action) -> float:
+    """
+    Return the step size for the given action.
+    """
+    return DET_STEP if action % 2 == 0 else DET_STEP_FRAC
+
+
+# The signs of the y-coeffecients follow the signs of sin(pi * (1 - action/4))
+def get_y_step_coeff(action: Action) -> int:
+    return round(math.sin(math.pi * (1.0 - action / 4.0)))
+
+
+# The signs of the x-coefficients follow the signs of cos(pi * (1 - action/4)) = sin(pi * (1 - (action + 6)/4))
+def get_x_step_coeff(action: Action) -> int:
+    return get_y_step_coeff((action + 6) % 8)
 
 
 class RadSearch(gym.Env):
@@ -68,7 +96,8 @@ class RadSearch(gym.Env):
 
     # Values with default values which are not set in the constructor
     _max_episode_steps: int = 120
-    a_size: int = 8
+    # TODO: Is a_size equivalent to the number of actions?
+    a_size: int = len(get_args(Action))
     bkg_bnd: npt.NDArray[np.float64] = np.array([10, 51])
     continuous: bool = False
     det_sto: list[npt.NDArray[np.float64]] = []
@@ -291,26 +320,9 @@ class RadSearch(gym.Env):
         if action is None:
             return in_obs
 
-        # 0: (-1)*DET_STEP     *x, ( 0)*DET_STEP     *y
-        # 1: (-1)*DET_STEP_FRAC*x, (+1)*DET_STEP_FRAC*y
-        # 2: ( 0)*DET_STEP     *x, (+1)*DET_STEP     *y
-        # 3: (+1)*DET_STEP_FRAC*x, (+1)*DET_STEP_FRAC*y
-        # 4: (+1)*DET_STEP     *x, ( 0)*DET_STEP     *y
-        # 5: (+1)*DET_STEP_FRAC*x, (-1)*DET_STEP_FRAC*y
-        # 6: ( 0)*DET_STEP     *x, (-1)*DET_STEP     *y
-        # 7: (-1)*DET_STEP_FRAC*x, (-1)*DET_STEP_FRAC*y
-
-        # The signs of the y-coeffecients follow the signs of sin(pi * (1 - action/4))
-        # The signs of the x-coefficients follow the signs of cos(pi * (1 - action/4)) = sin(pi * (1 - (action - 2)/4))
-        y_step_coeffs: Callable[[int], int] = lambda y: round(
-            math.sin(math.pi * (1.0 - y / 4.0))
-        )
-        y_step_coeff = y_step_coeffs(action)
-        x_step_coeff = y_step_coeffs((action - 2) % 8)
-
-        # If action is odd, then we are moving on the diagonal and so our step size is smaller.
-        # Otherwise, we're moving solely in a cardinal direction.
-        step_size: float = DET_STEP if action % 2 == 0 else DET_STEP_FRAC
+        y_step_coeff = get_y_step_coeff(action)
+        x_step_coeff = get_x_step_coeff(action)
+        step_size: float = get_step_size(action)
 
         self.detector.set_y(self.det_coords[1] + y_step_coeff * step_size)
         self.detector.set_x(self.det_coords[0] + x_step_coeff * step_size)
@@ -332,11 +344,6 @@ class RadSearch(gym.Env):
         seed_pt: npt.NDArray[np.float64] = np.zeros(2)
         ii = 0
         intersect = False
-        # TODO: Though the two of these should be equivalent, using the former causes the following warning
-        # to be thrown when running ppo:
-        #   The boundary of hole 1 intersects the boundary of hole 4.
-        #   Environment is not valid, retrying!
-        # self.obs_coord: list[list[npt.NDArray[np.float64]]] = self.num_obs * [[]]
         self.obs_coord: list[list[npt.NDArray[np.float64]]] = [
             [] for _ in range(self.num_obs)
         ]
@@ -484,43 +491,36 @@ class RadSearch(gym.Env):
             jj += 1
 
         if obs_boundary:
-            bbox = self.poly[jj - 1].bbox()
-            if self.detector.y() > bbox.y_min:
-                if self.detector.y() < bbox.y_max:
-                    if self.detector.x() > bbox.x_min:
-                        if self.detector.x() < bbox.x_max:
-                            return True
-            return False
+            bbox: vis.Bounding_Box = self.poly[jj - 1].bbox()
+            return all(
+                [
+                    self.detector.y() > bbox.y_min,
+                    self.detector.y() < bbox.y_max,
+                    self.detector.x() > bbox.x_min,
+                    self.detector.x() < bbox.x_max,
+                ]
+            )
         else:
             return False
 
-    def dist_sensors(self):
+    def dist_sensors(self) -> npt.NDArray[np.float64]:
         """
         Method that generates detector-obstruction range measurements with values between 0-1.
         """
-        seg_coords = [
-            vis.Point(self.detector.x() - DIST_TH, self.detector.y()),
+        seg_coords: list[vis.Point] = [
             vis.Point(
-                self.detector.x() - DIST_TH_FRAC, self.detector.y() + DIST_TH_FRAC
-            ),
-            vis.Point(self.detector.x(), self.detector.y() + DIST_TH),
-            vis.Point(
-                self.detector.x() + DIST_TH_FRAC, self.detector.y() + DIST_TH_FRAC
-            ),
-            vis.Point(self.detector.x() + DIST_TH, self.detector.y()),
-            vis.Point(
-                self.detector.x() + DIST_TH_FRAC, self.detector.y() - DIST_TH_FRAC
-            ),
-            vis.Point(self.detector.x(), self.detector.y() - DIST_TH),
-            vis.Point(
-                self.detector.x() - DIST_TH_FRAC, self.detector.y() - DIST_TH_FRAC
-            ),
+                self.detector.x() + get_x_step_coeff(action) * get_step_size(action),
+                self.detector.y() + get_y_step_coeff(action) * get_step_size(action),
+            )
+            for action in cast(tuple[Action], get_args(Action))
         ]
-        segs = [vis.Line_Segment(self.detector, seg_coord) for seg_coord in seg_coords]
-        dists = np.zeros(len(segs))
-        obs_idx_ls = np.zeros(len(self.poly))
+        segs: list[vis.Line_Segment] = [
+            vis.Line_Segment(self.detector, seg_coord) for seg_coord in seg_coords
+        ]
+        dists: npt.NDArray[np.float64] = np.zeros(len(segs))
+        obs_idx_ls: npt.NDArray[np.float64] = np.zeros(len(self.poly))
         inter = 0
-        seg_dist = np.zeros(4)
+        seg_dist: npt.NDArray[np.float64] = np.zeros(4)
         if self.num_obs > 0:
             for idx, seg in enumerate(segs):
                 for obs_idx, poly in enumerate(self.line_segs):
@@ -540,61 +540,30 @@ class RadSearch(gym.Env):
                 dists = self.correct_coords(self.poly[obs_idx_ls.argmax()])
         return dists
 
-    def correct_coords(self, poly):
+    def correct_coords(self, poly: vis.Polygon):
         """
         Method that corrects the detector-obstruction range measurement if more than the correct
         number of directions are being activated due to the Visilibity implementation.
         """
-        x_check = np.zeros(self.a_size)
+        x_check: npt.NDArray[np.float64] = np.zeros(len(get_args(Action)))
         dist = 0.1
         length = 1
-        q0 = vis.Point(self.detector.x(), self.detector.y())
-        q1 = vis.Point(self.detector.x(), self.detector.y())
-        q2 = vis.Point(self.detector.x(), self.detector.y())
-        q3 = vis.Point(self.detector.x(), self.detector.y())
-        q4 = vis.Point(self.detector.x(), self.detector.y())
-        q5 = vis.Point(self.detector.x(), self.detector.y())
-        q6 = vis.Point(self.detector.x(), self.detector.y())
-        q7 = vis.Point(self.detector.x(), self.detector.y())
 
-        # qs = [vis.Point(self.detector.x(),self.detector.y()) for _ in range(self.a_size)]
-        dists = np.zeros(self.a_size)
+        qs = [
+            vis.Point(self.detector.x(), self.detector.y())
+            for _ in range(len(get_args(Action)))
+        ]
+        dists: npt.NDArray[np.float64] = np.zeros(self.a_size)
         while np.all(x_check == 0):  # not (xp or xn or yp or yn):
-            q0.set_x(q0.x() - dist * length)
-
-            q1.set_x(q1.x() - dist * length)
-            q1.set_y(q1.y() + dist * length)
-
-            q2.set_y(q2.y() + dist * length)
-
-            q3.set_x(q3.x() + dist * length)
-            q3.set_y(q3.y() + dist * length)
-
-            q4.set_x(q4.x() + dist * length)
-
-            q5.set_x(q5.x() + dist * length)
-            q5.set_y(q5.y() - dist * length)
-
-            q6.set_y(q6.y() - dist * length)
-
-            q7.set_x(q7.x() - dist * length)
-            q7.set_y(q7.y() - dist * length)
-            if q0._in(poly, EPSILON):  # set to one if outside poly
-                x_check[0] = True  # xn is inside poly
-            if q1._in(poly, EPSILON):
-                x_check[1] = True  # xnyp is inside poly
-            if q2._in(poly, EPSILON):
-                x_check[2] = True  # xn is inside poly
-            if q3._in(poly, EPSILON):
-                x_check[3] = True  # xpyp is inside poly
-            if q4._in(poly, EPSILON):
-                x_check[4] = True  # yp is inside poly
-            if q5._in(poly, EPSILON):
-                x_check[5] = True  # xpyn is inside poly
-            if q6._in(poly, EPSILON):
-                x_check[6] = True  # yn is inside poly
-            if q7._in(poly, EPSILON):
-                x_check[7] = True  # xnyn is inside poly
+            for action in cast(tuple[Action], get_args(Action)):
+                qs[action].set_x(
+                    qs[action].x() + get_x_step_coeff(action) * dist * length
+                )
+                qs[action].set_y(
+                    qs[action].y() + get_y_step_coeff(action) * dist * length
+                )
+                if qs[action]._in(poly, EPSILON):
+                    x_check[action] = True
 
         if np.sum(x_check) >= 4:  # i.e. if one outside the poly then
             for ii in [0, 2, 4, 6]:
@@ -602,6 +571,7 @@ class RadSearch(gym.Env):
                     dists[ii] = 1.0
                     dists[ii - 1] = 1.0
                     dists[ii + 1] = 1.0
+
         return dists
 
     def render(
