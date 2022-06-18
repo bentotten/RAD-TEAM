@@ -3,7 +3,6 @@ import numpy as np
 import numpy.typing as npt
 import math
 import matplotlib.pyplot as plt
-from torch import float64
 import visilibity as vis
 import os
 from gym import spaces
@@ -49,6 +48,7 @@ class RadSearch(gym.Env):
     coord_noise: bool
     env_ls: list[vis.Polygon]
     max_dist: float
+    line_segs: list[list[vis.Line_Segment]]
     poly: list[vis.Polygon]
     np_random: np.random.Generator
     obstruct: Literal[-1, 0, 1]
@@ -64,6 +64,7 @@ class RadSearch(gym.Env):
     intensity: int
     # TODO: self.bkg_intensity isn't initialized until reset() is called but is used in step.
     bkg_intensity: int
+    obs_coord: list[list[npt.NDArray[np.float64]]]
 
     # Values with default values which are not set in the constructor
     _max_episode_steps: int = 120
@@ -130,7 +131,7 @@ class RadSearch(gym.Env):
 
     def step(
         self, action: Optional[Action]
-    ) -> tuple[npt.NDArray[float64], float, bool, dict[Any, Any]]:
+    ) -> tuple[npt.NDArray[np.float64], float, bool, dict[Any, Any]]:
         """
         Method that takes an action and updates the detector position accordingly.
         Returns an observation, reward, and whether the termination criteria is met.
@@ -218,7 +219,7 @@ class RadSearch(gym.Env):
         self.iter_count += 1
         return state, round(reward, 2), self.done, {}
 
-    def reset(self) -> npt.NDArray[float64]:
+    def reset(self) -> npt.NDArray[np.float64]:
         """
         Method to reset the environment.
         If epoch_end flag is True, then all components of the environment are resampled
@@ -323,18 +324,25 @@ class RadSearch(gym.Env):
 
         return in_obs
 
-    def create_obs(self):
+    def create_obs(self) -> None:
         """
         Method that randomly samples obstruction coordinates from 90% of search area dimensions.
         Obstructions are not allowed to intersect.
         """
-        seed_pt = np.zeros(2)
+        seed_pt: npt.NDArray[np.float64] = np.zeros(2)
         ii = 0
         intersect = False
-        self.obs_coord = [[] for _ in range(self.num_obs)]
+        # TODO: Though the two of these should be equivalent, using the former causes the following warning
+        # to be thrown when running ppo:
+        #   The boundary of hole 1 intersects the boundary of hole 4.
+        #   Environment is not valid, retrying!
+        # self.obs_coord: list[list[npt.NDArray[np.float64]]] = self.num_obs * [[]]
+        self.obs_coord: list[list[npt.NDArray[np.float64]]] = [
+            [] for _ in range(self.num_obs)
+        ]
         self.poly = []
-        self.line_segs = []
-        obs_coord = np.array([])
+        self.line_segs: list[list[vis.Line_Segment]] = []
+        obs_coord: npt.NDArray[np.float64] = np.array([])
         while ii < self.num_obs:
             seed_pt[0] = self.np_random.integers(
                 self.search_area[0][0], self.search_area[2][0] * 0.9, size=(1)
@@ -342,7 +350,9 @@ class RadSearch(gym.Env):
             seed_pt[1] = self.np_random.integers(
                 self.search_area[0][1], self.search_area[2][1] * 0.9, size=(1)
             )
-            ext = self.np_random.integers(self.area_obs[0], self.area_obs[1], size=2)
+            ext: npt.NDArray[np.float64] = self.np_random.integers(
+                self.area_obs[0], self.area_obs[1], size=2
+            )
             obs_coord = np.append(obs_coord, seed_pt)
             obs_coord = np.vstack((obs_coord, [seed_pt[0], seed_pt[1] + ext[1]]))
             obs_coord = np.vstack(
@@ -359,11 +369,10 @@ class RadSearch(gym.Env):
 
             if not intersect:
                 self.obs_coord[ii].append(obs_coord)
-                obs_coord = list(obs_coord)
-                geom = [
-                    vis.Point(float(obs_coord[jj][0]), float(obs_coord[jj][1]))
-                    for jj in range(len(obs_coord))
-                ]
+                obs_coord_list: list[npt.NDArray[np.float64]] = list(obs_coord)
+                geom: list[vis.Point] = list(
+                    map(lambda tuple: vis.Point(*tuple), obs_coord_list)
+                )
                 poly = vis.Polygon(geom)
                 self.poly.append(poly)
                 self.line_segs.append(
