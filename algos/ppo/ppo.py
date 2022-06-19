@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from torch.optim import Adam
+import torch.nn.functional as F
 import gym
 import time
 import os
@@ -370,11 +371,12 @@ def ppo(
             np.arange(0, len(ep_form)), size=int(minibatch), replace=False
         )
         ep_form = [ep_form[idx] for idx in ep_select]
-        loss_sto = torch.zeros((len(ep_form), 4), dtype=torch.float32)
-        loss_arr_buff = torch.zeros((len(ep_form), 1), dtype=torch.float32)
-        loss_arr = torch.autograd.Variable(loss_arr_buff)
+        loss_sto: torch.Tensor = torch.tensor([], dtype=torch.float32)
+        loss_arr: torch.Tensor = torch.autograd.Variable(
+            torch.tensor([], dtype=torch.float32)
+        )
 
-        for ii, ep in enumerate(ep_form):
+        for ep in ep_form:
             # For each set of episodes per process from an epoch, compute loss
             trajectories = ep[0]
             hidden = ac.reset_hidden()
@@ -402,13 +404,16 @@ def ppo(
             ent = pi.entropy().detach().mean().item()
             val_loss = loss(val, ret)
 
-            loss_arr[ii] = -(
+            # TODO: More descriptive name
+            new_loss: torch.Tensor = -(
                 torch.min(ratio * adv, clip_adv).mean() - 0.01 * val_loss + alpha * ent
             )
-            loss_sto[ii, 0] = approx_kl
-            loss_sto[ii, 1] = ent
-            loss_sto[ii, 2] = clipfrac
-            loss_sto[ii, 3] = val_loss.detach()
+            loss_arr = torch.hstack((loss_arr, new_loss.unsqueeze(0)))
+
+            new_loss_sto: torch.Tensor = torch.tensor(
+                [approx_kl, ent, clipfrac, val_loss.detach()]
+            )
+            loss_sto = torch.hstack((loss_sto, new_loss_sto.unsqueeze(0)))
 
         mean_loss = loss_arr.mean()
         means = loss_sto.mean(axis=0)
@@ -454,14 +459,14 @@ def ppo(
     def update_model(data, args, loss=None):
         # Update the PFGRU, see Ma et al. 2020 for more details
         ep_form = data["ep_form"]
-        model_loss_arr_buff = torch.zeros((len(ep_form), 1), dtype=torch.float32)
         source_loc_idx = 15
         o_idx = 3
 
-        for jj in range(train_v_iters):
-            model_loss_arr_buff.zero_()
-            model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
-            for ii, ep in enumerate(ep_form):
+        for _ in range(train_v_iters):
+            model_loss_arr: torch.Tensor = torch.autograd.Variable(
+                torch.tensor([], dtype=torch.float32)
+            )
+            for ep in ep_form:
                 sl = len(ep[0])
                 hidden = ac.reset_hidden()[0]
                 src_tar = ep[0][:, source_loc_idx:].clone()
@@ -482,15 +487,11 @@ def ppo(
                 bpdecay_params = torch.FloatTensor(bpdecay_params)
                 bpdecay_params = bpdecay_params.unsqueeze(-1)
                 l2_pred_loss = (
-                    torch.nn.functional.mse_loss(
-                        loc_pred.squeeze(), src_tar.squeeze(), reduction="none"
-                    )
+                    F.mse_loss(loc_pred.squeeze(), src_tar.squeeze(), reduction="none")
                     * bpdecay_params
                 )
                 l1_pred_loss = (
-                    torch.nn.functional.l1_loss(
-                        loc_pred.squeeze(), src_tar.squeeze(), reduction="none"
-                    )
+                    F.l1_loss(loc_pred.squeeze(), src_tar.squeeze(), reduction="none")
                     * bpdecay_params
                 )
 
@@ -504,15 +505,11 @@ def ppo(
 
                 particle_gt = src_tar.repeat(ac.model.num_particles, 1, 1)
                 l2_particle_loss = (
-                    torch.nn.functional.mse_loss(
-                        particle_pred, particle_gt, reduction="none"
-                    )
+                    F.mse_loss(particle_pred, particle_gt, reduction="none")
                     * bpdecay_params
                 )
                 l1_particle_loss = (
-                    torch.nn.functional.l1_loss(
-                        particle_pred, particle_gt, reduction="none"
-                    )
+                    F.l1_loss(particle_pred, particle_gt, reduction="none")
                     * bpdecay_params
                 )
 
@@ -534,13 +531,14 @@ def ppo(
                 xy_l1_particle_loss = torch.mean(l1_particle_loss)
                 l1_particle_loss = 10 * xy_l1_particle_loss
 
-                belief_loss = (
-                    args["l2_weight"] * l2_particle_loss
-                    + args["l1_weight"] * l1_particle_loss
-                )
-                total_loss = total_loss + args["elbo_weight"] * belief_loss
+                belief_loss: torch.Tensor = args["l2_weight"] * l2_particle_loss + args[
+                    "l1_weight"
+                ] * l1_particle_loss
+                total_loss: torch.Tensor = total_loss + args[
+                    "elbo_weight"
+                ] * belief_loss
 
-                model_loss_arr[ii] = total_loss
+                model_loss_arr = torch.hstack((model_loss_arr, total_loss.unsqueeze(0)))
 
             model_loss = model_loss_arr.mean()
             model_optimizer.zero_grad()

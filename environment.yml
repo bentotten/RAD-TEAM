@@ -1,25 +1,31 @@
 name: ppo_rad
 channels:
-  - conda-forge
-  - anaconda
-  - pytorch
   - numba
+  - pytorch
+  - conda-forge
 dependencies:
-  - python=3.9
-  - black
-  - pip
-  - pytorch=1.8
+  - python=3.10
+  - pytorch=1.11=*cpu*
   - scipy
-  - psutil
-  - mpi4py
-  - joblib
-  - statsmodels
-  - matplotlib
+  - gym
+
   - numba
   - pandas
+  
+  - black
+  - mypy
+  - pyright
+  
+  - mpi4py
+  - joblib
+  
+  - statsmodels
+  - matplotlib
+  - psutil
+  
   - swig
-  - gym
+  - pip
   - pip:
       - git+https://github.com/peproctor/PyVisiLibity.git@c76020079110231f882f38f61b3ab25d01de21f0
       - git+https://github.com/peproctor/REU_rl.git@350797ef99bf8405a95f8b8b7e1be3292ce41d11
-      - ./gym_rad_search
+      - -e ./gym_rad_search
