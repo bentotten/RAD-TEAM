@@ -1,3 +1,5 @@
+import functools
+import operator
 import gym
 import numpy as np
 import numpy.typing as npt
@@ -309,6 +311,7 @@ class RadSearch(gym.Env):
 
         return self.step(None)[0]
 
+    # TODO: Name is dishonest. If the action is valid, it actually *takes* the action!
     def check_action(self, action: Optional[Action]) -> bool:
         """
         Method that checks which direction to move the detector based on the action.
@@ -576,14 +579,14 @@ class RadSearch(gym.Env):
 
     def render(
         self,
-        save_gif=False,
-        path=None,
-        epoch_count=None,
-        just_env=False,
+        save_gif: bool = False,
+        path: Optional[str] = None,
+        epoch_count: Optional[int] = None,
+        just_env: Optional[bool] = False,
         obs=None,
         ep_rew=None,
         data=None,
-        meas=None,
+        meas: Optional[list[float]] = None,
         params=None,
         loc_est=None,
     ):
@@ -763,7 +766,9 @@ class RadSearch(gym.Env):
             else:
                 plt.show()
 
-    def FIM_step(self, action, coords=None):
+    def FIM_step(
+        self, action: Action, coords: Optional[npt.NDArray[np.float64]] = None
+    ) -> npt.NDArray[np.float64]:
         """
         Method for the information-driven controller to update detector coordinates in the environment
         without changing the actual detector positon.
@@ -772,26 +777,16 @@ class RadSearch(gym.Env):
         action : action to move the detector
         coords : coordinates to move the detector from that are different from the current detector coordinates
         """
-        if coords is None:
-            det_coords = self.det_coords.copy()
-        else:
-            det_coords = self.det_coords.copy()
+        det_coords = self.det_coords.copy()
+        if coords:
             self.detector.set_x(coords[0])
             self.detector.set_y(coords[1])
             self.det_coords = coords.copy()
 
         in_obs = self.check_action(action)
-
-        if coords is None:
-            det_ret = self.det_coords
-            if not (
-                in_obs
-            ):  # If successful movement, return new coords. Set detector back.
-                self.det_coords = det_coords
-                self.detector.set_x(det_coords[0])
-                self.detector.set_y(det_coords[1])
-        else:
-            det_ret = self.det_coords.copy()
+        det_ret = self.det_coords.copy() if coords else self.det_coords
+        if coords is None and not in_obs or coords:
+            # If successful movement, return new coords. Set detector back.
             self.det_coords = det_coords
             self.detector.set_x(det_coords[0])
             self.detector.set_y(det_coords[1])
@@ -799,56 +794,43 @@ class RadSearch(gym.Env):
         return det_ret
 
 
-def edges_of(vertices):
+def edges_of(vertices: list[vis.Point]) -> list[vis.Point]:
     """
     Return the vectors for the edges of the polygon p.
 
     p is a polygon.
     """
-    edges = []
-    N = len(vertices)
-
-    for i in range(N):
-        edge = vertices[i] - vertices[(i + 1) % N]
-        edges.append(edge)
-
-    return edges
+    return list(map(operator.sub, vertices, vertices[1:] + [vertices[0]]))
 
 
-def orthogonal(v):
+def orthogonal(v: vis.Point) -> vis.Point:
     """
     Return a 90 degree clockwise rotation of the vector v.
     """
     return np.array([-v[1], v[0]])
 
 
-def is_separating_axis(o, p1, p2):
+def is_separating_axis(o: vis.Point, p1: vis.Polygon, p2: vis.Polygon) -> bool:
     """
     Return True and the push vector if o is a separating axis of p1 and p2.
     Otherwise, return False and None.
     """
-    min1, max1 = float("+inf"), float("-inf")
-    min2, max2 = float("+inf"), float("-inf")
 
-    for v in p1:
-        projection = np.dot(v, o)
+    def min_max_of_projections(poly: vis.Polygon) -> tuple[float, float]:
+        curr_min, curr_max = float("+inf"), float("-inf")
+        for vertex in poly:
+            projection: float = np.dot(vertex, o)
+            curr_min, curr_max = min(projection, curr_min), max(projection, curr_max)
 
-        min1 = min(min1, projection)
-        max1 = max(max1, projection)
+        return curr_min, curr_max
 
-    for v in p2:
-        projection = np.dot(v, o)
+    min1, max1 = min_max_of_projections(p1)
+    min2, max2 = min_max_of_projections(p2)
 
-        min2 = min(min2, projection)
-        max2 = max(max2, projection)
-
-    if max1 >= min2 and max2 >= min1:
-        return False
-    else:
-        return True
+    return max1 < min2 or max2 < min1
 
 
-def collide(p1, p2):
+def collide(p1: vis.Polygon, p2: vis.Polygon):
     """
     Return True and the MPV if the shapes collide. Otherwise, return False and
     None.
@@ -856,15 +838,7 @@ def collide(p1, p2):
     p1 and p2 are lists of ordered pairs, the vertices of the polygons in the
     clockwise direction.
     """
-
-    edges = edges_of(p1)
-    edges += edges_of(p2)
-    orthogonals = [orthogonal(e) for e in edges]
-
-    for o in orthogonals:
-        separates = is_separating_axis(o, p1, p2)
-
-        if separates:
-            # they do not collide and there is no push vector
-            return False
-    return True
+    return any(
+        is_separating_axis(o, p1, p2)
+        for o in map(orthogonal, edges_of(p1) + edges_of(p2))
+    )
