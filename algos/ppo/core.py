@@ -6,6 +6,7 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
+from dataclasses import dataclass
 from torch.distributions.categorical import Categorical
 
 from typing import (
@@ -13,7 +14,6 @@ from typing import (
     Callable,
     Literal,
     NoReturn,
-    Sequence,
     TypeAlias,
     Optional,
     cast,
@@ -81,12 +81,12 @@ def discount_cumsum(
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
 
+@dataclass
 class StatBuff:
-    def __init__(self):
-        self.mu: float = 0.0
-        self.sig_sto: float = 0.0
-        self.sig_obs: float = 1.0
-        self.count: int = 0
+    mu: float = 0.0
+    sig_sto: float = 0.0
+    sig_obs: float = 1.0
+    count: int = 0
 
     def update(self, obs: float) -> None:
         self.count += 1
@@ -99,11 +99,8 @@ class StatBuff:
             self.sig_sto = s_n
             self.sig_obs = max(math.sqrt(s_n / (self.count - 1)), 1)
 
-    def reset(self):
-        self.mu = 0.0
-        self.sig_sto = 0.0
-        self.sig_obs = 1.0
-        self.count = 0
+    def reset(self) -> None:
+        self = StatBuff()
 
 
 class PFRNNBaseCell(nn.Module):
