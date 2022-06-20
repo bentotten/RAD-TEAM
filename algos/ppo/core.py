@@ -1,12 +1,14 @@
 import numpy as np
+import numpy.typing as npt
 import scipy.signal
 import math
 import torch
+from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.categorical import Categorical
 
-from typing import Sequence, TypeAlias, Optional, cast
+from typing import Callable, Sequence, TypeAlias, Optional, cast, overload
 
 Shape: TypeAlias = int | Sequence[int]
 
@@ -27,7 +29,7 @@ def mlp(
     activation,
     output_activation=nn.Identity,
     layer_norm: bool = False,
-) -> nn.Module:
+) -> nn.Sequential:
     layers = []
     for j in range(len(sizes) - 1):
         layer = [nn.Linear(sizes[j], sizes[j + 1])]
@@ -49,7 +51,9 @@ def count_vars(module: nn.Module) -> int:
     return sum(np.prod(p.shape) for p in module.parameters())
 
 
-def discount_cumsum(x, discount):
+def discount_cumsum(
+    x: npt.NDArray[np.float64], discount: float
+) -> npt.NDArray[np.float64]:
     """
     magic from rllab for computing discounted cumulative sums of vectors.
 
@@ -69,12 +73,12 @@ def discount_cumsum(x, discount):
 
 class StatBuff:
     def __init__(self):
-        self.mu = 0
-        self.sig_sto = 0
-        self.sig_obs = 1
-        self.count = 0
+        self.mu: float = 0.0
+        self.sig_sto: float = 0.0
+        self.sig_obs: float = 1.0
+        self.count: int = 0
 
-    def update(self, obs):
+    def update(self, obs: float) -> None:
         self.count += 1
         if self.count == 1:
             self.mu = obs
@@ -83,14 +87,12 @@ class StatBuff:
             s_n = self.sig_sto + (obs - self.mu) * (obs - mu_n)
             self.mu = mu_n
             self.sig_sto = s_n
-            self.sig_obs = math.sqrt(s_n / (self.count - 1))
-            if self.sig_obs == 0:
-                self.sig_obs = 1
+            self.sig_obs = max(math.sqrt(s_n / (self.count - 1)), 1)
 
     def reset(self):
-        self.mu = 0
-        self.sig_sto = 0
-        self.sig_obs = 1
+        self.mu = 0.0
+        self.sig_sto = 0.0
+        self.sig_obs = 1.0
         self.count = 0
 
 
@@ -99,12 +101,12 @@ class PFRNNBaseCell(nn.Module):
 
     def __init__(
         self,
-        num_particles,
-        input_size,
-        hidden_size,
-        resamp_alpha,
-        use_resampling,
-        activation,
+        num_particles: int,
+        input_size: int,
+        hidden_size: int,
+        resamp_alpha: float,
+        use_resampling: bool,
+        activation: str,
     ):
         """init function
 
@@ -116,21 +118,33 @@ class PFRNNBaseCell(nn.Module):
             use_resampling {bool} -- whether to use soft-resampling
             activation {str} -- activation function to use
         """
-        super(PFRNNBaseCell, self).__init__()
-        self.num_particles = num_particles
-        self.samp_thresh = num_particles * 1.0
-        self.input_size = input_size
-        self.h_dim = hidden_size
-        self.resamp_alpha = resamp_alpha
-        self.use_resampling = use_resampling
-        self.activation = activation
-        self.initialize = "rand"
+        super().__init__()
+        self.num_particles: int = num_particles
+        self.samp_thresh: float = num_particles * 1.0
+        self.input_size: int = input_size
+        self.h_dim: int = hidden_size
+        self.resamp_alpha: float = resamp_alpha
+        self.use_resampling: bool = use_resampling
+        self.activation: str = activation
+        self.initialize: str = "rand"
         if activation == "relu":
-            self.batch_norm = nn.BatchNorm1d(
+            self.batch_norm: nn.BatchNorm1d = nn.BatchNorm1d(
                 self.num_particles, track_running_stats=False
             )
 
-    def resampling(self, particles, prob):
+    @overload
+    def resampling(self, particles: Tensor, prob: Tensor) -> tuple[Tensor, Tensor]:
+        ...
+
+    @overload
+    def resampling(
+        self, particles: tuple[Tensor, Tensor], prob: Tensor
+    ) -> tuple[tuple[Tensor, Tensor], Tensor]:
+        ...
+
+    def resampling(
+        self, particles: Tensor | tuple[Tensor, Tensor], prob: Tensor
+    ) -> tuple[tuple[Tensor, Tensor] | Tensor, Tensor]:
         """soft-resampling
 
         Arguments:
@@ -146,14 +160,17 @@ class PFRNNBaseCell(nn.Module):
             + (1 - self.resamp_alpha) * 1 / self.num_particles
         )
         resamp_prob = resamp_prob.view(self.num_particles, -1)
-        indices = torch.multinomial(
-            resamp_prob.transpose(0, 1),
-            num_samples=self.num_particles,
-            replacement=True,
+        flatten_indices = (
+            torch.multinomial(
+                resamp_prob.transpose(0, 1),
+                num_samples=self.num_particles,
+                replacement=True,
+            )
+            .transpose(1, 0)
+            .contiguous()
+            .view(-1, 1)
+            .squeeze()
         )
-        batch_size = indices.size(0)
-        indices = indices.transpose(1, 0).contiguous()
-        flatten_indices = indices.view(-1, 1).squeeze()
 
         # PFLSTM
         if type(particles) == tuple:
@@ -174,7 +191,7 @@ class PFRNNBaseCell(nn.Module):
 
         return particles_new, prob_new
 
-    def reparameterize(self, mu, var):
+    def reparameterize(self, mu: Tensor, var: Tensor) -> Tensor:
         """Implements the reparameterization trick introduced in [Auto-Encoding Variational Bayes](https://arxiv.org/abs/1312.6114)
 
         Arguments:
@@ -184,25 +201,21 @@ class PFRNNBaseCell(nn.Module):
         Returns:
             tensor -- sample
         """
-        std = torch.nn.functional.softplus(var)
-        if torch.cuda.is_available():
-            eps = torch.cuda.FloatTensor(std.shape).normal_()
-        else:
-            eps = torch.FloatTensor(std.shape).normal_()
-
+        std: Tensor = F.softplus(var)
+        eps: Tensor = torch.FloatTensor(std.shape).normal_()
         return mu + eps * std
 
 
 class PFGRUCell(PFRNNBaseCell):
     def __init__(
         self,
-        num_particles,
-        input_size,
-        obs_size,
-        hidden_size,
-        resamp_alpha,
-        use_resampling,
-        activation,
+        num_particles: int,
+        input_size: int,
+        obs_size: int,
+        hidden_size: int,
+        resamp_alpha: float,
+        use_resampling: bool,
+        activation: str,
     ):
         super().__init__(
             num_particles,
@@ -213,15 +226,17 @@ class PFGRUCell(PFRNNBaseCell):
             activation,
         )
 
-        self.fc_z = nn.Linear(self.h_dim + self.input_size, self.h_dim)
-        self.fc_r = nn.Linear(self.h_dim + self.input_size, self.h_dim)
-        self.fc_n = nn.Linear(self.h_dim + self.input_size, self.h_dim * 2)
+        self.fc_z: nn.Linear = nn.Linear(self.h_dim + self.input_size, self.h_dim)
+        self.fc_r: nn.Linear = nn.Linear(self.h_dim + self.input_size, self.h_dim)
+        self.fc_n: nn.Linear = nn.Linear(self.h_dim + self.input_size, self.h_dim * 2)
 
-        self.fc_obs = nn.Linear(self.h_dim + self.input_size, 1)
-        self.hid_obs = mlp([self.h_dim] + [24] + [2], nn.ReLU)
-        self.hnn_dropout = nn.Dropout(p=0)
+        self.fc_obs: nn.Linear = nn.Linear(self.h_dim + self.input_size, 1)
+        self.hid_obs: nn.Sequential = mlp([self.h_dim, 24, 2], nn.ReLU)
+        self.hnn_dropout: nn.Dropout = nn.Dropout(p=0)
 
-    def forward(self, input_, hx):
+    def forward(
+        self, input_: Tensor, hx: tuple[Tensor, Tensor]
+    ) -> tuple[Tensor, tuple[Tensor, Tensor]]:
         """One step forward for PFGRU
 
         Arguments:
@@ -231,7 +246,6 @@ class PFGRUCell(PFRNNBaseCell):
         Returns:
             tuple -- new tensor
         """
-
         h0, p0 = hx
         obs_in = input_.repeat(h0.shape[0], 1)
         obs_cat = torch.cat((h0, obs_in), dim=1)
@@ -241,7 +255,7 @@ class PFGRUCell(PFRNNBaseCell):
         n = self.fc_n(torch.cat((r * h0, obs_in), dim=1))
 
         mu_n, var_n = torch.split(n, split_size_or_sections=self.h_dim, dim=1)
-        n = self.reparameterize(mu_n, var_n)
+        n: Tensor = self.reparameterize(mu_n, var_n)
 
         if self.activation == "relu":
             # if we use relu as the activation, batch norm is require
@@ -254,7 +268,7 @@ class PFGRUCell(PFRNNBaseCell):
         else:
             raise ModuleNotFoundError
 
-        h1 = (1 - z) * n + z * h0
+        h1: Tensor = (1 - z) * n + z * h0
 
         p1 = self.observation_likelihood(h1, obs_in, p0)
 
@@ -262,27 +276,25 @@ class PFGRUCell(PFRNNBaseCell):
             h1, p1 = self.resampling(h1, p1)
 
         p1 = p1.view(-1, 1)
-
-        mean_hid = (torch.exp(p1) * self.hnn_dropout(h1)).sum(axis=0)
-        loc_pred = self.hid_obs(mean_hid)
+        mean_hid = torch.sum(torch.exp(p1) * self.hnn_dropout(h1), dim=0)
+        loc_pred: Tensor = self.hid_obs(mean_hid)
 
         return loc_pred, (h1, p1)
 
-    def observation_likelihood(self, h1, obs_in, p0):
+    def observation_likelihood(self, h1: Tensor, obs_in: Tensor, p0: Tensor) -> Tensor:
         """observation function based on compatibility function"""
-        logpdf_obs = self.fc_obs(torch.cat((h1, obs_in), dim=1))
-
-        p1 = logpdf_obs + p0
-
+        logpdf_obs: Tensor = self.fc_obs(torch.cat((h1, obs_in), dim=1))
+        p1: Tensor = logpdf_obs + p0
         p1 = p1.view(self.num_particles, -1, 1)
-        p1 = nn.functional.log_softmax(p1, dim=0)
-
+        p1 = F.log_softmax(p1, dim=0)
         return p1
 
-    def init_hidden(self, batch_size):
-        initializer = torch.rand if self.initialize == "rand" else torch.zeros
+    def init_hidden(self, batch_size: int) -> tuple[Tensor, Tensor]:
+        initializer: Callable[[int, int], Tensor] = (
+            torch.rand if self.initialize == "rand" else torch.zeros
+        )
         h0 = initializer(batch_size * self.num_particles, self.h_dim)
-        p0 = torch.ones(batch_size * self.num_particles, 1) * np.log(
+        p0: Tensor = torch.ones(batch_size * self.num_particles, 1) * np.log(
             1 / self.num_particles
         )
         hidden = (h0, p0)
