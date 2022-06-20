@@ -6,32 +6,47 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.categorical import Categorical
 
+from typing import Sequence, TypeAlias, Optional, cast
 
-def combined_shape(length, shape=None):
+Shape: TypeAlias = int | Sequence[int]
+
+
+def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     if shape is None:
         return (length,)
-    return (length, shape) if np.isscalar(shape) else (length, *shape)
-
-
-def mlp(sizes, activation, output_activation=nn.Identity, layer_norm=False):
-    layers = []
-
-    if layer_norm:
-        for j in range(len(sizes) - 1):
-            act = activation if j < len(sizes) - 1 else output_activation
-            ln = nn.LayerNorm(sizes[j + 1]) if j < len(sizes) - 1 else None
-            layers += [nn.Linear(sizes[j], sizes[j + 1]), ln, act()]
-        if None in layers:
-            layers.remove(None)
+    elif np.isscalar(shape):
+        shape = cast(int, shape)
+        return (length, shape)
     else:
-        for j in range(len(sizes) - 1):
-            act = activation if j < len(sizes) - 1 else output_activation
-            layers += [nn.Linear(sizes[j], sizes[j + 1]), act()]
+        shape = cast(Sequence[int], shape)
+        return (length, *shape)
+
+
+def mlp(
+    sizes: list[Shape],
+    activation,
+    output_activation=nn.Identity,
+    layer_norm: bool = False,
+) -> nn.Module:
+    layers = []
+    for j in range(len(sizes) - 1):
+        layer = [nn.Linear(sizes[j], sizes[j + 1])]
+
+        if layer_norm:
+            ln = nn.LayerNorm(sizes[j + 1]) if j < len(sizes) - 1 else None
+            layer.append(ln)
+
+        layer.append(activation() if j < len(sizes) - 1 else output_activation())
+        layers += layer
+
+    if layer_norm and None in layers:
+        layers.remove(None)
+
     return nn.Sequential(*layers)
 
 
-def count_vars(module):
-    return sum([np.prod(p.shape) for p in module.parameters()])
+def count_vars(module: nn.Module) -> int:
+    return sum(np.prod(p.shape) for p in module.parameters())
 
 
 def discount_cumsum(x, discount):
