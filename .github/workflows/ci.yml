@@ -49,3 +49,43 @@ jobs:
           path: |
             output.txt
             models
+
+  ci-long:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Conda environment from environment.yml
+        uses: mamba-org/provision-with-micromamba@v11
+        with:
+          environment-file: environment.yml
+          environment-name: ppo_rad
+      - name: Run Python
+        run: |
+          cd algos/ppo/
+          python ppo.py --seed 0 --cpu 1 --exp_name exp1 --epochs 100 | tee ../../output.txt
+      - name: Log output to summary
+        run: |
+          echo "# Epoch results" >> $GITHUB_STEP_SUMMARY
+          echo >> $GITHUB_STEP_SUMMARY
+          for file in $(find . -type f -iname "progress.txt"); do
+            echo "## $file" >> $GITHUB_STEP_SUMMARY
+            echo >> $GITHUB_STEP_SUMMARY
+            cp $file $file.md
+            awk -F'|' '{
+              gsub("\t", "|", $0);
+              print FS $0 FS;
+              if (NR==1) {
+                header_separator=FS;
+                for (i=0; i<NF; i++) {
+                  header_separator=header_separator ":-" FS;
+                }
+                print header_separator;
+              }
+            }' $file.md >> $GITHUB_STEP_SUMMARY
+            echo >> $GITHUB_STEP_SUMMARY
+          done
+      - uses: actions/upload-artifact@v3
+        with:
+          path: |
+            output.txt
+            models
