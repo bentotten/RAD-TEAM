@@ -8,9 +8,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.categorical import Categorical
 
-from typing import Callable, Sequence, TypeAlias, Optional, cast, overload
+from typing import (
+    Any,
+    Callable,
+    Literal,
+    NoReturn,
+    Sequence,
+    TypeAlias,
+    Optional,
+    cast,
+    overload,
+)
 
-Shape: TypeAlias = int | Sequence[int]
+Shape: TypeAlias = int | tuple[int, ...]
 
 
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
@@ -20,7 +30,7 @@ def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
         shape = cast(int, shape)
         return (length, shape)
     else:
-        shape = cast(Sequence[int], shape)
+        shape = cast(tuple[int, ...], shape)
         return (length, *shape)
 
 
@@ -303,13 +313,18 @@ class PFGRUCell(PFRNNBaseCell):
 
 class SeqLoc(nn.Module):
     def __init__(
-        self, input_size, hidden_size, bias=True, ln_preact=True, weight_init=False
+        self,
+        input_size: int,
+        hidden_size: tuple[Shape, Shape],
+        bias: bool = True,
+        ln_preact: bool = True,
+        weight_init: bool = False,
     ):
-        super(SeqLoc, self).__init__()
+        super().__init__()
 
-        self.seq_model = nn.GRU(input_size, hidden_size[0][0], 1)
-        self.Woms = mlp(hidden_size[0] + hidden_size[1] + [2], nn.Tanh)
-        self.Woms = torch.nn.Sequential(*(list(self.Woms.children())[:-1]))
+        self.seq_model: nn.GRU = nn.GRU(input_size, hidden_size[0][0], 1)
+        self.Woms: nn.Sequential = mlp([*hidden_size[0], *hidden_size[1], 2], nn.Tanh)
+        self.Woms: nn.Sequential = nn.Sequential(*(list(self.Woms.children())[:-1]))
 
         if weight_init:
             for m in self.named_children():
@@ -317,22 +332,21 @@ class SeqLoc(nn.Module):
 
         self.hs = hidden_size[0][0]
 
-    def weights_init(self, m):
+    def weights_init(self, m: tuple[str, nn.Module]) -> None:
         if isinstance(m[1], nn.Linear):
-            stdv = 2 / math.sqrt(max(m[1].weight.size()))
+            stdv: float = 2 / math.sqrt(max(m[1].weight.size()))
             m[1].weight.data.uniform_(-stdv, stdv)
             if m[1].bias is not None:
                 m[1].bias.data.uniform_(-stdv, stdv)
 
-    def forward(self, x, hidden=None, ep_form=None, batch=False):
-        if not (batch):
-            hidden = self.seq_model(x.unsqueeze(0), hidden)[0]
-        else:
-            hidden = self.seq_model(x.unsqueeze(1), hidden)[0]
-        out_arr = self.Woms(hidden.squeeze())
-        return out_arr, hidden
+    def forward(
+        self, x: Tensor, hidden: Tensor, ep_form=None, batch: bool = False
+    ) -> tuple[Tensor, Tensor]:
+        _hidden: Tensor = self.seq_model(x.unsqueeze(int(batch)), hidden)[0]
+        out_arr: Tensor = self.Woms(_hidden.squeeze())
+        return out_arr, _hidden
 
-    def init_hidden(self, bs):
+    def init_hidden(self, bs=None) -> Tensor:
         std = 1.0 / math.sqrt(self.hs)
         init_weights = torch.FloatTensor(1, 1, self.hs).uniform_(-std, std)
         return init_weights[0, :, None]
@@ -340,14 +354,20 @@ class SeqLoc(nn.Module):
 
 class SeqPt(nn.Module):
     def __init__(
-        self, input_size, hidden_size, bias=True, ln_preact=True, weight_init=False
+        self,
+        input_size: int,
+        hidden_size: tuple[Shape, Shape],
+        bias: bool = True,
+        ln_preact: bool = True,
+        weight_init: bool = False,
     ):
-        super(SeqPt, self).__init__()
-
-        self.seq_model = nn.GRU(input_size, hidden_size[0][0], 1)
-        self.Woms = mlp(hidden_size[0] + hidden_size[1] + [8], nn.Tanh)
-        self.Woms = torch.nn.Sequential(*(list(self.Woms.children())[:-1]))
-        self.Valms = mlp(hidden_size[0] + hidden_size[2] + [1], nn.Tanh)
+        super().__init__()
+        self.seq_model: nn.GRU = nn.GRU(input_size, hidden_size[0][0], 1)
+        self.Woms: nn.Sequential = mlp([*hidden_size[0], *hidden_size[1], 8], nn.Tanh)
+        self.Woms: nn.Sequential = torch.nn.Sequential(
+            *(list(self.Woms.children())[:-1])
+        )
+        self.Valms: nn.Sequential = mlp([*hidden_size[0], *hidden_size[2], 1], nn.Tanh)
         self.Valms = torch.nn.Sequential(*(list(self.Valms.children())[:-1]))
 
         if weight_init:
@@ -356,33 +376,35 @@ class SeqPt(nn.Module):
 
         self.hs = hidden_size[0]
 
-    def weights_init(self, m):
+    def weights_init(self, m: tuple[str, nn.Module]) -> None:
         if isinstance(m[1], nn.Linear):
             stdv = 2 / math.sqrt(max(m[1].weight.size()))
             m[1].weight.data.uniform_(-stdv, stdv)
             if m[1].bias is not None:
                 m[1].bias.data.uniform_(-stdv, stdv)
 
-    def forward(self, x, hidden=None, ep_form=None, pred=False):  # MS POMDP
-        hidden = self.seq_model(x, hidden)[0]
-        out_arr = self.Woms(hidden.squeeze())
-        val = self.Valms(hidden.squeeze())
-        return out_arr, hidden, val
+    def forward(
+        self, x: Tensor, hidden: Tensor, ep_form=None, batch: bool = False
+    ) -> tuple[Tensor, Tensor, nn.Sequential]:  # MS POMDP
+        _hidden: Tensor = self.seq_model(x, hidden)[0]
+        out_arr: Tensor = self.Woms(_hidden.squeeze())
+        val: nn.Sequential = self.Valms(_hidden.squeeze())
+        return out_arr, _hidden, val
 
-    def _reset_state(self):
+    def _reset_state(self) -> tuple[Tensor, Literal[0]]:
         std = 1.0 / math.sqrt(self.hs)
         init_weights = torch.FloatTensor(1, self.hs).uniform_(-std, std)
         return (init_weights[0, :, None], 0)
 
 
 class Actor(nn.Module):
-    def _distribution(self, obs):
+    def _distribution(self, obs: Tensor) -> tuple[Tensor, Tensor, Tensor]:
         raise NotImplementedError
 
-    def _log_prob_from_distribution(self, pi, act):
+    def _log_prob_from_distribution(self, pi: nn.Module, act: nn.Module) -> NoReturn:
         raise NotImplementedError
 
-    def forward(self, obs, act=None, hidden=None):
+    def forward(self, obs, act=None, hidden=None) -> Tensor:
         # Produce action distributions for given observations, and
         # optionally compute the log likelihood of given actions under
         # those distributions.
@@ -396,7 +418,13 @@ class Actor(nn.Module):
 
 class MLPCategoricalActor(Actor):
     def __init__(
-        self, input_dim, act_dim, hidden_sizes, activation, net_type=None, batch_s=1
+        self,
+        input_dim: int,
+        act_dim: int,
+        hidden_sizes: Shape,
+        activation: nn.Module,
+        net_type: Optional[str] = None,
+        batch_s: int = 1,
     ):
         super().__init__()
         if net_type == "rnn":
@@ -409,19 +437,21 @@ class MLPCategoricalActor(Actor):
                 rec_type="rnn",
             )
         else:
-            if hidden_sizes:
-                self.logits_net = mlp(
-                    [input_dim] + hidden_sizes + [act_dim], activation
-                )
-            else:
-                self.logits_net = mlp([input_dim] + [act_dim], activation)
+            self.logits_net = mlp(
+                [
+                    input_dim,
+                    *(hidden_sizes if type(hidden_sizes) == tuple else []),
+                    act_dim,
+                ],
+                activation,
+            )
 
-    def _distribution(self, obs, hidden=None):
+    def _distribution(self, obs, hidden=None) -> tuple[Categorical, Tensor, Tensor]:
         # logits, hidden = self.logits_net(obs, hidden=hidden)
         logits, hidden, val = self.logits_net.v_net(obs, hidden=hidden)
         return Categorical(logits=logits), hidden, val
 
-    def _log_prob_from_distribution(self, pi, act):
+    def _log_prob_from_distribution(self, pi: nn.Module, act: nn.Module):
         return pi.log_prob(act)
 
     def _reset_state(self):
@@ -456,45 +486,35 @@ class RecurrentNet(nn.Module):
 class RNNModelActorCritic(nn.Module):
     def __init__(
         self,
-        observation_space,
-        action_space,
-        hidden=(32,),
-        hidden_sizes_pol=(64,),
-        hidden_sizes_val=(64, 64),
-        hidden_sizes_rec=(64,),
+        observation_space: Tensor,
+        action_space: Tensor,
+        hidden: Shape = (32,),
+        hidden_sizes_pol: Shape = (64,),
+        hidden_sizes_val: Shape = (64, 64),
+        hidden_sizes_rec: Shape = (64,),
         activation=nn.Tanh,
         net_type=None,
-        pad_dim=2,
-        batch_s=1,
-        seed=0,
+        pad_dim: int = 2,
+        batch_s: int = 1,
+        seed: int = 0,
     ):
         super().__init__()
-        self.seed_gen = torch.manual_seed(seed)
-        obs_dim = observation_space.shape[0]  # + pad_dim
-        self.hidden = hidden[0]
-        self.pi_hs = hidden_sizes_rec[0]
-        self.val_hs = hidden_sizes_val[0]
-        self.bpf_hsize = hidden_sizes_rec[0]
-        hidden_sizes = hidden + hidden_sizes_pol + hidden_sizes_val
+        self.seed_gen: torch.Generator = torch.manual_seed(seed)
+        obs_dim: int = observation_space.shape[0]  # + pad_dim
+        self.hidden: int = hidden[0]
+        self.pi_hs: int = hidden_sizes_rec[0]
+        self.val_hs: int = hidden_sizes_val[0]
+        self.bpf_hsize: int = hidden_sizes_rec[0]
+        hidden_sizes: Shape = hidden + hidden_sizes_pol + hidden_sizes_val
 
-        if hidden_sizes_pol[0][0] == 1:
-            self.pi = MLPCategoricalActor(
-                self.pi_hs,
-                action_space.n,
-                None,
-                activation,
-                net_type=net_type,
-                batch_s=batch_s,
-            )
-        else:
-            self.pi = MLPCategoricalActor(
-                obs_dim + pad_dim,
-                action_space.n,
-                hidden_sizes,
-                activation,
-                net_type=net_type,
-                batch_s=batch_s,
-            )
+        self.pi = MLPCategoricalActor(
+            self.pi_hs if hidden_sizes_pol[0][0] == 1 else obs_dim + pad_dim,
+            action_space.n,
+            None if hidden_sizes_pol[0][0] == 1 else hidden_sizes,
+            activation,
+            net_type=net_type,
+            batch_s=batch_s,
+        )
 
         self.num_particles = 40
         self.alpha = 0.7
@@ -510,18 +530,28 @@ class RNNModelActorCritic(nn.Module):
             "tanh",
         )  # obs_dim, hidden_sizes_pol[0]
 
-    def step(self, obs, hidden=None):
+    def step(
+        self, obs: npt.NDArray[np.float32], hidden: tuple[Tensor, Tensor]
+    ) -> tuple[
+        npt.NDArray[np.float32],
+        npt.NDArray[np.float32],
+        npt.NDArray[np.float32],
+        tuple[Tensor, Tensor],
+        npt.NDArray[np.float32],
+    ]:
         with torch.no_grad():
             obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(0)
             loc_pred, hidden_part = self.model(obs_t[:, :3], hidden[0])
             obs_t = torch.cat((obs_t, loc_pred.unsqueeze(0)), dim=1)
             pi, hidden2, v = self.pi._distribution(obs_t.unsqueeze(0), hidden[1])
             a = pi.sample()
-            logp_a = self.pi._log_prob_from_distribution(pi, a)
-            hidden = (hidden_part, hidden2)
-        return a.numpy(), v.numpy(), logp_a.numpy(), hidden, loc_pred.numpy()
+            logp_a: Tensor = self.pi._log_prob_from_distribution(pi, a)
+            _hidden: tuple[Tensor, Tensor] = (hidden_part, hidden2)
+        return a.numpy(), v.numpy(), logp_a.numpy(), _hidden, loc_pred.numpy()
 
-    def grad_step(self, obs, act, hidden=None):
+    def grad_step(
+        self, obs: npt.NDArray[np.float32], act, hidden: tuple[Tensor, Tensor]
+    ) -> tuple[Any, Any, Any, Tensor]:
         obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(1)
         loc_pred = torch.empty((obs_t.shape[0], 2))
         hidden_part = hidden[0]
@@ -532,10 +562,18 @@ class RNNModelActorCritic(nn.Module):
         pi, logp_a, hidden2, val = self.pi(obs_t, act=act, hidden=hidden[1])
         return pi, val, logp_a, loc_pred
 
-    def act(self, obs, hidden=None):
+    def act(
+        self, obs: npt.NDArray[np.float32], hidden: tuple[Tensor, Tensor]
+    ) -> tuple[
+        npt.NDArray[np.float32],
+        npt.NDArray[np.float32],
+        npt.NDArray[np.float32],
+        tuple[Tensor, Tensor],
+        npt.NDArray[np.float32],
+    ]:
         return self.step(obs, hidden=hidden)
 
-    def reset_hidden(self, batch_size=1):
+    def reset_hidden(self, batch_size: int = 1) -> tuple[tuple[Tensor, Tensor], Tensor]:
         model_hidden = self.model.init_hidden(batch_size)
         a2c_hidden = self.pi._reset_state()
         return (model_hidden, a2c_hidden)
