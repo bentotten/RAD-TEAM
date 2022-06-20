@@ -1,18 +1,22 @@
-import functools
 import operator
-import gym
+import os
+import math
+
 import numpy as np
 import numpy.typing as npt
-import math
-import matplotlib.pyplot as plt
-import visilibity as vis
-import os
+
+import gym
 from gym import spaces
+
+import visilibity as vis
+
+import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.ticker import FormatStrFormatter
 from matplotlib.animation import PillowWriter
 from matplotlib.patches import Polygon
-from typing import Any, Callable, Literal, Optional, TypedDict, cast, get_args
+
+from typing import Any, Literal, Optional, TypedDict, cast, get_args
 from typing_extensions import TypeAlias
 
 FPS = 50
