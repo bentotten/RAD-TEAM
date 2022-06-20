@@ -6,26 +6,9 @@ from torch.optim import Adam
 import torch.nn.functional as F
 import gym
 import time
-import os
 import core
 from gym.utils.seeding import _int_list_from_bigint, hash_seed
-from rl_tools.logx import EpochLogger
-from rl_tools.mpi_pytorch import (
-    setup_pytorch_for_mpi,
-    sync_params,
-    synchronize,
-    mpi_avg_grads,
-    sync_params_stats,
-)
-from rl_tools.mpi_tools import (
-    mpi_fork,
-    mpi_avg,
-    proc_id,
-    mpi_statistics_scalar,
-    mpi_statistics_vector,
-    num_procs,
-    mpi_min_max_scalar,
-)
+from epoch_logger import EpochLogger, setup_logger_kwargs
 
 
 class PPOBuffer:
@@ -123,11 +106,11 @@ class PPOBuffer:
         assert self.ptr == self.max_size  # buffer has to be full before you can get
         self.ptr, self.path_start_idx = 0, 0
         # the next two lines implement the advantage normalization trick
-        adv_mean, adv_std = mpi_statistics_scalar(self.adv_buf)
+        adv_mean, adv_std = self.adv_buf.mean(), self.adv_buf.std()
         self.adv_buf: npt.NDArray[np.float32] = (self.adv_buf - adv_mean) / adv_std
-        # ret_mean, ret_std = mpi_statistics_scalar(self.ret_buf)
+        # ret_mean, ret_std = self.ret_buf.mean(), self.ret_buf.std()
         # self.ret_buf = (self.ret_buf) / ret_std
-        # obs_mean, obs_std = mpi_statistics_vector(self.obs_buf)
+        # obs_mean, obs_std = self.obs_buf.mean(), self.obs_buf.std()
         # self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
 
         epLens: list[int] = logger.epoch_dict["EpLen"]
@@ -312,9 +295,6 @@ def ppo(
             the current policy and value function.
 
     """
-
-    # Special function to avoid certain slowdowns from PyTorch + MPI combo.
-    setup_pytorch_for_mpi()
     # Set up logger and save configuration
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
@@ -333,9 +313,6 @@ def ppo(
     # Instantiate A2C
     ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
 
-    # Sync params across processes
-    sync_params(ac)
-
     # PFGRU args, from Ma et al. 2020
     bp_args = {
         "bp_decay": 0.1,
@@ -350,18 +327,10 @@ def ppo(
     logger.log("\nNumber of parameters: \t pi: %d, model: %d \t" % var_counts)
 
     # Set up trajectory buffer
-    local_steps_per_epoch = int(steps_per_epoch / num_procs())
     buf = PPOBuffer(
-        obs_dim,
-        act_dim,
-        local_steps_per_epoch,
-        gamma,
-        lam,
-        ac_kwargs["hidden_sizes_rec"][0],
+        obs_dim, act_dim, steps_per_epoch, gamma, lam, ac_kwargs["hidden_sizes_rec"][0],
     )
     save_gif_freq = epochs // 3
-    if proc_id() == 0:
-        print(f"Local steps per epoch: {local_steps_per_epoch}")
 
     def update_loc_rnn(data, env_sim, loss):
         """Update for the simple regression GRU"""
@@ -381,7 +350,6 @@ def ppo(
             model_loss = model_loss_arr.mean()
             model_optimizer.zero_grad()
             model_loss.backward()
-            mpi_avg_grads(ac.model)
             torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
             model_optimizer.step()
 
@@ -458,19 +426,14 @@ def ppo(
             "cf"
         ].append(clipfrac), pi_info["val_loss"].append(loss_val)
 
-        # Average KL across processes
-        kl = mpi_avg(pi_info["kl"][-1])
+        kl = pi_info["kl"][-1].mean()
         if kl.item() < 1.5 * target_kl:
             pi_optimizer.zero_grad()
             loss_pi.backward()
-            # Average gradients across processes
-            mpi_avg_grads(ac.pi)
             pi_optimizer.step()
             term = False
         else:
             term = True
-            if proc_id() == 0:
-                logger.log("Terminated at %d steps due to reaching max kl." % iter)
 
         pi_info["kl"], pi_info["ent"], pi_info["cf"], pi_info["val_loss"] = (
             pi_info["kl"][0].numpy(),
@@ -574,9 +537,6 @@ def ppo(
             model_loss = model_loss_arr.mean()
             model_optimizer.zero_grad()
             model_loss.backward()
-
-            # Average gradients across the processes
-            mpi_avg_grads(ac.model)
             torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
 
             model_optimizer.step()
@@ -656,12 +616,12 @@ def ppo(
     reduce_v_iters = True
     ac.model.eval()
     # Main loop: collect experience in env and update/log each epoch
-    print(f"Proc id: {proc_id()} -> Starting main training loop!", flush=True)
+    print(f"Starting main training loop!", flush=True)
     for epoch in range(epochs):
         # Reset hidden state
         hidden = ac.reset_hidden()
         ac.pi.logits_net.v_net.eval()
-        for t in range(local_steps_per_epoch):
+        for t in range(steps_per_epoch):
             # Standardize input using running statistics per episode
             obs_std = o
             obs_std[0] = np.clip((o[0] - stat_buff.mu) / stat_buff.sig_obs, -8, 8)
@@ -683,7 +643,7 @@ def ppo(
 
             timeout = ep_len == max_ep_len
             terminal = d or timeout
-            epoch_ended = t == local_steps_per_epoch - 1
+            epoch_ended = t == steps_per_epoch - 1
 
             if terminal or epoch_ended:
                 if d and not timeout:
@@ -719,7 +679,7 @@ def ppo(
                     and (epoch % save_gif_freq == 0 or ((epoch + 1) == epochs))
                 ):
                     # Check agent progress during training
-                    if proc_id() == 0 and epoch != 0:
+                    if epoch != 0:
                         env.render(
                             save_gif=save_gif,
                             path=logger.output_dir,
@@ -778,7 +738,6 @@ def ppo(
 
 if __name__ == "__main__":
     import argparse
-    from rl_tools.run_utils import setup_logger_kwargs
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", type=str, default="gym_rad_search:RadSearch-v0")
@@ -880,21 +839,9 @@ if __name__ == "__main__":
         + f"_ep{args.epochs}"
         + f"_steps{args.steps_per_epoch}"
     )
-    if args.cpu > 1:
-        # max cpus, steps in batch must be greater than the max eps steps times num. of cpu
-        tot_epoch_steps = args.cpu * args.steps_per_epoch
-        args.steps_per_epoch = (
-            tot_epoch_steps
-            if tot_epoch_steps > args.steps_per_epoch
-            else args.steps_per_epoch
-        )
-        print(
-            f"Sys cpus (avail, using): ({os.cpu_count()},{args.cpu}), Steps set to {args.steps_per_epoch}"
-        )
-        mpi_fork(args.cpu)  # run parallel code with mpi
 
     # Generate a large random seed and random generator object for reproducibility
-    robust_seed = _int_list_from_bigint(hash_seed((1 + proc_id()) * args.seed))[0]
+    robust_seed = _int_list_from_bigint(hash_seed(args.seed))[0]
     rng = np.random.default_rng(robust_seed)
 
     dim_length, dim_height = args.dims

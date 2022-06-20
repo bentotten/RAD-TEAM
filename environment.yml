@@ -5,27 +5,12 @@ channels:
   - conda-forge
 dependencies:
   - python=3.10
-  - pytorch=1.11=*cpu*
+  - pytorch=1.11
   - scipy
   - gym
-
   - numba
-  - pandas
-  
   - black
-  - mypy
-  - pyright
-  
-  - mpi4py
-  - joblib
-  
-  - statsmodels
-  - matplotlib
-  - psutil
-  
   - swig
   - pip
   - pip:
-      - git+https://github.com/peproctor/PyVisiLibity.git@c76020079110231f882f38f61b3ab25d01de21f0
-      - git+https://github.com/peproctor/REU_rl.git@350797ef99bf8405a95f8b8b7e1be3292ce41d11
       - -e ./gym_rad_search
