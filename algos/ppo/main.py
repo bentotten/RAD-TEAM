@@ -1,16 +1,17 @@
 import argparse
 from dataclasses import dataclass
-from typing import Literal, TypedDict
+from typing import Literal
 
+import numpy as np
 import numpy.random as npr
 
-import gym
-from gym.utils.seeding import _int_list_from_bigint, hash_seed
+import gym  # type: ignore
+from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
 import core
 from epoch_logger import setup_logger_kwargs, EpochLogger
 import ppo
-from gym_rad_search.envs import RadSearch
+from gym_rad_search.envs import RadSearch, RadSearchKwargs  # type: ignore
 
 
 @dataclass
@@ -31,18 +32,6 @@ class CliArgs:
     obstruct: Literal[-1, 0, 1]
     net_type: str
     alpha: float
-
-
-class EnvInitKwargs(TypedDict):
-    bbox: tuple[
-        tuple[float, float],
-        tuple[float, float],
-        tuple[float, float],
-        tuple[float, float],
-    ]
-    area_obs: tuple[float, float]
-    obstruct: Literal[-1, 0, 1]
-    seed: npr.Generator
 
 
 def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
@@ -171,14 +160,11 @@ if __name__ == "__main__":
     rng = npr.default_rng(robust_seed)
 
     dim_length, dim_height = args.dims
-    init_dims = EnvInitKwargs(
-        bbox=(
-            (0.0, 0.0),
-            (dim_length, 0.0),
-            (dim_length, dim_height),
-            (0.0, dim_height),
+    init_dims = RadSearchKwargs(
+        bbox=np.array(  # type: ignore
+            [[0.0, 0.0], [dim_length, 0.0], [dim_length, dim_height], [0.0, dim_height]]
         ),
-        area_obs=args.area_obs,
+        area_obs=np.array(args.area_obs),  # type: ignore
         obstruct=args.obstruct,
         seed=rng,
     )
@@ -190,7 +176,7 @@ if __name__ == "__main__":
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
 
-    env: RadSearch = gym.make("gym_rad_search:RadSearch-v0", **init_dims)
+    env: RadSearch = gym.make("gym_rad_search:RadSearch-v0", **init_dims)  # type: ignore
 
     # Run ppo training function
     ppo = ppo.PPO(
