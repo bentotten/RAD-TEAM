@@ -9,7 +9,7 @@ Logs to a tab-separated-values file (path/to/output_directory/progress.txt)
 from collections import defaultdict
 import json
 from pathlib import Path
-from typing import Any, NamedTuple, Optional
+from typing import Any, NamedTuple, Optional, TypedDict
 import numpy as np
 import numpy.typing as npt
 import pickle
@@ -17,6 +17,7 @@ import torch
 import atexit
 import warnings
 import time
+import torch.nn as nn
 
 
 class Stats(NamedTuple):
@@ -26,6 +27,11 @@ class Stats(NamedTuple):
     max: float
     mean: float
     std: float
+
+
+class EpochLoggerKwargs(TypedDict):
+    output_dir: Path
+    exp_name: str
 
 
 def get_stats(xs: npt.NDArray[np.float32]) -> Stats:
@@ -69,7 +75,7 @@ def setup_logger_kwargs(
     seed: Optional[int] = None,
     data_dir: str = "../exp",
     env_name: Optional[str] = None,
-) -> dict[str, str | Path]:
+) -> EpochLoggerKwargs:
     """
     Sets up the output_dir for a logger and returns a dict for logger kwargs.
 
@@ -102,7 +108,7 @@ def setup_logger_kwargs(
     if seed is not None:
         relpath = relpath / f"{exp_name}_s{seed}"
 
-    return dict(output_dir=relpath, exp_name=exp_name)
+    return EpochLoggerKwargs(output_dir=relpath, exp_name=exp_name)
 
 
 class Logger:
@@ -242,7 +248,7 @@ class Logger:
         if hasattr(self, "pytorch_saver_elements"):
             self._pytorch_simple_save(itr)
 
-    def setup_pytorch_saver(self, what_to_save) -> None:
+    def setup_pytorch_saver(self, what_to_save: nn.Module) -> None:
         """
         Set up easy model saving for a single PyTorch model.
 

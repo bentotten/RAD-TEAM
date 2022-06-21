@@ -483,8 +483,8 @@ class RecurrentNet(nn.Module):
 class RNNModelActorCritic(nn.Module):
     def __init__(
         self,
-        observation_space: Tensor,
-        action_space: Tensor,
+        obs_dim: int,
+        act_dim: int,
         hidden: Shape = (32,),
         hidden_sizes_pol: Shape = (64,),
         hidden_sizes_val: Shape = (64, 64),
@@ -497,7 +497,6 @@ class RNNModelActorCritic(nn.Module):
     ):
         super().__init__()
         self.seed_gen: torch.Generator = torch.manual_seed(seed)
-        obs_dim: int = observation_space.shape[0]  # + pad_dim
         self.hidden: int = hidden[0]
         self.pi_hs: int = hidden_sizes_rec[0]
         self.val_hs: int = hidden_sizes_val[0]
@@ -506,7 +505,7 @@ class RNNModelActorCritic(nn.Module):
 
         self.pi = MLPCategoricalActor(
             self.pi_hs if hidden_sizes_pol[0][0] == 1 else obs_dim + pad_dim,
-            action_space.n,
+            act_dim,
             None if hidden_sizes_pol[0][0] == 1 else hidden_sizes,
             activation,
             net_type=net_type,

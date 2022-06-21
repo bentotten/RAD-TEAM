@@ -1,14 +1,27 @@
-from typing import Literal, Optional
+from dataclasses import dataclass
+from typing import Any, Callable, Optional, Type
+import gym
+from gym import spaces
+from gym_rad_search.envs.rad_search_env import RadSearch
 import numpy as np
 import numpy.typing as npt
 import torch
 from torch.optim import Adam
+import torch.nn as nn
 import torch.nn.functional as F
-import gym
 import time
 import core
-from gym.utils.seeding import _int_list_from_bigint, hash_seed
-from epoch_logger import EpochLogger, setup_logger_kwargs
+import visilibity as vis
+from epoch_logger import EpochLogger, EpochLoggerKwargs
+
+
+@dataclass
+class BpArgs:
+    bp_decay: float
+    l2_weight: float
+    l1_weight: float
+    elbo_weight: float
+    area_scale: float
 
 
 class PPOBuffer:
@@ -166,30 +179,7 @@ class PPOBuffer:
         return data
 
 
-def ppo(
-    env_fn,
-    actor_critic=core.RNNModelActorCritic,
-    ac_kwargs=dict(),
-    seed=0,
-    steps_per_epoch=4000,
-    epochs=50,
-    gamma=0.99,
-    alpha=0,
-    clip_ratio=0.2,
-    pi_lr=3e-4,
-    mp_mm=[5, 5],
-    vf_lr=5e-3,
-    train_pi_iters=40,
-    train_v_iters=15,
-    lam=0.9,
-    max_ep_len=120,
-    save_gif=False,
-    target_kl=0.07,
-    logger_kwargs=dict(),
-    save_freq=500,
-    render=False,
-    dims=None,
-):
+class PPO:
     """
     Proximal Policy Optimization (by clipping),
 
@@ -197,165 +187,331 @@ def ppo(
 
     Base code from OpenAI:
     https://github.com/openai/spinningup/blob/master/spinup/algos/pytorch/ppo/ppo.py
-
-    Args:
-        env_fn : A function which creates a copy of the environment.
-            The environment must satisfy the OpenAI Gym API.
-
-        actor_critic: The constructor method for a PyTorch Module with a
-            ``step`` method, an ``act`` method, a ``pi`` module, and a ``v``
-            module. The ``step`` method should accept a batch of observations
-            and return:
-
-            ===========  ================  ======================================
-            Symbol       Shape             Description
-            ===========  ================  ======================================
-            ``a``        (batch, act_dim)  | Numpy array of actions for each
-                                           | observation.
-            ``v``        (batch,)          | Numpy array of value estimates
-                                           | for the provided observations.
-            ``logp_a``   (batch,)          | Numpy array of log probs for the
-                                           | actions in ``a``.
-            ===========  ================  ======================================
-
-            The ``act`` method behaves the same as ``step`` but only returns ``a``.
-
-            The ``pi`` module's forward call should accept a batch of
-            observations and optionally a batch of actions, and return:
-
-            ===========  ================  ======================================
-            Symbol       Shape             Description
-            ===========  ================  ======================================
-            ``pi``       N/A               | Torch Distribution object, containing
-                                           | a batch of distributions describing
-                                           | the policy for the provided observations.
-            ``logp_a``   (batch,)          | Optional (only returned if batch of
-                                           | actions is given). Tensor containing
-                                           | the log probability, according to
-                                           | the policy, of the provided actions.
-                                           | If actions not given, will contain
-                                           | ``None``.
-            ===========  ================  ======================================
-
-            The ``v`` module's forward call should accept a batch of observations
-            and return:
-
-            ===========  ================  ======================================
-            Symbol       Shape             Description
-            ===========  ================  ======================================
-            ``v``        (batch,)          | Tensor containing the value estimates
-                                           | for the provided observations. (Critical:
-                                           | make sure to flatten this!)
-            ===========  ================  ======================================
-
-
-        ac_kwargs (dict): Any kwargs appropriate for the ActorCritic object
-            you provided to PPO.
-
-        seed (int): Seed for random number generators.
-
-        steps_per_epoch (int): Number of steps of interaction (state-action pairs)
-            for the agent and the environment in each epoch.
-
-        epochs (int): Number of epochs of interaction (equivalent to
-            number of policy updates) to perform.
-
-        gamma (float): Discount factor. (Always between 0 and 1.)
-
-        clip_ratio (float): Hyperparameter for clipping in the policy objective.
-            Roughly: how far can the new policy go from the old policy while
-            still profiting (improving the objective function)? The new policy
-            can still go farther than the clip_ratio says, but it doesn't help
-            on the objective anymore. (Usually small, 0.1 to 0.3.) Typically
-            denoted by :math:`\epsilon`.
-
-        pi_lr (float): Learning rate for policy optimizer.
-
-        vf_lr (float): Learning rate for value function optimizer.
-
-        train_pi_iters (int): Maximum number of gradient descent steps to take
-            on policy loss per epoch. (Early stopping may cause optimizer
-            to take fewer than this.)
-
-        train_v_iters (int): Number of gradient descent steps to take on
-            value function per epoch.
-
-        lam (float): Lambda for GAE-Lambda. (Always between 0 and 1,
-            close to 1.)
-
-        max_ep_len (int): Maximum length of trajectory / episode / rollout.
-
-        target_kl (float): Roughly what KL divergence we think is appropriate
-            between new and old policies after an update. This will get used
-            for early stopping. (Usually small, 0.01 or 0.05.)
-
-        logger_kwargs (dict): Keyword args for EpochLogger.
-
-        save_freq (int): How often (in terms of gap between epochs) to save
-            the current policy and value function.
-
     """
-    # Set up logger and save configuration
-    logger = EpochLogger(**logger_kwargs)
-    logger.save_config(locals())
 
-    # Set Pytorch random seed
-    torch.manual_seed(seed)
+    def __init__(
+        self,
+        env: RadSearch,
+        logger: EpochLogger,
+        actor_critic: Type[core.RNNModelActorCritic] = core.RNNModelActorCritic,
+        ac_kwargs: dict[str, Any] = dict(),
+        seed: int = 0,
+        steps_per_epoch: int = 4000,
+        epochs: int = 50,
+        gamma: float = 0.99,
+        alpha: float = 0,
+        clip_ratio: float = 0.2,
+        pi_lr: float = 3e-4,
+        mp_mm: tuple[int, int] = (5, 5),
+        vf_lr: float = 5e-3,
+        train_pi_iters: int = 40,
+        train_v_iters: int = 15,
+        lam: float = 0.9,
+        max_ep_len: int = 120,
+        save_gif: bool = False,
+        target_kl: float = 0.07,
+        save_freq: int = 500,
+        render: bool = False,
+    ) -> None:
+        """
+        Proximal Policy Optimization (by clipping),
 
-    # Instantiate environment
-    env = env_fn()
-    ac_kwargs["seed"] = seed
-    ac_kwargs["pad_dim"] = 2
+        with early stopping based on approximate KL
 
-    obs_dim = env.observation_space.shape[0]
-    act_dim = env.action_space.shape
+        Base code from OpenAI:
+        https://github.com/openai/spinningup/blob/master/spinup/algos/pytorch/ppo/ppo.py
 
-    # Instantiate A2C
-    ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
+        Args:
+            env : An environment satisfying the OpenAI Gym API.
 
-    # PFGRU args, from Ma et al. 2020
-    bp_args = {
-        "bp_decay": 0.1,
-        "l2_weight": 1.0,
-        "l1_weight": 0.0,
-        "elbo_weight": 1.0,
-        "area_scale": env.search_area[2][1],
-    }
+            actor_critic: The constructor method for a PyTorch Module with a
+                ``step`` method, an ``act`` method, a ``pi`` module, and a ``v``
+                module. The ``step`` method should accept a batch of observations
+                and return:
 
-    # Count variables
-    var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.model])
-    logger.log("\nNumber of parameters: \t pi: %d, model: %d \t" % var_counts)
+                ===========  ================  ======================================
+                Symbol       Shape             Description
+                ===========  ================  ======================================
+                ``a``        (batch, act_dim)  | Numpy array of actions for each
+                                            | observation.
+                ``v``        (batch,)          | Numpy array of value estimates
+                                            | for the provided observations.
+                ``logp_a``   (batch,)          | Numpy array of log probs for the
+                                            | actions in ``a``.
+                ===========  ================  ======================================
 
-    # Set up trajectory buffer
-    buf = PPOBuffer(
-        obs_dim, act_dim, steps_per_epoch, gamma, lam, ac_kwargs["hidden_sizes_rec"][0],
-    )
-    save_gif_freq = epochs // 3
+                The ``act`` method behaves the same as ``step`` but only returns ``a``.
 
-    def update_loc_rnn(data, env_sim, loss):
-        """Update for the simple regression GRU"""
-        ep_form = data["ep_form"]
-        model_loss_arr_buff = torch.zeros((len(ep_form), 1), dtype=torch.float32)
-        for jj in range(train_v_iters):
-            model_loss_arr_buff.zero_()
-            model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
-            for ii, ep in enumerate(ep_form):
-                hidden = ac.model.init_hidden(1)
-                src_tar = ep[0][:, 15:].clone()
-                src_tar[:, :2] = src_tar[:, :2] / env_sim.search_area[2][1]
-                obs_t = torch.as_tensor(ep[0][:, :3], dtype=torch.float32)
-                loc_pred, _ = ac.model(obs_t, hidden, batch=True)
-                model_loss_arr[ii] = loss(loc_pred.squeeze(), src_tar.squeeze())
+                The ``pi`` module's forward call should accept a batch of
+                observations and optionally a batch of actions, and return:
 
-            model_loss = model_loss_arr.mean()
-            model_optimizer.zero_grad()
-            model_loss.backward()
-            torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
-            model_optimizer.step()
+                ===========  ================  ======================================
+                Symbol       Shape             Description
+                ===========  ================  ======================================
+                ``pi``       N/A               | Torch Distribution object, containing
+                                            | a batch of distributions describing
+                                            | the policy for the provided observations.
+                ``logp_a``   (batch,)          | Optional (only returned if batch of
+                                            | actions is given). Tensor containing
+                                            | the log probability, according to
+                                            | the policy, of the provided actions.
+                                            | If actions not given, will contain
+                                            | ``None``.
+                ===========  ================  ======================================
 
-        return model_loss
+                The ``v`` module's forward call should accept a batch of observations
+                and return:
 
-    def update_a2c(data, env_sim, minibatch=None, iter=None):
+                ===========  ================  ======================================
+                Symbol       Shape             Description
+                ===========  ================  ======================================
+                ``v``        (batch,)          | Tensor containing the value estimates
+                                            | for the provided observations. (Critical:
+                                            | make sure to flatten this!)
+                ===========  ================  ======================================
+
+
+            ac_kwargs (dict): Any kwargs appropriate for the ActorCritic object
+                you provided to PPO.
+
+            seed (int): Seed for random number generators.
+
+            steps_per_epoch (int): Number of steps of interaction (state-action pairs)
+                for the agent and the environment in each epoch.
+
+            epochs (int): Number of epochs of interaction (equivalent to
+                number of policy updates) to perform.
+
+            gamma (float): Discount factor. (Always between 0 and 1.)
+
+            clip_ratio (float): Hyperparameter for clipping in the policy objective.
+                Roughly: how far can the new policy go from the old policy while
+                still profiting (improving the objective function)? The new policy
+                can still go farther than the clip_ratio says, but it doesn't help
+                on the objective anymore. (Usually small, 0.1 to 0.3.) Typically
+                denoted by :math:`\epsilon`.
+
+            pi_lr (float): Learning rate for policy optimizer.
+
+            vf_lr (float): Learning rate for value function optimizer.
+
+            train_pi_iters (int): Maximum number of gradient descent steps to take
+                on policy loss per epoch. (Early stopping may cause optimizer
+                to take fewer than this.)
+
+            train_v_iters (int): Number of gradient descent steps to take on
+                value function per epoch.
+
+            lam (float): Lambda for GAE-Lambda. (Always between 0 and 1,
+                close to 1.)
+
+            max_ep_len (int): Maximum length of trajectory / episode / rollout.
+
+            target_kl (float): Roughly what KL divergence we think is appropriate
+                between new and old policies after an update. This will get used
+                for early stopping. (Usually small, 0.01 or 0.05.)
+
+            logger_kwargs (dict): Keyword args for EpochLogger.
+
+            save_freq (int): How often (in terms of gap between epochs) to save
+                the current policy and value function.
+
+        """
+        # Set Pytorch random seed
+        torch.manual_seed(seed)
+
+        # Instantiate environment
+        ac_kwargs["seed"] = seed
+        ac_kwargs["pad_dim"] = 2
+
+        obs_dim: int = env.observation_space.shape[0]
+        act_dim: int = env.a_size
+
+        # Instantiate A2C
+        self.ac = actor_critic(obs_dim, act_dim, **ac_kwargs)
+
+        # PFGRU args, from Ma et al. 2020
+        bp_args = BpArgs(
+            bp_decay=0.1,
+            l2_weight=1.0,
+            l1_weight=0.0,
+            elbo_weight=1.0,
+            area_scale=env.search_area[2][
+                1
+            ],  # retrieves the height of the created environment
+        )
+
+        # Count variables
+        pi_var_count, model_var_count = (
+            core.count_vars(module) for module in [self.ac.pi, self.ac.model]
+        )
+        self.logger = logger
+        self.logger.log(
+            f"\nNumber of parameters: \t pi: {pi_var_count}, model: {model_var_count} \t"
+        )
+
+        # Set up trajectory buffer
+        self.buf = PPOBuffer(
+            obs_dim,
+            act_dim,
+            steps_per_epoch,
+            gamma,
+            lam,
+            ac_kwargs["hidden_sizes_rec"][0],
+        )
+        save_gif_freq = epochs // 3
+
+        # Set up optimizers and learning rate decay for policy and localization module
+        self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=pi_lr)
+        self.train_pi_iters = train_pi_iters
+        self.model_optimizer = Adam(self.ac.model.parameters(), lr=vf_lr)
+        self.pi_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.pi_optimizer, step_size=100, gamma=0.99
+        )
+        self.train_v_iters = train_v_iters
+        self.model_scheduler = torch.optim.lr_scheduler.StepLR(
+            self.model_optimizer, step_size=100, gamma=0.99
+        )
+        self.loss = torch.nn.MSELoss(reduction="mean")
+        self.clip_ratio = clip_ratio
+        self.alpha = alpha
+        self.target_kl = target_kl
+
+        # Set up model saving
+        self.logger.setup_pytorch_saver(self.ac)
+
+        # Prepare for interaction with environment
+        start_time = time.time()
+        o, ep_ret, ep_len, done_count, a = env.reset(), 0, 0, 0, -1
+        stat_buff = core.StatBuff()
+        stat_buff.update(o[0])
+        ep_ret_ls = []
+        oob = 0
+        reduce_v_iters = True
+        self.ac.model.eval()
+        # Main loop: collect experience in env and update/log each epoch
+        print(f"Starting main training loop!", flush=True)
+        for epoch in range(epochs):
+            # Reset hidden state
+            hidden = self.ac.reset_hidden()
+            self.ac.pi.logits_net.v_net.eval()
+            for t in range(steps_per_epoch):
+                # Standardize input using running statistics per episode
+                obs_std = o
+                obs_std[0] = np.clip((o[0] - stat_buff.mu) / stat_buff.sig_obs, -8, 8)
+                # compute action and logp (Actor), compute value (Critic)
+                a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden)
+                next_o, r, d, _ = env.step(a)
+                ep_ret += r
+                ep_len += 1
+                ep_ret_ls.append(ep_ret)
+
+                self.buf.store(obs_std, a, r, v, logp, env.src_coords)
+                logger.store(VVals=v)
+
+                # Update obs (critical!)
+                o = next_o
+
+                # Update running mean and std
+                stat_buff.update(o[0])
+
+                timeout = ep_len == max_ep_len
+                terminal = d or timeout
+                epoch_ended = t == steps_per_epoch - 1
+
+                if terminal or epoch_ended:
+                    if d and not timeout:
+                        done_count += 1
+                    if env.oob:
+                        # Log if agent went out of bounds
+                        oob += 1
+                    if epoch_ended and not (terminal):
+                        print(
+                            f"Warning: trajectory cut off by epoch at {ep_len} steps and time {t}.",
+                            flush=True,
+                        )
+
+                    if timeout or epoch_ended:
+                        # if trajectory didn't reach terminal state, bootstrap value target
+                        obs_std[0] = np.clip(
+                            (o[0] - stat_buff.mu) / stat_buff.sig_obs, -8, 8
+                        )
+                        _, v, _, _, _ = self.ac.step(obs_std, hidden=hidden)
+                        if epoch_ended:
+                            # Set flag to sample new environment parameters
+                            env.epoch_end = True
+                    else:
+                        v = 0
+                    self.buf.finish_path(v)
+                    if terminal:
+                        # only save EpRet / EpLen if trajectory finished
+                        logger.store(EpRet=ep_ret, EpLen=ep_len)
+
+                    if (
+                        epoch_ended
+                        and render
+                        and (epoch % save_gif_freq == 0 or ((epoch + 1) == epochs))
+                    ):
+                        # Check agent progress during training
+                        if epoch != 0:
+                            env.render(
+                                save_gif=save_gif,
+                                path=logger.output_dir,
+                                epoch_count=epoch,
+                                ep_rew=ep_ret_ls,
+                            )
+
+                    ep_ret_ls = []
+                    stat_buff.reset()
+                    if not env.epoch_end:
+                        # Reset detector position and episode tracking
+                        hidden = self.ac.reset_hidden()
+                        o, ep_ret, ep_len, a = env.reset(), 0, 0, -1
+                    else:
+                        # Sample new environment parameters, log epoch results
+                        oob += env.oob_count
+                        logger.store(DoneCount=done_count, OutOfBound=oob)
+                        done_count = 0
+                        oob = 0
+                        o, ep_ret, ep_len, a = env.reset(), 0, 0, -1
+
+                    stat_buff.update(o[0])
+
+            # Save model
+            if (epoch % save_freq == 0) or (epoch == epochs - 1):
+                logger.save_state(None, None)
+                pass
+
+            # Reduce localization module training iterations after 100 epochs to speed up training
+            if reduce_v_iters and epoch > 99:
+                self.train_v_iters = 5
+                reduce_v_iters = False
+
+            # Perform PPO update!
+            self.update(env, bp_args)
+
+            # Log info about epoch
+            self.logger.log_tabular("Epoch", epoch)
+            self.logger.log_tabular("EpRet", with_min_and_max=True)
+            self.logger.log_tabular("EpLen", average_only=True)
+            self.logger.log_tabular("VVals", with_min_and_max=True)
+            self.logger.log_tabular("TotalEnvInteracts", (epoch + 1) * steps_per_epoch)
+            self.logger.log_tabular("LossPi", average_only=True)
+            self.logger.log_tabular("LossV", average_only=True)
+            self.logger.log_tabular("LossModel", average_only=True)
+            self.logger.log_tabular("LocLoss", average_only=True)
+            self.logger.log_tabular("Entropy", average_only=True)
+            self.logger.log_tabular("KL", average_only=True)
+            self.logger.log_tabular("ClipFrac", average_only=True)
+            self.logger.log_tabular("DoneCount", sum_only=True)
+            self.logger.log_tabular("OutOfBound", average_only=True)
+            self.logger.log_tabular("StopIter", average_only=True)
+            self.logger.log_tabular("Time", time.time() - start_time)
+            self.logger.dump_tabular()
+
+    def update_a2c(
+        self, data: dict[str, torch.Tensor], env: RadSearch, minibatch: int, iter: int
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor], bool, torch.Tensor]:
         observation_idx = 11
         action_idx = 14
         logp_old_idx = 13
@@ -377,7 +533,7 @@ def ppo(
         for ep in ep_form:
             # For each set of episodes per process from an epoch, compute loss
             trajectories = ep[0]
-            hidden = ac.reset_hidden()
+            hidden = self.ac.reset_hidden()
             obs, act, logp_old, adv, ret, src_tar = (
                 trajectories[:, :observation_idx],
                 trajectories[:, action_idx],
@@ -387,12 +543,14 @@ def ppo(
                 trajectories[:, source_loc_idx:].clone(),
             )
             # Calculate new log prob.
-            pi, val, logp, loc = ac.grad_step(obs, act, hidden=hidden)
-            logp_diff = logp_old - logp
+            pi, val, logp, loc = self.ac.grad_step(obs, act, hidden=hidden)
+            logp_diff: torch.Tensor = logp_old - logp
             ratio = torch.exp(logp - logp_old)
 
-            clip_adv = torch.clamp(ratio, 1 - clip_ratio, 1 + clip_ratio) * adv
-            clipped = ratio.gt(1 + clip_ratio) | ratio.lt(1 - clip_ratio)
+            clip_adv = (
+                torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * adv
+            )
+            clipped = ratio.gt(1 + self.clip_ratio) | ratio.lt(1 - self.clip_ratio)
 
             # Useful extra info
             clipfrac = (
@@ -400,11 +558,13 @@ def ppo(
             )
             approx_kl = logp_diff.detach().mean().item()
             ent = pi.entropy().detach().mean().item()
-            val_loss = loss(val, ret)
+            val_loss = self.loss(val, ret)
 
             # TODO: More descriptive name
             new_loss: torch.Tensor = -(
-                torch.min(ratio * adv, clip_adv).mean() - 0.01 * val_loss + alpha * ent
+                torch.min(ratio * adv, clip_adv).mean()
+                - 0.01 * val_loss
+                + self.alpha * ent
             )
             loss_arr = torch.hstack((loss_arr, new_loss.unsqueeze(0)))
 
@@ -422,15 +582,16 @@ def ppo(
             means[2].detach(),
             means[3].detach(),
         )
-        pi_info["kl"].append(approx_kl), pi_info["ent"].append(ent), pi_info[
-            "cf"
-        ].append(clipfrac), pi_info["val_loss"].append(loss_val)
+        pi_info["kl"].append(approx_kl)
+        pi_info["ent"].append(ent)
+        pi_info["cf"].append(clipfrac)
+        pi_info["val_loss"].append(loss_val)
 
         kl = pi_info["kl"][-1].mean()
-        if kl.item() < 1.5 * target_kl:
-            pi_optimizer.zero_grad()
+        if kl.item() < 1.5 * self.target_kl:
+            self.pi_optimizer.zero_grad()
             loss_pi.backward()
-            pi_optimizer.step()
+            self.pi_optimizer.step()
             term = False
         else:
             term = True
@@ -446,35 +607,105 @@ def ppo(
             loss_sum_new,
             pi_info,
             term,
-            (env_sim.search_area[2][1] * loc - (src_tar)).square().mean().sqrt(),
+            (env.search_area[2][1] * loc - (src_tar)).square().mean().sqrt(),
         )
 
-    def update_model(data, args, loss=None):
+    def update(self, env: RadSearch, args: BpArgs) -> None:
+        """Update for the localization and A2C modules"""
+        data: dict[str, torch.Tensor] = self.buf.get(logger=self.logger)
+
+        # Update function if using the PFGRU, fcn. performs multiple updates per call
+        self.ac.model.train()
+        loss_mod = self.update_model(data, args)
+
+        # Update function if using the regression GRU
+        # loss_mod = update_loc_rnn(data,env,loss)
+
+        self.ac.model.eval()
+        min_iters = len(data["ep_form"])
+        kk = 0
+        term = False
+
+        # Train policy with multiple steps of gradient descent (mini batch)
+        while not term and kk < self.train_pi_iters:
+            # Early stop training if KL-div above certain threshold
+            pi_l, pi_info, term, loc_loss = self.update_a2c(data, env, min_iters, kk)
+            kk += 1
+
+        # Reduce learning rate
+        self.pi_scheduler.step()
+        self.model_scheduler.step()
+
+        self.logger.store(StopIter=kk)
+
+        # Log changes from update
+        kl, ent, cf, loss_v = (
+            pi_info["kl"],
+            pi_info["ent"],
+            pi_info["cf"],
+            pi_info["val_loss"],
+        )
+
+        self.logger.store(
+            LossPi=pi_l.item(),
+            LossV=loss_v.item(),
+            LossModel=loss_mod.item(),
+            KL=kl,
+            Entropy=ent,
+            ClipFrac=cf,
+            LocLoss=loc_loss,
+            VarExplain=0,
+        )
+
+    #  def update_loc_rnn(self, data, env: RadSearch, loss):
+    #     """Update for the simple regression GRU"""
+    #     ep_form = data["ep_form"]
+    #     model_loss_arr_buff = torch.zeros((len(ep_form), 1), dtype=torch.float32)
+    #     for jj in range(train_v_iters):
+    #         model_loss_arr_buff.zero_()
+    #         model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
+    #         for ii, ep in enumerate(ep_form):
+    #             hidden = ac.model.init_hidden(1)
+    #             src_tar = ep[0][:, 15:].clone()
+    #             src_tar[:, :2] = src_tar[:, :2] / env.search_area[2][1]
+    #             obs_t = torch.as_tensor(ep[0][:, :3], dtype=torch.float32)
+    #             loc_pred, _ = ac.model(obs_t, hidden, batch=True)
+    #             model_loss_arr[ii] = loss(loc_pred.squeeze(), src_tar.squeeze())
+
+    #         model_loss = model_loss_arr.mean()
+    #         model_optimizer.zero_grad()
+    #         model_loss.backward()
+    #         torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
+    #         model_optimizer.step()
+
+    #     return model_loss
+
+    def update_model(self, data: dict[str, torch.Tensor], args: BpArgs) -> torch.Tensor:
         # Update the PFGRU, see Ma et al. 2020 for more details
         ep_form = data["ep_form"]
         source_loc_idx = 15
         o_idx = 3
 
-        for _ in range(train_v_iters):
+        for _ in range(self.train_v_iters):
             model_loss_arr: torch.Tensor = torch.autograd.Variable(
                 torch.tensor([], dtype=torch.float32)
             )
             for ep in ep_form:
                 sl = len(ep[0])
-                hidden = ac.reset_hidden()[0]
-                src_tar = ep[0][:, source_loc_idx:].clone()
-                src_tar[:, :2] = src_tar[:, :2] / args["area_scale"]
+                hidden = self.ac.reset_hidden()[0]
+                src_tar: npt.NDArray[np.float32] = ep[0][:, source_loc_idx:].clone()
+                src_tar[:, :2] = src_tar[:, :2] / args.area_scale
                 obs_t = torch.as_tensor(ep[0][:, :o_idx], dtype=torch.float32)
                 loc_pred = torch.empty_like(src_tar)
                 particle_pred = torch.empty(
-                    (sl, ac.model.num_particles, src_tar.shape[1])
+                    (sl, self.ac.model.num_particles, src_tar.shape[1])
                 )
 
-                bpdecay_params = np.exp(args["bp_decay"] * np.arange(sl))
+                bpdecay_params = np.exp(args.bp_decay * np.arange(sl))
                 bpdecay_params = bpdecay_params / np.sum(bpdecay_params)
                 for zz, meas in enumerate(obs_t):
-                    loc, hidden = ac.model(meas, hidden)
-                    particle_pred[zz] = ac.model.hid_obs(hidden[0])
+                    loc, hidden = self.ac.model(meas, hidden)
+                    particle_pred[zz] = self.ac.model.hid_obs(hidden[0])
                     loc_pred[zz, :] = loc
 
                 bpdecay_params = torch.FloatTensor(bpdecay_params)
@@ -491,12 +722,12 @@ def ppo(
                 l2_loss = torch.sum(l2_pred_loss)
                 l1_loss = 10 * torch.mean(l1_pred_loss)
 
-                pred_loss = args["l2_weight"] * l2_loss + args["l1_weight"] * l1_loss
+                pred_loss = args.l2_weight * l2_loss + args.l1_weight * l1_loss
 
                 total_loss = pred_loss
                 particle_pred = particle_pred.transpose(0, 1).contiguous()
 
-                particle_gt = src_tar.repeat(ac.model.num_particles, 1, 1)
+                particle_gt = src_tar.repeat(self.ac.model.num_particles, 1, 1)
                 l2_particle_loss = (
                     F.mse_loss(particle_pred, particle_gt, reduction="none")
                     * bpdecay_params
@@ -509,12 +740,12 @@ def ppo(
                 # p(y_t| \tau_{1:t}, x_{1:t}, \theta) is assumed to be a Gaussian with variance = 1.
                 # other more complicated distributions could be used to improve the performance
                 y_prob_l2 = torch.exp(-l2_particle_loss).view(
-                    ac.model.num_particles, -1, sl, 2
+                    self.ac.model.num_particles, -1, sl, 2
                 )
                 l2_particle_loss = -y_prob_l2.mean(dim=0).log()
 
                 y_prob_l1 = torch.exp(-l1_particle_loss).view(
-                    ac.model.num_particles, -1, sl, 2
+                    self.ac.model.num_particles, -1, sl, 2
                 )
                 l1_particle_loss = -y_prob_l1.mean(dim=0).log()
 
@@ -525,363 +756,18 @@ def ppo(
                 l1_particle_loss = 10 * xy_l1_particle_loss
 
                 belief_loss: torch.Tensor = (
-                    args["l2_weight"] * l2_particle_loss
-                    + args["l1_weight"] * l1_particle_loss
+                    args.l2_weight * l2_particle_loss
+                    + args.l1_weight * l1_particle_loss
                 )
-                total_loss: torch.Tensor = (
-                    total_loss + args["elbo_weight"] * belief_loss
-                )
+                total_loss: torch.Tensor = total_loss + args.elbo_weight * belief_loss
 
                 model_loss_arr = torch.hstack((model_loss_arr, total_loss.unsqueeze(0)))
 
-            model_loss = model_loss_arr.mean()
-            model_optimizer.zero_grad()
+            model_loss: torch.Tensor = model_loss_arr.mean()
+            self.model_optimizer.zero_grad()
             model_loss.backward()
-            torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
+            torch.nn.utils.clip_grad_norm_(self.ac.model.parameters(), 5)
 
-            model_optimizer.step()
+            self.model_optimizer.step()
 
         return model_loss
-
-    # Set up optimizers and learning rate decay for policy and localization module
-    pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
-    model_optimizer = Adam(ac.model.parameters(), lr=vf_lr)
-    pi_scheduler = torch.optim.lr_scheduler.StepLR(
-        pi_optimizer, step_size=100, gamma=0.99
-    )
-    model_scheduler = torch.optim.lr_scheduler.StepLR(
-        model_optimizer, step_size=100, gamma=0.99
-    )
-    loss = torch.nn.MSELoss(reduction="mean")
-
-    # Set up model saving
-    logger.setup_pytorch_saver(ac)
-
-    def update(env, args, loss_fcn=loss):
-        """Update for the localization and A2C modules"""
-        data = buf.get(logger=logger)
-
-        # Update function if using the PFGRU, fcn. performs multiple updates per call
-        ac.model.train()
-        loss_mod = update_model(data, args, loss=loss_fcn)
-
-        # Update function if using the regression GRU
-        # loss_mod = update_loc_rnn(data,env,loss)
-
-        ac.model.eval()
-        min_iters = len(data["ep_form"])
-        kk = 0
-        term = False
-
-        # Train policy with multiple steps of gradient descent (mini batch)
-        while not term and kk < train_pi_iters:
-            # Early stop training if KL-div above certain threshold
-            pi_l, pi_info, term, loc_loss = update_a2c(
-                data, env, minibatch=min_iters, iter=kk
-            )
-            kk += 1
-
-        # Reduce learning rate
-        pi_scheduler.step()
-        model_scheduler.step()
-
-        logger.store(StopIter=kk)
-
-        # Log changes from update
-        kl, ent, cf, loss_v = (
-            pi_info["kl"],
-            pi_info["ent"],
-            pi_info["cf"],
-            pi_info["val_loss"],
-        )
-
-        logger.store(
-            LossPi=pi_l.item(),
-            LossV=loss_v.item(),
-            LossModel=loss_mod.item(),
-            KL=kl,
-            Entropy=ent,
-            ClipFrac=cf,
-            LocLoss=loc_loss,
-            VarExplain=0,
-        )
-
-    # Prepare for interaction with environment
-    start_time = time.time()
-    o, ep_ret, ep_len, done_count, a = env.reset(), 0, 0, 0, -1
-    stat_buff = core.StatBuff()
-    stat_buff.update(o[0])
-    ep_ret_ls = []
-    oob = 0
-    reduce_v_iters = True
-    ac.model.eval()
-    # Main loop: collect experience in env and update/log each epoch
-    print(f"Starting main training loop!", flush=True)
-    for epoch in range(epochs):
-        # Reset hidden state
-        hidden = ac.reset_hidden()
-        ac.pi.logits_net.v_net.eval()
-        for t in range(steps_per_epoch):
-            # Standardize input using running statistics per episode
-            obs_std = o
-            obs_std[0] = np.clip((o[0] - stat_buff.mu) / stat_buff.sig_obs, -8, 8)
-            # compute action and logp (Actor), compute value (Critic)
-            a, v, logp, hidden, out_pred = ac.step(obs_std, hidden=hidden)
-            next_o, r, d, _ = env.step(a)
-            ep_ret += r
-            ep_len += 1
-            ep_ret_ls.append(ep_ret)
-
-            buf.store(obs_std, a, r, v, logp, env.src_coords)
-            logger.store(VVals=v)
-
-            # Update obs (critical!)
-            o = next_o
-
-            # Update running mean and std
-            stat_buff.update(o[0])
-
-            timeout = ep_len == max_ep_len
-            terminal = d or timeout
-            epoch_ended = t == steps_per_epoch - 1
-
-            if terminal or epoch_ended:
-                if d and not timeout:
-                    done_count += 1
-                if env.oob:
-                    # Log if agent went out of bounds
-                    oob += 1
-                if epoch_ended and not (terminal):
-                    print(
-                        f"Warning: trajectory cut off by epoch at {ep_len} steps and time {t}.",
-                        flush=True,
-                    )
-
-                if timeout or epoch_ended:
-                    # if trajectory didn't reach terminal state, bootstrap value target
-                    obs_std[0] = np.clip(
-                        (o[0] - stat_buff.mu) / stat_buff.sig_obs, -8, 8
-                    )
-                    _, v, _, _, _ = ac.step(obs_std, hidden=hidden)
-                    if epoch_ended:
-                        # Set flag to sample new environment parameters
-                        env.epoch_end = True
-                else:
-                    v = 0
-                buf.finish_path(v)
-                if terminal:
-                    # only save EpRet / EpLen if trajectory finished
-                    logger.store(EpRet=ep_ret, EpLen=ep_len)
-
-                if (
-                    epoch_ended
-                    and render
-                    and (epoch % save_gif_freq == 0 or ((epoch + 1) == epochs))
-                ):
-                    # Check agent progress during training
-                    if epoch != 0:
-                        env.render(
-                            save_gif=save_gif,
-                            path=logger.output_dir,
-                            epoch_count=epoch,
-                            ep_rew=ep_ret_ls,
-                        )
-
-                ep_ret_ls = []
-                stat_buff.reset()
-                if not env.epoch_end:
-                    # Reset detector position and episode tracking
-                    hidden = ac.reset_hidden()
-                    o, ep_ret, ep_len, a = env.reset(), 0, 0, -1
-                else:
-                    # Sample new environment parameters, log epoch results
-                    oob += env.oob_count
-                    logger.store(DoneCount=done_count, OutOfBound=oob)
-                    done_count = 0
-                    oob = 0
-                    o, ep_ret, ep_len, a = env.reset(), 0, 0, -1
-
-                stat_buff.update(o[0])
-
-        # Save model
-        if (epoch % save_freq == 0) or (epoch == epochs - 1):
-            logger.save_state(None, None)
-            pass
-
-        # Reduce localization module training iterations after 100 epochs to speed up training
-        if reduce_v_iters and epoch > 99:
-            train_v_iters = 5
-            reduce_v_iters = False
-
-        # Perform PPO update!
-        update(env, bp_args, loss_fcn=loss)
-
-        # Log info about epoch
-        logger.log_tabular("Epoch", epoch)
-        logger.log_tabular("EpRet", with_min_and_max=True)
-        logger.log_tabular("EpLen", average_only=True)
-        logger.log_tabular("VVals", with_min_and_max=True)
-        logger.log_tabular("TotalEnvInteracts", (epoch + 1) * steps_per_epoch)
-        logger.log_tabular("LossPi", average_only=True)
-        logger.log_tabular("LossV", average_only=True)
-        logger.log_tabular("LossModel", average_only=True)
-        logger.log_tabular("LocLoss", average_only=True)
-        logger.log_tabular("Entropy", average_only=True)
-        logger.log_tabular("KL", average_only=True)
-        logger.log_tabular("ClipFrac", average_only=True)
-        logger.log_tabular("DoneCount", sum_only=True)
-        logger.log_tabular("OutOfBound", average_only=True)
-        logger.log_tabular("StopIter", average_only=True)
-        logger.log_tabular("Time", time.time() - start_time)
-        logger.dump_tabular()
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--env", type=str, default="gym_rad_search:RadSearch-v0")
-    parser.add_argument(
-        "--hid_gru", type=int, default=24, help="A2C GRU hidden state size"
-    )
-    parser.add_argument(
-        "--hid_pol", type=int, default=32, help="Actor linear layer size"
-    )
-    parser.add_argument(
-        "--hid_val", type=int, default=32, help="Critic linear layer size"
-    )
-    parser.add_argument(
-        "--hid_rec", type=int, default=24, help="PFGRU hidden state size"
-    )
-    parser.add_argument(
-        "--l_pol", type=int, default=1, help="Number of layers for Actor MLP"
-    )
-    parser.add_argument(
-        "--l_val", type=int, default=1, help="Number of layers for Critic MLP"
-    )
-    parser.add_argument(
-        "--gamma",
-        type=float,
-        default=0.99,
-        help="Reward attribution for advantage estimator",
-    )
-    parser.add_argument("--seed", "-s", type=int, default=2, help="Random seed control")
-    parser.add_argument(
-        "--cpu",
-        type=int,
-        default=1,
-        help="Number of cores/environments to train the agent with",
-    )
-    parser.add_argument(
-        "--steps_per_epoch",
-        type=int,
-        default=480,
-        help="Number of timesteps per epoch per cpu. Default is equal to 4 episodes per cpu per epoch.",
-    )
-    parser.add_argument(
-        "--epochs", type=int, default=3000, help="Number of epochs to train the agent"
-    )
-    parser.add_argument(
-        "--exp_name",
-        type=str,
-        default="alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh",
-        help="Name of experiment for saving",
-    )
-    parser.add_argument(
-        "--dims",
-        type=float,
-        nargs=2,
-        default=[2700.0, 2700.0],
-        metavar=("dim_length", "dim_height"),
-        help="Dimensions of radiation source search area in cm, decreased by area_obs param. to ensure visilibity graph setup is valid. Length by height.",
-    )
-    parser.add_argument(
-        "--area_obs",
-        type=float,
-        nargs=2,
-        default=[200.0, 500.0],
-        metavar=("area_obs_min", "area_obs_max"),
-        help="Interval for each obstruction area in cm",
-    )
-    parser.add_argument(
-        "--obstruct",
-        type=Literal[-1, 0, 1],
-        default=-1,
-        help="Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions",
-    )
-    parser.add_argument(
-        "--net_type",
-        type=str,
-        default="rnn",
-        help="Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp",
-    )
-    parser.add_argument(
-        "--alpha", type=float, default=0.1, help="Entropy reward term scaling"
-    )
-    args = parser.parse_args()
-
-    # Change mini-batch size, only been tested with size of 1
-    batch_s: int = 1
-
-    # Save directory and experiment name
-    env_name: str = "bpf"
-    exp_name: str = (
-        "loc"
-        + str(args.hid_rec)
-        + "_hid"
-        + str(args.hid_gru)
-        + "_pol"
-        + str(args.hid_pol)
-        + "_val"
-        + str(args.hid_val)
-        + "_"
-        + args.exp_name
-        + f"_ep{args.epochs}"
-        + f"_steps{args.steps_per_epoch}"
-    )
-
-    # Generate a large random seed and random generator object for reproducibility
-    robust_seed = _int_list_from_bigint(hash_seed(args.seed))[0]
-    rng = np.random.default_rng(robust_seed)
-
-    dim_length, dim_height = args.dims
-    area_obs_min, area_obs_max = args.area_obs
-    init_dims = {
-        "bbox": [
-            [0.0, 0.0],
-            [dim_length, 0.0],
-            [dim_length, dim_height],
-            [0.0, dim_height],
-        ],
-        "area_obs": [area_obs_min, area_obs_max],
-        "obstruct": args.obstruct,
-        "seed": rng,
-    }
-    max_ep_step = 120
-
-    logger_kwargs: dict[str, str] = setup_logger_kwargs(
-        exp_name, args.seed, data_dir="../../models/train", env_name=env_name
-    )
-
-    # Run ppo training function
-    ppo(
-        lambda: gym.make(args.env, **init_dims),
-        actor_critic=core.RNNModelActorCritic,
-        ac_kwargs=dict(
-            hidden_sizes_pol=[[args.hid_pol]] * args.l_pol,
-            hidden_sizes_val=[[args.hid_val]] * args.l_val,
-            hidden_sizes_rec=[args.hid_rec],
-            hidden=[[args.hid_gru]],
-            net_type=args.net_type,
-            batch_s=batch_s,
-        ),
-        gamma=args.gamma,
-        alpha=args.alpha,
-        seed=robust_seed,
-        steps_per_epoch=args.steps_per_epoch,
-        epochs=args.epochs,
-        dims=init_dims,
-        logger_kwargs=logger_kwargs,
-        render=False,
-        save_gif=False,
-    )
