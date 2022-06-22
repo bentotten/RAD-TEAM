@@ -5,13 +5,12 @@ from typing import Literal
 import numpy as np
 import numpy.random as npr
 
-import gym  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
 import core
 from epoch_logger import setup_logger_kwargs, EpochLogger
 import ppo
-from gym_rad_search.envs import RadSearch, RadSearchKwargs  # type: ignore
+from gym_rad_search.envs import RadSearch  # type: ignore
 
 
 @dataclass
@@ -160,15 +159,6 @@ if __name__ == "__main__":
     rng = npr.default_rng(robust_seed)
 
     dim_length, dim_height = args.dims
-    init_dims = RadSearchKwargs(
-        bbox=np.array(  # type: ignore
-            [[0.0, 0.0], [dim_length, 0.0], [dim_length, dim_height], [0.0, dim_height]]
-        ),
-        area_obs=np.array(args.area_obs),  # type: ignore
-        obstruct=args.obstruct,
-        seed=rng,
-    )
-
     logger_kwargs = setup_logger_kwargs(
         exp_name, args.seed, data_dir="../../models/train", env_name=env_name
     )
@@ -176,7 +166,14 @@ if __name__ == "__main__":
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
 
-    env: RadSearch = gym.make("gym_rad_search:RadSearch-v0", **init_dims)  # type: ignore
+    env: RadSearch = RadSearch(
+        bbox=np.array(  # type: ignore
+            [[0.0, 0.0], [dim_length, 0.0], [dim_length, dim_height], [0.0, dim_height]]
+        ),
+        area_obs=np.array(args.area_obs),  # type: ignore
+        obstruct=args.obstruct,
+        np_random=rng,
+    )
 
     # Run ppo training function
     ppo = ppo.PPO(

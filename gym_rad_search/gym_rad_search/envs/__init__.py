@@ -1,1 +1,1 @@
-from gym_rad_search.envs.rad_search_env import RadSearch, RadSearchKwargs
+from gym_rad_search.envs.rad_search_env import RadSearch

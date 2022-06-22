@@ -1,4 +1,4 @@
-import operator
+from dataclasses import dataclass, field
 import os
 import math
 
@@ -15,9 +15,9 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.ticker import FormatStrFormatter
 from matplotlib.animation import PillowWriter
-from matplotlib.patches import Polygon
+from matplotlib.patches import Polygon as PolygonPatches
 
-from typing import Any, Literal, Optional, TypedDict, cast, get_args
+from typing import Any, Literal, NewType, Optional, TypedDict, cast, get_args
 from typing_extensions import TypeAlias
 
 FPS = 50
@@ -29,14 +29,73 @@ DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold
 
 EPSILON = 0.0000001
 
+Point: TypeAlias = NewType("Point", tuple[float, float])
+Polygon: TypeAlias = NewType("Polygon", list[Point])
+Interval: TypeAlias = NewType("Interval", tuple[float, float])
+BBox: TypeAlias = NewType("BBox", tuple[Point, Point, Point, Point])
 
-class RadSearchKwargs(TypedDict):
-    # A 2x2 ndarray
-    bbox: npt.NDArray[np.float64]
-    # A 2-tuple ndarray
-    area_obs: npt.NDArray[np.float64]
-    obstruct: Literal[-1, 0, 1]
-    seed: npr.Generator
+
+def sum_p(p1: Point, p2: Point) -> Point:
+    """
+    Return the sum of the two points.
+    """
+    return Point((p1[0] + p2[0], p1[1] + p2[1]))
+
+
+def sub_p(p1: Point, p2: Point) -> Point:
+    """
+    Return the difference of the two points.
+    """
+    return Point((p1[0] - p2[0], p1[1] - p2[1]))
+
+
+def scale_p(p: Point, s: float) -> Point:
+    """
+    Return the scaled point p by the scalar s.
+    """
+    return Point((p[0] * s, p[1] * s))
+
+
+def dist_sq_p(p1: Point, p2: Point) -> float:
+    """
+    Return the squared distance between the two points.
+    """
+    return (p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2
+
+
+def dist_p(p1: Point, p2: Point) -> float:
+    """
+    Return the distance between the two points.
+    """
+    return math.sqrt(dist_sq_p(p1, p2))
+
+
+def from_vis_p(p: vis.Point) -> Point:
+    """
+    Return a Point from a visilibity Point.
+    """
+    return Point((p.x(), p.y()))  # type: ignore
+
+
+def to_vis_p(p: Point) -> vis.Point:
+    """
+    Return a visilibity Point from a Point.
+    """
+    return vis.Point(p[0], p[1])
+
+
+def from_vis_poly(poly: vis.Polygon) -> Polygon:
+    """
+    Return a Polygon from a visilibity Polygon.
+    """
+    return Polygon(list(map(from_vis_p, poly)))
+
+
+def to_vis_poly(poly: Polygon) -> vis.Polygon:
+    """
+    Return a visilibity Polygon from a Polygon.
+    """
+    return vis.Polygon(list(map(to_vis_p, poly)))
 
 
 Metadata: TypeAlias = TypedDict(
@@ -53,6 +112,7 @@ Metadata: TypeAlias = TypedDict(
 # 6: down
 # 7: down and left
 Action: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7]
+A_SIZE = len(get_args(Action))
 
 
 # 0: (-1)*DET_STEP     *x, ( 0)*DET_STEP     *y
@@ -83,67 +143,60 @@ def get_x_step_coeff(action: Action) -> int:
     return get_y_step_coeff((action + 6) % 8)
 
 
+def get_step(action: Action) -> Point:
+    """
+    Return the step for the given action.
+    """
+    return scale_p(
+        Point((get_x_step_coeff(action), get_y_step_coeff(action))),
+        get_step_size(action),
+    )
+
+
+@dataclass
 class RadSearch(gym.Env):
-    # Values set in the constructor
-    action_space: spaces.Discrete
-    # A 2-tuple ndarray
-    area_obs: npt.NDArray[np.float64]
-    # A 2x2 ndarray
-    bounds: npt.NDArray[np.float64]
-    bbox: list[vis.Point]
-    coord_noise: bool
-    env_ls: list[vis.Polygon]
-    max_dist: float
-    line_segs: list[list[vis.Line_Segment]]
-    poly: list[vis.Polygon]
-    np_random: np.random.Generator
-    obstruct: Literal[-1, 0, 1]
-    # A 4x2 ndarray
-    search_area: npt.NDArray[np.float64]
-    # TODO: self.det_coords isn't initialized until reset() is called.
-    # A 2-tuple ndarray
-    det_coords: npt.NDArray[np.float64]
-    # TODO: self.src_coords isn't initialized until reset() is called.
-    # A 2-tuple ndarray
-    src_coords: npt.NDArray[np.float64]
-    walls: vis.Polygon
-    world: vis.Environment
-    vis_graph: vis.Visibility_Graph
-    # TODO: self.intensity isn't initialized until reset() is called but is used in step.
-    intensity: int
-    # TODO: self.bkg_intensity isn't initialized until reset() is called but is used in step.
-    bkg_intensity: int
-    # A list of list of 2-tuple ndarrays
-    obs_coord: list[list[npt.NDArray[np.float64]]]
+    area_obs: Interval
+    bbox: BBox
+    np_random: npr.Generator
+
+    env_ls: list[Polygon] = field(init=False)
+    max_dist: float = field(init=False)
+    line_segs: list[list[vis.Line_Segment]] = field(init=False)
+    poly: list[Polygon] = field(init=False)
+    search_area: BBox = field(init=False)
+    det_coords: Point = field(init=False)
+    detector: vis.Point = field(init=False)
+    src_coords: Point = field(init=False)
+    source: vis.Point = field(init=False)
+    walls: Polygon = field(init=False)
+    world: vis.Environment = field(init=False)
+    vis_graph: vis.Visibility_Graph = field(init=False)
+    intensity: int = field(init=False)
+    bkg_intensity: int = field(init=False)
+    obs_coord: list[list[Point]] = field(init=False)
+    det_sto: list[Point] = field(init=False)
+    prev_det_dist: float = field(init=False)
+    # TODO: self.sp_dist is declared and defined in step.
+    sp_dist: float = field(init=False)
+    # TODO: self.euc_dist is declared and defined in step.
+    euc_dist: float = field(init=False)
 
     # Values with default values which are not set in the constructor
+    action_space: spaces.Discrete = spaces.Discrete(A_SIZE)
     _max_episode_steps: int = 120
-    # TODO: Is a_size equivalent to the number of actions?
-    a_size: int = len(get_args(Action))
-    # A 2-tuple ndarray
-    bkg_bnd: npt.NDArray[np.float64] = np.array([10, 51])  # type: ignore
+    bkg_bnd: Point = Point((10, 51))
     continuous: bool = False
-    # A list of 2-tuple ndarrays
-    det_sto: list[npt.NDArray[np.float64]] = []
     done: bool = False
-    dwell_time: int = 1
     epoch_cnt: int = 0
-    epoch_end: bool = True
-    # A 2-tuple ndarray
-    int_bnd: npt.NDArray[np.float64] = np.array([1e6, 10e6])  # type: ignore
+    int_bnd: Point = Point((1e6, 10e6))
     iter_count: int = 0
-    meas_sto: list[float] = []
-    metadata: Metadata = {"render.modes": ["human"], "video.frames_per_second": FPS}  # type: ignore
+    meas_sto: list[float] = field(default_factory=list)
+    metadata: Metadata = field(default_factory=lambda: {"render.modes": ["human"], "video.frames_per_second": FPS})  # type: ignore
     observation_space: spaces.Box = spaces.Box(0, np.inf, shape=(11,), dtype=np.float32)
     oob_count: int = 0
+    coord_noise: bool = False
+    obstruct: Literal[-1, 0, 1] = 0
     oob: bool = False
-    # TODO: self.prev_det_dist isn't initialized until reset() is called but is used in step.
-    prev_det_dist: float = None
-    viewer: None = None
-    # TODO: self.sp_dist is declared and defined in step.
-    sp_dist: float = None
-    # TODO: self.euc_dist is declared and defined in step.
-    euc_dist: float = None
     intersect: bool = False
 
     # bbox is the "bounding box"
@@ -157,31 +210,38 @@ class RadSearch(gym.Env):
     #
     # obstruct
     # Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions
-    def __init__(
-        self,
-        bbox: npt.NDArray[np.float64],
-        area_obs: npt.NDArray[np.float64],
-        seed: np.random.Generator,
-        obstruct: Literal[-1, 0, 1] = 0,
-        coord_noise: bool = False,
-    ):
-        self.np_random = seed
-        self.bounds = bbox
-        self.search_area: npt.NDArray[np.float64] = np.array(  # type: ignore
-            [
-                [self.bounds[0][0] + area_obs[0], self.bounds[0][1] + area_obs[0]],
-                [self.bounds[1][0] - area_obs[1], self.bounds[1][1] + area_obs[0]],
-                [self.bounds[2][0] - area_obs[1], self.bounds[2][1] - area_obs[1]],
-                [self.bounds[3][0] + area_obs[0], self.bounds[3][1] - area_obs[1]],
-            ]
+    def __post_init__(self):
+        self.search_area: BBox = BBox(
+            (
+                Point(
+                    (
+                        self.bbox[0][0] + self.area_obs[0],
+                        self.bbox[0][1] + self.area_obs[0],
+                    )
+                ),
+                Point(
+                    (
+                        self.bbox[1][0] - self.area_obs[1],
+                        self.bbox[1][1] + self.area_obs[0],
+                    )
+                ),
+                Point(
+                    (
+                        self.bbox[2][0] - self.area_obs[1],
+                        self.bbox[2][1] - self.area_obs[1],
+                    )
+                ),
+                Point(
+                    (
+                        self.bbox[3][0] + self.area_obs[0],
+                        self.bbox[3][1] - self.area_obs[1],
+                    )
+                ),
+            )
         )
-        self.area_obs = area_obs
-        self.obstruct = obstruct
-
-        self.max_dist: float = np.linalg.norm(self.search_area[2] - self.search_area[1])  # type: ignore
-
-        self.coord_noise = coord_noise
-        self.action_space: spaces.Discrete = spaces.Discrete(self.a_size)
+        self.max_dist: float = dist_p(self.search_area[2], self.search_area[1])
+        self.epoch_end = True
+        self.reset()
 
     def step(
         self, action: Optional[Action]
@@ -193,10 +253,9 @@ class RadSearch(gym.Env):
         # Move detector and make sure it is not in an obstruction
         in_obs = self.check_action(action)
         if not in_obs:
-            # TODO: self.det_coords isn't initialized until reset() is called.
             if (
-                np.less(self.det_coords, self.search_area[0]).any()
-                or np.less(self.search_area[2], self.det_coords).any()
+                self.det_coords < self.search_area[0]
+                or self.search_area[2] < self.det_coords
             ):
                 self.oob = True
                 self.oob_count += 1
@@ -206,11 +265,8 @@ class RadSearch(gym.Env):
             self.sp_dist: float = self.world.shortest_path(  # type: ignore
                 self.source, self.detector, self.vis_graph, EPSILON
             ).length()
-            # TODO: self.src_coords isn't initialized until reset() is called.
-            self.euc_dist: float = np.sum((self.det_coords - self.src_coords) ** 2)  # type: ignore
+            self.euc_dist: float = dist_sq_p(self.det_coords, self.src_coords)
             self.intersect = self.is_intersect()
-            # TODO: self.bkg_intensity isn't initialized until reset() is called.
-            # TODO: self.intensity isn't initialized until reset() is called.
             meas: float = self.np_random.poisson(
                 self.bkg_intensity
                 if self.intersect
@@ -221,7 +277,6 @@ class RadSearch(gym.Env):
             if self.sp_dist < 110:
                 reward = 0.1
                 self.done = True
-            # TODO: self.prev_det_dist isn't initialized until reset() is called.
             elif self.sp_dist < self.prev_det_dist:
                 reward = 0.1
                 self.prev_det_dist = self.sp_dist
@@ -238,7 +293,7 @@ class RadSearch(gym.Env):
                 )
             else:
                 self.sp_dist = self.prev_det_dist
-                self.euc_dist = np.sum((self.det_coords - self.src_coords) ** 2)  # type: ignore
+                self.euc_dist = dist_sq_p(self.det_coords, self.src_coords)
                 self.intersect = self.is_intersect()
                 meas: float = self.np_random.poisson(
                     self.bkg_intensity
@@ -249,21 +304,25 @@ class RadSearch(gym.Env):
             reward = -0.5 * self.sp_dist / self.max_dist
 
         # If detector coordinate noise is desired
-        noise: npt.NDArray[np.float64] = self.np_random.normal(scale=5, size=2) if self.coord_noise else np.zeros(2)  # type: ignore
+        noise: Point = Point(
+            tuple(self.np_random.normal(scale=5, size=2))
+            if self.coord_noise
+            else (0.0, 0.0)
+        )
 
         # Scale detector coordinates by search area of the DRL algorithm
-        det_coord_scaled: npt.NDArray[np.float64] = (
-            self.det_coords + noise
-        ) / self.search_area[2][1]
+        det_coord_scaled: Point = scale_p(
+            sum_p(self.det_coords, noise), 1 / self.search_area[2][1]
+        )
 
         # Observation with the radiation meas., detector coords and detector-obstruction range meas.
         # TODO: State should really be better organized. If there are distinct components to it, why not make it
         # a named tuple?
-        sensor_meas: npt.NDArray[np.float64] = self.dist_sensors() if self.num_obs > 0 else np.zeros(self.a_size)  # type: ignore
+        sensor_meas: npt.NDArray[np.float64] = self.dist_sensors() if self.num_obs > 0 else np.zeros(A_SIZE)  # type: ignore
         # State is an 11-tuple ndarray
         state: npt.NDArray[np.float64] = np.array([meas, *det_coord_scaled, *sensor_meas])  # type: ignore
         self.oob = False
-        self.det_sto.append(self.det_coords.copy())
+        self.det_sto.append(self.det_coords)
         self.meas_sto.append(meas)
         self.iter_count += 1
         return state, round(reward, 2), self.done, {}
@@ -271,9 +330,6 @@ class RadSearch(gym.Env):
     def reset(self) -> npt.NDArray[np.float64]:
         """
         Method to reset the environment.
-        If epoch_end flag is True, then all components of the environment are resampled
-        If epoch_end flag is False, then only the source and detector coordinates, source activity and background
-        are resampled.
         """
         self.done = False
         self.oob = False
@@ -290,16 +346,11 @@ class RadSearch(gym.Env):
                 self.num_obs = self.obstruct
 
             self.create_obs()
-            self.bbox: list[vis.Point] = list(
-                map(lambda tuple: vis.Point(*tuple), self.bounds)
-            )
-            self.walls = vis.Polygon(self.bbox)
-
-            # TODO: self.poly isn't initialized yet
-            self.env_ls: list[vis.Polygon] = [self.walls, *self.poly]
+            self.walls = Polygon(list(self.bbox))
+            self.env_ls: list[Polygon] = [self.walls, *self.poly]
 
             # Create Visilibity environment
-            self.world = vis.Environment(self.env_ls)
+            self.world = vis.Environment(list(map(to_vis_poly, self.env_ls)))
 
             # Create Visilibity graph to speed up shortest path computation
             self.vis_graph = vis.Visibility_Graph(self.world, EPSILON)
@@ -341,19 +392,16 @@ class RadSearch(gym.Env):
         if action is None:
             return in_obs
 
-        y_step_coeff = get_y_step_coeff(action)
-        x_step_coeff = get_x_step_coeff(action)
-        step_size: float = get_step_size(action)
+        step = get_step(action)
+        self.detector = to_vis_p(sum_p(self.det_coords, step))
 
-        self.detector.set_y(self.det_coords[1] + y_step_coeff * step_size)  # type: ignore
-        self.detector.set_x(self.det_coords[0] + x_step_coeff * step_size)  # type: ignore
         in_obs = self.in_obstruction()
         if in_obs:
-            self.detector.set_y(self.det_coords[1])  # type: ignore
-            self.detector.set_x(self.det_coords[0])  # type: ignore
+            # If we're in an obsticle, roll back
+            self.detector = to_vis_p(self.det_coords)
         else:
-            self.det_coords[1] = self.detector.y()  # type: ignore
-            self.det_coords[0] = self.detector.x()  # type: ignore
+            # If we're not in an obsticle, update the detector coordinates
+            self.det_coords = from_vis_p(self.detector)
 
         return in_obs
 
@@ -362,65 +410,65 @@ class RadSearch(gym.Env):
         Method that randomly samples obstruction coordinates from 90% of search area dimensions.
         Obstructions are not allowed to intersect.
         """
-        seed_pt: npt.NDArray[np.float64] = np.zeros(2)  # type: ignore
         ii = 0
         intersect = False
-        self.obs_coord: list[list[npt.NDArray[np.float64]]] = [
-            [] for _ in range(self.num_obs)
-        ]
-        self.poly = []
+        self.obs_coord: list[list[Point]] = [[] for _ in range(self.num_obs)]
+        self.poly: list[Polygon] = []
         self.line_segs: list[list[vis.Line_Segment]] = []
-        obs_coord: npt.NDArray[np.float64] = np.array([])  # type: ignore
+        obs_coord: list[Point] = []
         while ii < self.num_obs:
-            seed_pt[0] = self.np_random.integers(  # type: ignore
-                self.search_area[0][0], self.search_area[2][0] * 0.9
-            )
-            seed_pt[1] = self.np_random.integers(  # type: ignore
-                self.search_area[0][1], self.search_area[2][1] * 0.9
-            )
-            ext: npt.NDArray[np.float64] = self.np_random.integers(  # type: ignore
-                self.area_obs[0], self.area_obs[1], size=2
+            seed_x: float = self.np_random.integers(  # type: ignore
+                self.search_area[0][0], self.search_area[2][0] * 0.9  # type: ignore
             ).astype(np.float64)
-            obs_coord = np.array(  # type: ignore
-                [
-                    seed_pt,
-                    [seed_pt[0], seed_pt[1] + ext[1]],
-                    [seed_pt[0] + ext[0], seed_pt[1] + ext[1]],
-                    [seed_pt[0] + ext[0], seed_pt[1]],
-                ]
-            )
+            seed_y: float = self.np_random.integers(  # type: ignore
+                self.search_area[0][1], self.search_area[2][1] * 0.9  # type: ignore
+            ).astype(np.float64)
+            ext_x: float = self.np_random.integers(  # type: ignore
+                self.area_obs[0], self.area_obs[1]  # type: ignore
+            ).astype(np.float64)
+            ext_y: float = self.np_random.integers(  # type: ignore
+                self.area_obs[0], self.area_obs[1]  # type: ignore
+            ).astype(np.float64)
+            obs_coord = [
+                Point(t)
+                for t in (
+                    (seed_x, seed_y),
+                    (seed_x, seed_y + ext_y),
+                    (seed_x + ext_x, seed_y + ext_y),
+                    (seed_x + ext_x, seed_y),
+                )
+            ]
+
             if ii > 0:
                 kk = 0
                 while not intersect and kk < ii:
-                    # TODO: We're passing in a list of 2-tuple ndarrays, not vis.Polygons.
-                    intersect = collide(self.obs_coord[kk][0], obs_coord)  # type: ignore
+                    intersect = math.isclose(vis.boundary_distance(to_vis_poly(Polygon(self.obs_coord[kk])), to_vis_poly(Polygon(obs_coord))), 0.0, abs_tol=EPSILON)  # type: ignore
                     if intersect:
-                        obs_coord = np.array([])  # type: ignore
+                        obs_coord = []
                     kk += 1
 
             if not intersect:
-                self.obs_coord[ii].append(obs_coord)
-                geom: list[vis.Point] = list(
-                    map(lambda tuple: vis.Point(*tuple), obs_coord)
-                )
-                poly = vis.Polygon(geom)
+                self.obs_coord[ii].extend(obs_coord)
+                poly = Polygon(obs_coord)
                 self.poly.append(poly)
                 self.line_segs.append(
                     [
-                        vis.Line_Segment(geom[0], geom[1]),
-                        vis.Line_Segment(geom[0], geom[3]),
-                        vis.Line_Segment(geom[2], geom[1]),
-                        vis.Line_Segment(geom[2], geom[3]),
+                        vis.Line_Segment(to_vis_p(p1), to_vis_p(p2))
+                        for p1, p2 in (
+                            # TODO: Why in this order?
+                            (poly[0], poly[1]),
+                            (poly[0], poly[3]),
+                            (poly[2], poly[1]),
+                            (poly[2], poly[3]),
+                        )
                     ]
                 )
                 ii += 1
                 intersect = False
-                obs_coord = np.array([])  # type: ignore
+                obs_coord = []
             intersect = False
 
-    def sample_source_loc_pos(
-        self,
-    ) -> tuple[vis.Point, vis.Point, npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    def sample_source_loc_pos(self,) -> tuple[vis.Point, vis.Point, Point, Point]:
         """
         Method that randomly generate the detector and source starting locations.
         Locations can not be inside obstructions and must be at least 1000 cm apart
@@ -429,26 +477,32 @@ class RadSearch(gym.Env):
         src_clear = False
         resamp = False
         jj = 0
-        source: npt.NDArray[np.float64] = self.np_random.integers(  # type: ignore
-            self.search_area[0][0], self.search_area[1][0], size=2
-        ).astype(np.float64)
-        src_point: vis.Point = vis.Point(source[0], source[1])
-        det: npt.NDArray[np.float64] = self.np_random.integers(  # type: ignore
-            self.search_area[0][0], self.search_area[1][0], size=2
-        ).astype(np.float64)
-        det_point = vis.Point(det[0], det[1])
+
+        def rand_point() -> Point:
+            """
+            Generate a random point within the search area.
+            """
+            return Point(
+                tuple(
+                    self.np_random.integers(  # type: ignore
+                        int(self.search_area[0][0]), int(self.search_area[1][0]), size=2
+                    ).astype(np.float64)
+                )
+            )
+
+        source = rand_point()
+        src_point = to_vis_p(source)
+        detector = rand_point()
+        det_point = to_vis_p(detector)
 
         while not det_clear:
             while not resamp and jj < self.num_obs:
-                if det_point._in(self.poly[jj], EPSILON):  # type: ignore
+                if det_point._in(to_vis_poly(self.poly[jj]), EPSILON):  # type: ignore
                     resamp = True
                 jj += 1
             if resamp:
-                det = self.np_random.integers(  # type: ignore
-                    self.search_area[0][0], self.search_area[1][0], size=2
-                ).astype(np.float64)
-                det_point.set_x(det[0])  # type: ignore
-                det_point.set_y(det[1])  # type: ignore
+                detector = rand_point()
+                det_point = to_vis_p(detector)
                 jj = 0
                 resamp = False
             else:
@@ -458,26 +512,22 @@ class RadSearch(gym.Env):
         jj = 0
         num_retry = 0
         while not src_clear:
-            while np.linalg.norm(det - source) < 1000:  # type: ignore
-                source = self.np_random.integers(  # type: ignore
-                    self.search_area[0][0], self.search_area[1][0], size=2
-                ).astype(np.float64)
-            src_point = vis.Point(source[0], source[1])
+            while dist_p(detector, source) < 1000:
+                source = rand_point()
+            src_point = to_vis_p(source)
             L: vis.Line_Segment = vis.Line_Segment(det_point, src_point)
             while not resamp and jj < self.num_obs:
-                if src_point._in(self.poly[jj], EPSILON):  # type: ignore
+                poly_p: vis.Polygon = to_vis_poly(self.poly[jj])
+                if src_point._in(poly_p, EPSILON):  # type: ignore
                     resamp = True
-                if not resamp and vis.boundary_distance(L, self.poly[jj]) < 0.001:  # type: ignore
+                if not resamp and vis.boundary_distance(L, poly_p) < 0.001:  # type: ignore
                     inter = True
                 jj += 1
             if self.num_obs == 0 or (num_retry > 20 and not resamp):
                 src_clear = True
             elif resamp or not inter:
-                source = self.np_random.integers(  # type: ignore
-                    self.search_area[0][0], self.search_area[1][0], size=2
-                ).astype(np.float64)
-                src_point.set_x(source[0])  # type: ignore
-                src_point.set_y(source[1])  # type: ignore
+                source = rand_point()
+                src_point = to_vis_p(source)
                 jj = 0
                 resamp = False
                 inter = False
@@ -485,7 +535,7 @@ class RadSearch(gym.Env):
             elif inter:
                 src_clear = True
 
-        return src_point, det_point, det, source
+        return src_point, det_point, detector, source
 
     def is_intersect(self, threshold: float = 0.001) -> bool:
         """
@@ -495,7 +545,7 @@ class RadSearch(gym.Env):
         kk = 0
         L = vis.Line_Segment(self.detector, self.source)
         while not inter and kk < self.num_obs:
-            if vis.boundary_distance(L, self.poly[kk]) < threshold and not math.isclose(  # type: ignore
+            if vis.boundary_distance(L, to_vis_poly(self.poly[kk])) < threshold and not math.isclose(  # type: ignore
                 math.sqrt(self.euc_dist), self.sp_dist, abs_tol=0.1
             ):
                 inter = True
@@ -509,12 +559,12 @@ class RadSearch(gym.Env):
         jj = 0
         obs_boundary = False
         while not obs_boundary and jj < self.num_obs:
-            if self.detector._in(self.poly[jj], EPSILON):  # type: ignore
+            if self.detector._in(to_vis_poly(self.poly[jj]), EPSILON):  # type: ignore
                 obs_boundary = True
             jj += 1
 
         if obs_boundary:
-            bbox: vis.Bounding_Box = self.poly[jj - 1].bbox()
+            bbox: vis.Bounding_Box = to_vis_poly(self.poly[jj - 1]).bbox()
             return all(
                 [  # type: ignore
                     self.detector.y() > bbox.y_min,
@@ -526,26 +576,23 @@ class RadSearch(gym.Env):
         else:
             return False
 
-    def dist_sensors(self) -> npt.NDArray[np.float64]:
+    def dist_sensors(self) -> list[float]:
         """
         Method that generates detector-obstruction range measurements with values between 0-1.
         """
-        seg_coords: list[vis.Point] = [
-            vis.Point(
-                self.detector.x() + get_x_step_coeff(action) * get_step_size(action),  # type: ignore
-                self.detector.y() + get_y_step_coeff(action) * get_step_size(action),  # type: ignore
+        detector_p: Point = from_vis_p(self.detector)
+        segs: list[vis.Line_Segment] = [
+            vis.Line_Segment(
+                self.detector, to_vis_p(sum_p(detector_p, get_step(action)))
             )
             for action in cast(tuple[Action], get_args(Action))
         ]
-        segs: list[vis.Line_Segment] = [
-            vis.Line_Segment(self.detector, seg_coord) for seg_coord in seg_coords
-        ]
         # TODO: Currently there are only eight actions -- what happens if we change that?
         # This annotation would need to change as well.
-        dists: npt.NDArray[np.float64] = np.zeros(len(segs))  # type: ignore
-        obs_idx_ls: npt.NDArray[np.float64] = np.zeros(len(self.poly))  # type: ignore
+        dists: list[float] = [0.0] * len(segs)
+        obs_idx_ls: list[int] = [0] * len(self.poly)
         inter = 0
-        seg_dist: npt.NDArray[np.float64] = np.zeros(4)  # type: ignore
+        seg_dist: list[float] = [0.0] * 4
         if self.num_obs > 0:
             for idx, seg in enumerate(segs):
                 for obs_idx, poly in enumerate(self.line_segs):
@@ -558,47 +605,43 @@ class RadSearch(gym.Env):
                             inter += 1
                             obs_idx_ls[obs_idx] += 1
                     if inter > 0:
-                        dists[idx] = seg_dist.max()  # type: ignore
-                        seg_dist.fill(0)
+                        dists[idx] = max(seg_dist)
+                        seg_dist = [0.0] * 4
                 inter = 0
-            if (dists == 1.0).sum() > 3:
-                dists = self.correct_coords(self.poly[obs_idx_ls.argmax()])
+            # If there are more than three dists equal to one, we need to correct the coordinates.
+            if sum(filter(lambda x: x == 1.0, dists)) > 3:
+                # Take the polygon which corresponds to the index with the maximum number of intersections.
+                argmax = max(zip(obs_idx_ls, self.poly))[1]
+                dists = self.correct_coords(argmax)
         return dists
 
-    def correct_coords(self, poly: vis.Polygon) -> npt.NDArray[np.float64]:
+    def correct_coords(self, poly: Polygon) -> list[float]:
         """
         Method that corrects the detector-obstruction range measurement if more than the correct
         number of directions are being activated due to the Visilibity implementation.
         """
-        x_check: npt.NDArray[np.bool8] = np.zeros(  # type: ignore
-            len(get_args(Action)), dtype=np.bool8
-        )
+        x_check: list[bool] = [False] * A_SIZE
         dist = 0.1
         length = 1
+        poly_p: vis.Polygon = to_vis_poly(poly)
 
-        qs = [
-            vis.Point(self.detector.x(), self.detector.y())  # type: ignore
-            for _ in range(len(get_args(Action)))
-        ]
-        dists: npt.NDArray[np.float64] = np.zeros(self.a_size)  # type: ignore
-        while not x_check.any():  # not (xp or xn or yp or yn):
+        qs: list[Point] = [from_vis_p(self.detector)] * A_SIZE
+        dists: list[float] = [0.0] * A_SIZE
+        while not any(x_check):
             for action in cast(tuple[Action], get_args(Action)):
-                qs[action].set_x(  # type: ignore
-                    qs[action].x() + get_x_step_coeff(action) * dist * length  # type: ignore
+                step = scale_p(
+                    Point((get_x_step_coeff(action), get_y_step_coeff(action))),
+                    dist * length,
                 )
-                qs[action].set_y(  # type: ignore
-                    qs[action].y() + get_y_step_coeff(action) * dist * length  # type: ignore
-                )
-                if qs[action]._in(poly, EPSILON):  # type: ignore
+                qs[action] = sum_p(qs[action], step)
+                if to_vis_p(qs[action])._in(poly_p, EPSILON):  # type: ignore
                     x_check[action] = True
 
         # i.e. if one outside the poly then
-        if x_check.sum() >= 4:  # type: ignore
+        if sum(x_check) >= 4:
             for ii in [0, 2, 4, 6]:
-                if x_check[ii - 1] == 1 and x_check[ii + 1] == 1:
-                    dists[ii] = 1.0
-                    dists[ii - 1] = 1.0
-                    dists[ii + 1] = 1.0
+                if x_check[ii - 1] and x_check[ii + 1]:
+                    dists[ii - 1 : ii + 2] = [1.0, 1.0, 1.0]
 
         return dists
 
@@ -651,7 +694,7 @@ class RadSearch(gym.Env):
             ax1.grid()
             if not (obs == []):
                 for coord in obs:
-                    p_disp = Polygon(coord[0] / 100, color="gray")
+                    p_disp = PolygonPatches(coord[0] / 100, color="gray")
                     ax1.add_patch(p_disp)
             if not (loc_est is None):
                 ax1.scatter(
@@ -709,7 +752,7 @@ class RadSearch(gym.Env):
                     ax1.grid()
                     if not (obs == []):
                         for coord in obs:
-                            p_disp = Polygon(coord[0] / 100, color="gray")
+                            p_disp = PolygonPatches(coord[0] / 100, color="gray")
                             ax1.add_patch(p_disp)
                     if not (loc_est is None):
                         loc = ax1.scatter(
@@ -791,9 +834,7 @@ class RadSearch(gym.Env):
             else:
                 plt.show()
 
-    def FIM_step(
-        self, action: Action, coords: Optional[npt.NDArray[np.float64]] = None
-    ) -> npt.NDArray[np.float64]:
+    def FIM_step(self, action: Action, coords: Optional[Point] = None) -> Point:
         """
         Method for the information-driven controller to update detector coordinates in the environment
         without changing the actual detector positon.
@@ -802,68 +843,20 @@ class RadSearch(gym.Env):
         action : action to move the detector
         coords : coordinates to move the detector from that are different from the current detector coordinates
         """
-        det_coords = self.det_coords.copy()
+
+        # Make a copy of the current detector coordinates
+        det_coords = self.det_coords
         if coords:
-            self.detector.set_x(coords[0])  # type: ignore
-            self.detector.set_y(coords[1])  # type: ignore
-            self.det_coords = coords.copy()
+            coords_p: vis.Point = to_vis_p(coords)
+            self.detector = coords_p
+            self.det_coords = coords
 
         in_obs = self.check_action(action)
-        det_ret = self.det_coords.copy() if coords else self.det_coords
+        det_ret = self.det_coords
         if coords is None and not in_obs or coords:
             # If successful movement, return new coords. Set detector back.
+            det_coords_p: vis.Point = to_vis_p(det_coords)
+            self.detector = det_coords_p
             self.det_coords = det_coords
-            self.detector.set_x(det_coords[0])  # type: ignore
-            self.detector.set_y(det_coords[1])  # type: ignore
 
         return det_ret
-
-
-def edges_of(vertices: list[vis.Point]) -> list[vis.Point]:
-    """
-    Return the vectors for the edges of the polygon p.
-
-    p is a polygon.
-    """
-    return list(map(operator.sub, vertices, vertices[1:] + [vertices[0]]))
-
-
-def orthogonal(v: vis.Point) -> vis.Point:
-    """
-    Return a 90 degree clockwise rotation of the vector v.
-    """
-    return vis.Point(-v.y(), v.x())  # type: ignore
-
-
-def is_separating_axis(o: vis.Point, p1: vis.Polygon, p2: vis.Polygon) -> bool:
-    """
-    Return True and the push vector if o is a separating axis of p1 and p2.
-    Otherwise, return False and None.
-    """
-
-    def min_max_of_projections(poly: vis.Polygon) -> tuple[float, float]:
-        curr_min, curr_max = float("+inf"), float("-inf")
-        for vertex in poly:  # type: ignore
-            projection: float = np.dot(vertex, o)  # type: ignore
-            curr_min, curr_max = min(projection, curr_min), max(projection, curr_max)
-
-        return curr_min, curr_max
-
-    min1, max1 = min_max_of_projections(p1)
-    min2, max2 = min_max_of_projections(p2)
-
-    return max1 < min2 or max2 < min1
-
-
-def collide(p1: vis.Polygon, p2: vis.Polygon) -> bool:
-    """
-    Return True and the MPV if the shapes collide. Otherwise, return False and
-    None.
-
-    p1 and p2 are lists of ordered pairs, the vertices of the polygons in the
-    clockwise direction.
-    """
-    return any(
-        is_separating_axis(o, p1, p2)
-        for o in map(orthogonal, edges_of(p1) + edges_of(p2))  # type: ignore
-    )

@@ -1,18 +1,15 @@
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, Type
-import gym
-from gym import spaces
-from gym_rad_search.envs.rad_search_env import RadSearch
+from typing import Any, Optional, Type
+from gym_rad_search.envs import rad_search_env  # type: ignore
+from gym_rad_search.envs.rad_search_env import RadSearch  # type: ignore
 import numpy as np
 import numpy.typing as npt
 import torch
 from torch.optim import Adam
-import torch.nn as nn
 import torch.nn.functional as F
 import time
 import core
-import visilibity as vis
-from epoch_logger import EpochLogger, EpochLoggerKwargs
+from epoch_logger import EpochLogger
 
 
 @dataclass
@@ -110,7 +107,7 @@ class PPOBuffer:
 
         self.path_start_idx = self.ptr
 
-    def get(self, logger: Optional[EpochLogger] = None) -> dict[str, torch.Tensor]:
+    def get(self, logger: EpochLogger) -> dict[str, torch.Tensor]:
         """
         Call this at the end of an epoch to get all of the data from
         the buffer, with advantages appropriately normalized (shifted to have
@@ -325,7 +322,7 @@ class PPO:
         ac_kwargs["pad_dim"] = 2
 
         obs_dim: int = env.observation_space.shape[0]
-        act_dim: int = env.a_size
+        act_dim: int = rad_search_env.A_SIZE
 
         # Instantiate A2C
         self.ac = actor_critic(obs_dim, act_dim, **ac_kwargs)
@@ -479,7 +476,7 @@ class PPO:
 
             # Save model
             if (epoch % save_freq == 0) or (epoch == epochs - 1):
-                logger.save_state(None, None)
+                logger.save_state({}, None)
                 pass
 
             # Reduce localization module training iterations after 100 epochs to speed up training
@@ -612,7 +609,7 @@ class PPO:
 
     def update(self, env: RadSearch, args: BpArgs) -> None:
         """Update for the localization and A2C modules"""
-        data: dict[str, torch.Tensor] = self.buf.get(logger=self.logger)
+        data: dict[str, torch.Tensor] = self.buf.get(self.logger)
 
         # Update function if using the PFGRU, fcn. performs multiple updates per call
         self.ac.model.train()
