@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Any, Optional, Type
+from dataclasses import dataclass, field
+from typing import Any, NamedTuple, Type
 from gym_rad_search.envs import rad_search_env  # type: ignore
 from gym_rad_search.envs.rad_search_env import RadSearch  # type: ignore
 import numpy as np
@@ -12,8 +12,7 @@ import core
 from epoch_logger import EpochLogger
 
 
-@dataclass
-class BpArgs:
+class BpArgs(NamedTuple):
     bp_decay: float
     l2_weight: float
     l1_weight: float
@@ -21,39 +20,63 @@ class BpArgs:
     area_scale: float
 
 
+@dataclass
 class PPOBuffer:
+    obs_dim: core.Shape
+    max_size: int
+
+    obs_buf: npt.NDArray[np.float32] = field(init=False)
+    act_buf: npt.NDArray[np.float32] = field(init=False)
+    adv_buf: npt.NDArray[np.float32] = field(init=False)
+    rew_buf: npt.NDArray[np.float32] = field(init=False)
+    ret_buf: npt.NDArray[np.float32] = field(init=False)
+    val_buf: npt.NDArray[np.float32] = field(init=False)
+    source_tar: npt.NDArray[np.float32] = field(init=False)
+    logp_buf: npt.NDArray[np.float32] = field(init=False)
+    obs_win: npt.NDArray[np.float32] = field(init=False)
+    obs_win_std: npt.NDArray[np.float32] = field(init=False)
+
+    gamma: float = 0.99
+    lam: float = 0.90
+    beta: float = 0.005
+    ptr: int = 0
+    path_start_idx: int = 0
+
     """
     A buffer for storing histories experienced by a PPO agent interacting
     with the environment, and using Generalized Advantage Estimation (GAE-Lambda)
     for calculating the advantages of state-action pairs.
     """
 
-    def __init__(
-        self,
-        obs_dim: core.Shape,
-        act_dim: core.Shape,
-        size: int,
-        gamma: float = 0.99,
-        lam: float = 0.90,
-        hid_size: int = 48,
-    ):
+    def __post_init__(self):
         self.obs_buf: npt.NDArray[np.float32] = np.zeros(
-            core.combined_shape(size, obs_dim), dtype=np.float32
+            core.combined_shape(self.max_size, self.obs_dim), dtype=np.float32
         )
         self.act_buf: npt.NDArray[np.float32] = np.zeros(
-            core.combined_shape(size), dtype=np.float32
+            core.combined_shape(self.max_size), dtype=np.float32
         )
-        self.adv_buf: npt.NDArray[np.float32] = np.zeros(size, dtype=np.float32)
-        self.rew_buf: npt.NDArray[np.float32] = np.zeros(size, dtype=np.float32)
-        self.ret_buf: npt.NDArray[np.float32] = np.zeros(size, dtype=np.float32)
-        self.val_buf: npt.NDArray[np.float32] = np.zeros(size, dtype=np.float32)
-        self.source_tar: npt.NDArray[np.float32] = np.zeros((size, 2), dtype=np.float32)
-        self.logp_buf: npt.NDArray[np.float32] = np.zeros(size, dtype=np.float32)
-        self.obs_win: npt.NDArray[np.float32] = np.zeros(obs_dim, dtype=np.float32)
-        self.obs_win_std: npt.NDArray[np.float32] = np.zeros(obs_dim, dtype=np.float32)
-        self.gamma, self.lam = gamma, lam
-        self.ptr, self.path_start_idx, self.max_size = 0, 0, size
-        self.beta: float = 0.005
+        self.adv_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.rew_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.ret_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.val_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.source_tar: npt.NDArray[np.float32] = np.zeros(
+            (self.max_size, 2), dtype=np.float32
+        )
+        self.logp_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.obs_win: npt.NDArray[np.float32] = np.zeros(self.obs_dim, dtype=np.float32)
+        self.obs_win_std: npt.NDArray[np.float32] = np.zeros(
+            self.obs_dim, dtype=np.float32
+        )
 
     def store(
         self,
@@ -133,7 +156,6 @@ class PPOBuffer:
             adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
             logp=torch.as_tensor(self.logp_buf, dtype=torch.float32),
             loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32),
-            # TODO: This is unconditional so logger cannot be None
             ep_len=torch.as_tensor(epLenTotal, dtype=torch.float32),
         )
 
@@ -349,12 +371,7 @@ class PPO:
 
         # Set up trajectory buffer
         self.buf = PPOBuffer(
-            obs_dim,
-            act_dim,
-            steps_per_epoch,
-            gamma,
-            lam,
-            ac_kwargs["hidden_sizes_rec"][0],
+            obs_dim=obs_dim, max_size=steps_per_epoch, gamma=gamma, lam=lam,
         )
         save_gif_freq = epochs // 3
 
