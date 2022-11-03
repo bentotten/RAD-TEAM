@@ -146,6 +146,14 @@ def get_x_step_coeff(action: Action) -> int:
 def get_step(action: Action) -> Point:
     """
     Return the step for the given action.
+        0: #left
+        1: up left
+        2: up
+        3: up right             
+        4: right
+        5: down right
+        6: down
+        7: down left
     """
     return scale_p(
         Point((get_x_step_coeff(action), get_y_step_coeff(action))),
@@ -155,9 +163,9 @@ def get_step(action: Action) -> Point:
 
 @dataclass
 class RadSearch(gym.Env):
-    area_obs: Interval
-    bbox: BBox
-    np_random: npr.Generator
+    area_obs: Interval = np.array([200.0, 500.0])
+    bbox: BBox = np.array([[0.0, 0.0], [2700.0, 0.0], [2700.0, 2700.0], [0.0, 2700.0]])
+    np_random: npr.Generator = npr.default_rng(0)
 
     env_ls: list[Polygon] = field(init=False)
     max_dist: float = field(init=False)
@@ -251,7 +259,7 @@ class RadSearch(gym.Env):
         Returns an observation, reward, and whether the termination criteria is met.
         """
         # Move detector and make sure it is not in an obstruction
-        in_obs = self.check_action(action)
+        in_obs = self.check_action(action) # TODO RENAME THIS! Actually takes the action if valid!
         if not in_obs:
             if (
                 self.det_coords < self.search_area[0]
@@ -318,6 +326,8 @@ class RadSearch(gym.Env):
         # Observation with the radiation meas., detector coords and detector-obstruction range meas.
         # TODO: State should really be better organized. If there are distinct components to it, why not make it
         # a named tuple?
+
+        # Sensor measurement for in obstacles?
         sensor_meas: npt.NDArray[np.float64] = self.dist_sensors() if self.num_obs > 0 else np.zeros(A_SIZE)  # type: ignore
         # State is an 11-tuple ndarray
         state: npt.NDArray[np.float64] = np.array([meas, *det_coord_scaled, *sensor_meas])  # type: ignore
@@ -386,6 +396,14 @@ class RadSearch(gym.Env):
         Method that checks which direction to move the detector based on the action.
         If the action moves the detector into an obstruction, the detector position
         will be reset to the prior position.
+        0: #left
+        1: up left
+        2: up
+        3: up right             
+        4: right
+        5: down right
+        6: down
+        7: down left
         """
         in_obs: bool = False
 
@@ -659,8 +677,9 @@ class RadSearch(gym.Env):
         loc_est=None,
     ):
         """
-        Method that produces a gif of the agent interacting in the environment.
+        Method that produces a gif of the agent interacting in the environment. Only renders one episode at a time.
         """
+
         if data and meas:
             self.intensity = params[0]
             self.bkg_intensity = params[1]
@@ -668,8 +687,17 @@ class RadSearch(gym.Env):
             self.iter_count = len(meas)
             data = np.array(data) / 100
         else:
-            data = np.array(self.det_sto) / 100
+            data = np.array(self.det_sto) / 100  # Detector stored locations in an array?
             meas = self.meas_sto
+
+        # Check only rendering one episode aka data readings available match number of rewards 
+        # (+1 as rewards dont include the first position). 
+        reward_length = len(ep_rew)
+        if data.shape[0] != len(ep_rew)+1:
+            print(f"Error: episode reward array length: {reward_length} does not match existing detector locations array length, \
+            minus initial start position: {data.shape[0]}. \
+            Check: Are you trying to render more than one episode?")
+            return 1
 
         if just_env:
             current_index = 0
@@ -717,6 +745,7 @@ class RadSearch(gym.Env):
             m_size = 25
 
             def update(frame_number, data, ax1, ax2, ax3, src, area_dim, meas):
+                print(f"Current Frame: {frame_number}", end='\r')
                 current_index = frame_number % (self.iter_count)
                 global loc
                 if current_index == 0:
@@ -750,7 +779,7 @@ class RadSearch(gym.Env):
                         -1000, -1000, m_size, c="black", marker="^", label="Detector"
                     )
                     ax1.grid()
-                    if not (obs == []):
+                    if not (obs == []) and obs != None:
                         for coord in obs:
                             p_disp = PolygonPatches(coord[0] / 100, color="gray")
                             ax1.add_patch(p_disp)
@@ -787,7 +816,8 @@ class RadSearch(gym.Env):
                     ax3.set_ylabel("Cumulative Reward")
                     ax1.legend(loc="lower right")
                 else:
-                    loc.remove()
+                    if 'loc' in globals():
+                        loc.remove()
                     data_sub = data[current_index + 1] - data[current_index]
                     orient = math.degrees(math.atan2(data_sub[1], data_sub[0]))
                     ax1.scatter(
@@ -818,6 +848,7 @@ class RadSearch(gym.Env):
                             label="Loc. Pred.",
                         )
 
+            print("Frames to render ", len(ep_rew))
             ani = animation.FuncAnimation(
                 fig,
                 update,
@@ -826,13 +857,16 @@ class RadSearch(gym.Env):
             )
             if save_gif:
                 writer = PillowWriter(fps=5)
-                if os.path.isdir(path + "/gifs/"):
-                    ani.save(path + f"/gifs/test_{epoch_count}.gif", writer=writer)
+                if os.path.isdir(str(path) + "/gifs/"):
+                    ani.save(str(path) + f"/gifs/test_{epoch_count}.gif", writer=writer)
+                    print("")
                 else:
-                    os.mkdir(path + "/gifs/")
-                    ani.save(path + f"/gifs/test_{epoch_count}.gif", writer=writer)
+                    os.mkdir(str(path) + "/gifs/")
+                    ani.save(str(path) + f"/gifs/test_{epoch_count}.gif", writer=writer)
             else:
                 plt.show()
+
+            return 0
 
     def FIM_step(self, action: Action, coords: Optional[Point] = None) -> Point:
         """
