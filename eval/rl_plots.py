@@ -43,19 +43,22 @@ def get_datasets(logdir, condition=None):
             except:
                 print('Could not read from %s'%os.path.join(root,'progress.txt'))
                 continue
-            performance = 'AverageTestEpRet' if 'AverageTestEpRet' in exp_data else 'AverageEpRet'
+            #performance = 'AverageTestEpRet' if 'AverageTestEpRet' in exp_data else 'AverageEpRet' # Missing from dataset
+            performance = 'MeanEpRet'
             #exp_data.insert(len(exp_data.columns),'Unit',unit)
             exp_data.insert(len(exp_data.columns),'Condition1',condition1)
             exp_data.insert(len(exp_data.columns),'Condition2',condition2)
-            exp_data.insert(len(exp_data.columns),'Performance',exp_data[performance])
+            exp_data.insert(len(exp_data.columns),'Performance',exp_data[performance])  
             datasets.append(exp_data)
     return datasets
+
 
 def filt(sig, win):
     b = np.ones(win)
     a = np.array([win] + [0]*(win-1))
     signal_filt= signal.filtfilt(b,a,sig)
     return signal_filt
+
 
 def trim_axs(axs, N):
     """little helper to massage the axs list to have correct length..."""
@@ -64,11 +67,12 @@ def trim_axs(axs, N):
         ax.remove()
     return axs[:N]
 
-def multi_plot(data,smooth=None,x_axis='Epoch', save_f=False, file_name=None):
+
+def multi_plot(data,smooth=None,x_axis='Epoch', save_f=False, file_name="."):
     ref_DF = pd.DataFrame()
 
-    lst = ['AverageEpRet','StdEpRet','DoneCount','EpLen','Entropy','KL',
-            'LossModel', 'LossV']
+    #lst = ['AverageEpRet','StdEpRet','DoneCount','EpLen','Entropy','KL', 'LossModel', 'LossV']  # 'AverageEpRet' Missing from dataset
+    lst = ['MeanEpRet','StdEpRet','DoneCount','EpLen','Entropy','KL', 'LossModel', 'LossV'] 
     for lab in lst:
         if np.any(lab == data.columns):
             ref_DF[lab] = data[data.columns[data.columns == lab][0]]
@@ -94,11 +98,11 @@ def multi_plot(data,smooth=None,x_axis='Epoch', save_f=False, file_name=None):
         ax.plot(x, d_filt)
 
     if save_f:
-        plt.savefig(file_name+'gifs/results.eps')
+        if file_name[-1] != "/":
+            file_name += "/"
+        plt.savefig(file_name+'results.eps')
     else:
         plt.show()
-
-
 
 
 def plot(data,type_=None, smooth = True):
@@ -127,6 +131,7 @@ def plot(data,type_=None, smooth = True):
     plt.ylabel(y_ax)
     plt.xlabel(x_ax)
     plt.show()
+
 
 if __name__ == '__main__':
     import argparse
