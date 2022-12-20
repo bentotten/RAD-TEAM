@@ -41,40 +41,84 @@ class RolloutBuffer:
 class ActorCritic(nn.Module):
     def __init__(self, state_dim, action_dim, action_std_init):
         super(ActorCritic, self).__init__()
-            
-        #robust_seed = _int_list_from_bigint(hash_seed(seed))[0] # TODO get this to work
-
-        # DELETE ME
-        test_sample = torch.rand(4, 10, 10)  # 4 maps x 10x10 grid
-        # Setup
-        conv = nn.Conv2d(in_channels=4, out_channels=8, kernel_size=(3,3), padding=1, stride=1)
+        
+        # Input tensor shape: (batch size, number of channels, height of grid, width of grid)
+        # batch size: 4 maps
+        # number of channels: 3 for RGB (red green blue)
+        # Height: 5
+        # Width: 5
+        x = torch.randn(4, 3, 5, 5)  # input tensor with shape (4, 3, 5, 5)
+        
+        # Define the activation function
         relu = nn.ReLU()
-        maxpool = nn.MaxPool2d(kernel_size=(2,2), stride=2)
-        conv2 = nn.Conv2d(in_channels=4, out_channels=16, kernel_size=(3,3), padding=1, stride=1)
-        l1 = nn.Linear(32, 16)
-        l2 = nn.Linear(16, 5)
-        output_l = nn.Linear(5, 5)
         
-        step1 = relu(conv(test_sample))
-        print(step1.size())
-        step2 = maxpool(step1)
-        print(step2.size())
-        step3 = relu(conv2)
+        # Define the first convolutional layer
+        conv1 = nn.Conv2d(in_channels=3, out_channels=8, kernel_size=3, stride=1, padding=1)  # output tensor with shape (4, 8, 5, 5)
         
+        # Define the maxpool layer
+        maxpool = nn.MaxPool2d(kernel_size=2, stride=2)  # output tensor with shape (4, 8, 2, 2)
+
+        # Define the second convolution layer
+        conv2 = nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1)  # output tensor with shape (4, 16, 2, 2)
+
+        # Define flattening function
+        flat = lambda x: x.view(x.size(0), -1)  # output tensor with shape (4, 64)
+
+        # Define the first linear layer
+        linear1 = nn.Linear(in_features=16*2*2, out_features=32) # output tensor with shape (4, 32)
         
+        # Define the second linear layer
+        linear2 = nn.Linear(in_features=32, out_features=16) # output tensor with shape (4, 16)
         
+        # Define the output layer
+        output = nn.Linear(in_features=16, out_features=5)
+        
+        # Define the softmax function
+        softm = nn.Softmax(1)
+        
+        # Apply the convolutional layer to the input tensor
+        x = relu(conv1(x))  # output tensor with shape (4, 8, 5, 5)
+        print(x.size())
+        
+        # Apply maxpool layer
+        x = maxpool(x)  # output tensor with shape (4, 8, 2, 2)
+        print(x.size())
+        
+        # Apply the second convolutional layer
+        x = relu(conv2(x))  # output tensor with shape (4, 16, 2, 2)
+        print(x.size())
+
+        # Flatten the output tensor of the convolutional layer to a 1D tensor
+        x = flat(x)  # output tensor with shape (4, 64)
+        print(x.size())
+        
+        # Apply the linear layer to the flattened output tensor
+        x = relu(linear1(x))  # output tensor with shape (4, 32)
+        print(x.size())
+        
+        # Apply the second linear layer to the flattened output tensor
+        x = relu(linear2(x))  # output tensor with shape (4, 16)
+        print(x.size())
+        
+        # Apply the output layer
+        x = output(x)  # output tensor with shape (4, 5)
+        print(x.size())
+        print(x)
+        
+        x = softm(x)
+        print(x.size())
+        print(x)
         ######################
 
 
         # actor
-        # Input: 4 maps
         self.actor = nn.Sequential(
                         nn.Conv2d(in_channels=4, out_channels=8, kernel_size=(3,3), padding=1, stride=1),
                         nn.ReLU(),
                         nn.MaxPool2d(kernel_size=(2,2), stride=2),
-                        nn.Conv2d(in_channels=4, out_channels=16, kernel_size=(3,3), padding=1, stride=1),
+                        nn.Conv2d(in_channels=8, out_channels=16, kernel_size=(3,3), padding=1, stride=1),
                         nn.ReLU(),
-                        nn.Linear(32, 16),
+                        nn.Linear(32, 16), #TODO get output from maxpool layer
                         nn.ReLU(),
                         nn.Linear(16, 5),
                         nn.ReLU(),
@@ -84,11 +128,17 @@ class ActorCritic(nn.Module):
         # critic
         # Input 3 maps
         self.critic = nn.Sequential(  
-                        nn.Conv2d(in_channels=3, out_channels=32, kernel_size=(3,3), padding=1, stride=1),
-                        nn.Tanh(),
-                        nn.Linear(64, 64),
-                        nn.Tanh(),
-                        nn.Linear(64, 1)
+                        nn.Conv2d(in_channels=3, out_channels=8, kernel_size=(3,3), padding=1, stride=1),
+                        nn.ReLU(),
+                        nn.MaxPool2d(kernel_size=(2,2), stride=2),
+                        nn.Conv2d(in_channels=8, out_channels=16, kernel_size=(3,3), padding=1, stride=1),
+                        nn.ReLU(),
+                        nn.Linear(32, 16),
+                        nn.ReLU(),
+                        nn.Linear(16, 1),
+                        nn.ReLU(),
+                        nn.Linear(1, 1),
+                        nn.Softmax() # TODO softmax here too?
                     )
         
         # TODO Delete me
