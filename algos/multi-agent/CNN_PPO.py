@@ -42,7 +42,14 @@ class ActorCritic(nn.Module):
     def __init__(self, state_dim, action_dim, action_std_init):
         super(ActorCritic, self).__init__()
         
-        # Input tensor shape: (batch size, number of channels, height of grid, width of grid)
+        # ATTEMPT TWO 
+        
+        delete_me = torch.randn(4, 16, 2, 2)
+        print(delete_me.shape) 
+        flattened_tensor = torch.flatten(delete_me, start_dim=0, end_dim= -1)
+        print(flattened_tensor.shape)  # Outputs: torch.Size([4, 64])        
+        
+        #Input tensor shape: (batch size, number of channels, height of grid, width of grid)
         # batch size: 4 maps
         # number of channels: 3 for RGB (red green blue)
         # Height: 5
@@ -62,10 +69,11 @@ class ActorCritic(nn.Module):
         conv2 = nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1)  # output tensor with shape (4, 16, 2, 2)
 
         # Define flattening function
-        flat = lambda x: x.view(x.size(0), -1)  # output tensor with shape (4, 64)
+        #flat = lambda x: x.view(x.size(0), -1)  # output tensor with shape (4, 64)
+        flat = lambda x: x.flatten(start_dim=0, end_dim= -1)  # output tensor with shape (1, 256)
 
         # Define the first linear layer
-        linear1 = nn.Linear(in_features=16*2*2, out_features=32) # output tensor with shape (4, 32)
+        linear1 = nn.Linear(in_features=16*2*2*4, out_features=32) # output tensor with shape (4, 32)
         
         # Define the second linear layer
         linear2 = nn.Linear(in_features=32, out_features=16) # output tensor with shape (4, 16)
@@ -74,7 +82,7 @@ class ActorCritic(nn.Module):
         output = nn.Linear(in_features=16, out_features=5)
         
         # Define the softmax function
-        softm = nn.Softmax(1)
+        softm = nn.Softmax(dim=1)
         
         # Apply the convolutional layer to the input tensor
         x = relu(conv1(x))  # output tensor with shape (4, 8, 5, 5)
@@ -89,21 +97,25 @@ class ActorCritic(nn.Module):
         print(x.size())
 
         # Flatten the output tensor of the convolutional layer to a 1D tensor
-        x = flat(x)  # output tensor with shape (4, 64)
+        x = flat(x)  # output tensor with shape (1, 256)
         print(x.size())
         
         # Apply the linear layer to the flattened output tensor
-        x = relu(linear1(x))  # output tensor with shape (4, 32)
+        x = relu(linear1(x))  # output tensor with shape (32)
         print(x.size())
         
         # Apply the second linear layer to the flattened output tensor
-        x = relu(linear2(x))  # output tensor with shape (4, 16)
+        x = relu(linear2(x))  # output tensor with shape (16)
         print(x.size())
         
         # Apply the output layer
-        x = output(x)  # output tensor with shape (4, 5)
+        x = output(x)  # output tensor with shape (5)
         print(x.size())
         print(x)
+        
+        test = torch.softmax(x, dim=0)
+        print(test.size())
+        print(test)
         
         x = softm(x)
         print(x.size())
