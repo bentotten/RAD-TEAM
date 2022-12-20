@@ -3,6 +3,8 @@ import torch.nn as nn
 from torch.distributions import MultivariateNormal
 from torch.distributions import Categorical
 
+import pytorch_lightning as pl
+
 ################################## set device ##################################
 print("============================================================================================")
 # set device to cpu or cuda
@@ -42,18 +44,47 @@ class ActorCritic(nn.Module):
             
         #robust_seed = _int_list_from_bigint(hash_seed(seed))[0] # TODO get this to work
 
+        # DELETE ME
+        test_sample = torch.rand(4, 10, 10)  # 4 maps x 10x10 grid
+        # Setup
+        conv = nn.Conv2d(in_channels=4, out_channels=8, kernel_size=(3,3), padding=1, stride=1)
+        relu = nn.ReLU()
+        maxpool = nn.MaxPool2d(kernel_size=(2,2), stride=2)
+        conv2 = nn.Conv2d(in_channels=4, out_channels=16, kernel_size=(3,3), padding=1, stride=1)
+        l1 = nn.Linear(32, 16)
+        l2 = nn.Linear(16, 5)
+        output_l = nn.Linear(5, 5)
+        
+        step1 = relu(conv(test_sample))
+        print(step1.size())
+        step2 = maxpool(step1)
+        print(step2.size())
+        step3 = relu(conv2)
+        
+        
+        
+        ######################
+
+
         # actor
+        # Input: 4 maps
         self.actor = nn.Sequential(
-                        nn.Linear(state_dim, 64),
-                        nn.Tanh(),
-                        nn.Linear(64, 64),
-                        nn.Tanh(),
-                        nn.Linear(64, action_dim),
-                        nn.Softmax(dim=-1)
+                        nn.Conv2d(in_channels=4, out_channels=8, kernel_size=(3,3), padding=1, stride=1),
+                        nn.ReLU(),
+                        nn.MaxPool2d(kernel_size=(2,2), stride=2),
+                        nn.Conv2d(in_channels=4, out_channels=16, kernel_size=(3,3), padding=1, stride=1),
+                        nn.ReLU(),
+                        nn.Linear(32, 16),
+                        nn.ReLU(),
+                        nn.Linear(16, 5),
+                        nn.ReLU(),
+                        nn.Linear(5, 5),
+                        nn.Softmax()
                     )
         # critic
-        self.critic = nn.Sequential(
-                        nn.Linear(state_dim, 64),
+        # Input 3 maps
+        self.critic = nn.Sequential(  
+                        nn.Conv2d(in_channels=3, out_channels=32, kernel_size=(3,3), padding=1, stride=1),
                         nn.Tanh(),
                         nn.Linear(64, 64),
                         nn.Tanh(),
