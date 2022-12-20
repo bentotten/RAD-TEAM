@@ -15,12 +15,15 @@ import gym
 # import roboschool
 from gym_rad_search.envs import RadSearch  # type: ignore
 
-from PPO import PPO
+from vanilla_PPO import PPO as vanilla_PPO
+from CNN_PPO import PPO as CNN_PPO
+
 from dataclasses import dataclass, field
 from typing_extensions import TypeAlias
 
 
 # These actions correspond to:
+# -1: idle
 # 0: left
 # 1: up and left
 # 2: up
