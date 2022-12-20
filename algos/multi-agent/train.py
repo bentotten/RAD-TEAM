@@ -15,12 +15,15 @@ import gym
 # import roboschool
 from gym_rad_search.envs import RadSearch  # type: ignore
 
-from PPO import PPO
 from dataclasses import dataclass, field
 from typing_extensions import TypeAlias
 
+from vanilla_PPO import PPO as vanilla_PPO
+from CNN_PPO import PPO as CNN_PPO
+
 
 # These actions correspond to:
+# -1: idle
 # 0: left
 # 1: up and left
 # 2: up
@@ -30,7 +33,6 @@ from typing_extensions import TypeAlias
 # 6: down
 # 7: down and left
 #Action: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7]
-#TODO ^ Finish making this
 
 # TODO make command line args for this stuff
 ################################### Training ###################################
