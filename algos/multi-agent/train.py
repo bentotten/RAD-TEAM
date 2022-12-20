@@ -16,7 +16,7 @@ import gym
 from gym_rad_search.envs import RadSearch  # type: ignore
 
 from vanilla_PPO import PPO as vanilla_PPO
-from CNN_PPO import PPO as CNN_PPO
+from CNN_PPO import PPO as PPO
 
 from dataclasses import dataclass, field
 from typing_extensions import TypeAlias
@@ -43,7 +43,6 @@ def train():
 
     ####### initialize environment hyperparameters ######
     env_name = "radppo-v2"
-    has_continuous_action_space = False  # continuous action space; else discrete
 
     # max_ep_len = 1000                   # max timesteps in one episode
     #training_timestep_bound = int(3e6)   # break training loop if timeteps > training_timestep_bound
@@ -106,10 +105,7 @@ def train():
     state_dim = env.observation_space.shape[0]
 
     # action space dimension
-    if has_continuous_action_space:
-        action_dim = env.action_space.shape[0]
-    else:
-        action_dim = env.action_space.n
+    action_dim = env.action_space.n
 
     ###################### logging ######################
 
@@ -165,16 +161,7 @@ def train():
     print("state space dimension : ", state_dim)
     print("action space dimension : ", action_dim)
     print("--------------------------------------------------------------------------------------------")
-    if has_continuous_action_space:
-        print("Initializing a continuous action space policy")
-        print("--------------------------------------------------------------------------------------------")
-        print("starting std of action distribution : ", action_std)
-        print("decay rate of std of action distribution : ", action_std_decay_rate)
-        print("minimum std of action distribution : ", min_action_std)
-        print("decay frequency of std of action distribution : " +
-              str(action_std_decay_freq) + " timesteps")
-    else:
-        print("Initializing a discrete action space policy")
+    print("Initializing a discrete action space policy")
     print("--------------------------------------------------------------------------------------------")
     print("PPO update frequency : " + str(update_timestep) + " timesteps")
     print("PPO K epochs : ", K_epochs)
@@ -196,12 +183,9 @@ def train():
 
     # initialize a PPO agent
     ppo_agents = {_:
-        PPO(state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, action_std) 
+        PPO(state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, action_std) 
         for _ in range(number_of_agents)
         }
-
-    # ppo_agent = PPO(state_dim, action_dim, lr_actor, lr_critic, gamma,
-    #             K_epochs, eps_clip, has_continuous_action_space, action_std)
 
     # track total training time
     start_time = datetime.now().replace(microsecond=0)
@@ -258,12 +242,6 @@ def train():
                 # update PPO agent
                 if total_time_step % update_timestep == 0:
                     agent.update()
-                    
-                # if continuous action space; then decay action std of ouput action distribution
-                if has_continuous_action_space and total_time_step % action_std_decay_freq == 0:
-                    print("something is broken")
-                    sys.stdout.flush()
-                    agent.decay_action_std(action_std_decay_rate, min_action_std)
 
             # log in logging file
             # TODO Log each agent instead of one
