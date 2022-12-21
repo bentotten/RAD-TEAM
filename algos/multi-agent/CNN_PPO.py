@@ -37,130 +37,138 @@ class RolloutBuffer:
         # TODO add buffer for history
 
 
+class Actor(nn.Module):
+    def __init__(self, state_dim, action_dim, action_std_init, global_critic: bool=False):
+        super(Actor, self).__init__()
+        
+        ''' Actor Input tensor shape: (batch size, number of channels, height of grid, width of grid)
+                1. batch size: 4 maps
+                2. number of channels: 3 for RGB (red green blue) heatmap 
+                3. Height: grid height
+                4. Width: grid width
+            
+                4 maps: 
+                    1. Location Map: a 2D matrix showing the agents location.
+                    2. Map of Other Locations: a 2D matrix showing the number of agents located in each grid element (excluding current agent).
+                    3. Readings map: a 2D matrix showing the last reading collected in each grid element. Grid elements that have not been visited are given a reading of 0.
+                    4. Visit Counts Map: a 2D matrix showing the number of visits each grid element has received from all agents combined.
+                    
+            Critic Input tensor shape: (batch size, number of channels, height of grid, width of grid)
+                1. batch size: 3 maps
+                2. number of channels: 3 for RGB (red green blue) heatmap 
+                3. Height: grid height
+                4. Width: grid width
+                
+                4 maps: 
+                    1. Location Map: a 2D matrix showing the agents location.
+                    2. Map of Other Locations: a 2D matrix showing the number of agents located in each grid element (excluding current agent).
+                    3. Readings map: a 2D matrix showing the last reading collected in each grid element. Grid elements that have not been visited are given a reading of 0.
+                    4. Visit Counts Map: a 2D matrix showing the number of visits each grid element has received from all agents combined.
+        '''
+        def test(): 
+            # Define the activation function
+            #relu = nn.ReLU()
+            
+            # Define the first convolutional layer
+            #conv1 = nn.Conv2d(in_channels=3, out_channels=8, kernel_size=3, stride=1, padding=1)  # output tensor with shape (4, 8, 5, 5)
+            
+            # Define the maxpool layer
+            #maxpool = nn.MaxPool2d(kernel_size=2, stride=2)  # output tensor with shape (4, 8, 2, 2)
 
-class ActorCritic(nn.Module):
-    def __init__(self, state_dim, action_dim, action_std_init):
-        super(ActorCritic, self).__init__()
-        
-        # ATTEMPT TWO 
-        
-        delete_me = torch.randn(4, 16, 2, 2)
-        print(delete_me.shape) 
-        flattened_tensor = torch.flatten(delete_me, start_dim=0, end_dim= -1)
-        print(flattened_tensor.shape)  # Outputs: torch.Size([4, 64])        
-        
-        #Input tensor shape: (batch size, number of channels, height of grid, width of grid)
-        # batch size: 4 maps
-        # number of channels: 3 for RGB (red green blue)
-        # Height: 5
-        # Width: 5
-        x = torch.randn(4, 3, 5, 5)  # input tensor with shape (4, 3, 5, 5)
-        
-        # Define the activation function
-        relu = nn.ReLU()
-        
-        # Define the first convolutional layer
-        conv1 = nn.Conv2d(in_channels=3, out_channels=8, kernel_size=3, stride=1, padding=1)  # output tensor with shape (4, 8, 5, 5)
-        
-        # Define the maxpool layer
-        maxpool = nn.MaxPool2d(kernel_size=2, stride=2)  # output tensor with shape (4, 8, 2, 2)
+            # Define the second convolution layer
+            #conv2 = nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1)  # output tensor with shape (4, 16, 2, 2)
 
-        # Define the second convolution layer
-        conv2 = nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1)  # output tensor with shape (4, 16, 2, 2)
+            # Define flattening function
+            #flat = lambda x: x.view(x.size(0), -1)  # output tensor with shape (4, 64)
+            #flat = lambda x: x.flatten(start_dim=0, end_dim= -1)  # output tensor with shape (1, 256)
 
-        # Define flattening function
-        #flat = lambda x: x.view(x.size(0), -1)  # output tensor with shape (4, 64)
-        flat = lambda x: x.flatten(start_dim=0, end_dim= -1)  # output tensor with shape (1, 256)
+            # Define the first linear layer
+            #linear1 = nn.Linear(in_features=16*2*2*4, out_features=32) # output tensor with shape (32)
+            
+            # Define the second linear layer
+            # linear2 = nn.Linear(in_features=32, out_features=16) # output tensor with shape (16)
+            
+            # # Define the output layer
+            # output = nn.Linear(in_features=16, out_features=5) # output tensor with shape (5)
+            
+            # # Define the softmax function
+            # softm = nn.Softmax(dim=0)
+            
+            # Apply the convolutional layer to the input tensor
+            # x = relu(conv1(x))  # output tensor with shape (4, 8, 5, 5)
+            # print(x.size())
+            
+            # # Apply maxpool layer
+            # x = maxpool(x)  # output tensor with shape (4, 8, 2, 2)
+            # print(x.size())
+            
+            # # Apply the second convolutional layer
+            # x = relu(conv2(x))  # output tensor with shape (4, 16, 2, 2)
+            # print(x.size())
 
-        # Define the first linear layer
-        linear1 = nn.Linear(in_features=16*2*2*4, out_features=32) # output tensor with shape (4, 32)
-        
-        # Define the second linear layer
-        linear2 = nn.Linear(in_features=32, out_features=16) # output tensor with shape (4, 16)
-        
-        # Define the output layer
-        output = nn.Linear(in_features=16, out_features=5)
-        
-        # Define the softmax function
-        softm = nn.Softmax(dim=1)
-        
-        # Apply the convolutional layer to the input tensor
-        x = relu(conv1(x))  # output tensor with shape (4, 8, 5, 5)
-        print(x.size())
-        
-        # Apply maxpool layer
-        x = maxpool(x)  # output tensor with shape (4, 8, 2, 2)
-        print(x.size())
-        
-        # Apply the second convolutional layer
-        x = relu(conv2(x))  # output tensor with shape (4, 16, 2, 2)
-        print(x.size())
+            # # Flatten the output tensor of the convolutional layer to a 1D tensor
+            # x = flat(x)  # output tensor with shape (1, 256)
+            # print(x.size())
+            
+            # # Apply the linear layer to the flattened output tensor
+            # x = relu(linear1(x))  # output tensor with shape (32)
+            # print(x.size())
+            
+            # # Apply the second linear layer to the flattened output tensor
+            # x = relu(linear2(x))  # output tensor with shape (16)
+            # print(x.size())
+            
+            # # Apply the output layer
+            # x = output(x)  # output tensor with shape (5)
+            # print(x.size())
+            # print(x)
+            
+            # test = torch.softmax(x, dim=0)
+            # print(test.size())
+            # print(test)
+            
+            # x = softm(x)
+            # print(x.size())
+            # print(x)
+            ######################
+            pass
 
-        # Flatten the output tensor of the convolutional layer to a 1D tensor
-        x = flat(x)  # output tensor with shape (1, 256)
-        print(x.size())
-        
-        # Apply the linear layer to the flattened output tensor
-        x = relu(linear1(x))  # output tensor with shape (32)
-        print(x.size())
-        
-        # Apply the second linear layer to the flattened output tensor
-        x = relu(linear2(x))  # output tensor with shape (16)
-        print(x.size())
-        
-        # Apply the output layer
-        x = output(x)  # output tensor with shape (5)
-        print(x.size())
-        print(x)
-        
-        test = torch.softmax(x, dim=0)
-        print(test.size())
-        print(test)
-        
-        x = softm(x)
-        print(x.size())
-        print(x)
-        ######################
-
-
-        # actor
+        # Actor network
         self.actor = nn.Sequential(
-                        nn.Conv2d(in_channels=4, out_channels=8, kernel_size=(3,3), padding=1, stride=1),
+                        nn.Conv2d(in_channels=3, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (4, 8, Height, Width)
                         nn.ReLU(),
-                        nn.MaxPool2d(kernel_size=(2,2), stride=2),
-                        nn.Conv2d(in_channels=8, out_channels=16, kernel_size=(3,3), padding=1, stride=1),
+                        nn.MaxPool2d(kernel_size=2, stride=2),  # output tensor with shape (4, 8, 2, 2)
+                        nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (4, 16, 2, 2)
                         nn.ReLU(),
-                        nn.Linear(32, 16), #TODO get output from maxpool layer
+                        nn.Flatten(start_dim=0, end_dim= -1),  # output tensor with shape (1, 256)
+                        nn.Linear(in_features=16*2*2*4, out_features=32), # output tensor with shape (32)
                         nn.ReLU(),
-                        nn.Linear(16, 5),
+                        nn.Linear(in_features=32, out_features=16), # output tensor with shape (16)
                         nn.ReLU(),
-                        nn.Linear(5, 5),
-                        nn.Softmax()
+                        nn.Linear(in_features=16, out_features=5), # output tensor with shape (5)
+                        nn.Softmax()  # Put in range [0,1]
                     )
-        # critic
-        # Input 3 maps
-        self.critic = nn.Sequential(  
-                        nn.Conv2d(in_channels=3, out_channels=8, kernel_size=(3,3), padding=1, stride=1),
+
+        # If decentralized critic
+        if not global_critic:
+            self.local_critic = nn.Sequential(
+                        nn.Conv2d(in_channels=3, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (4, 8, Height, Width)
                         nn.ReLU(),
-                        nn.MaxPool2d(kernel_size=(2,2), stride=2),
-                        nn.Conv2d(in_channels=8, out_channels=16, kernel_size=(3,3), padding=1, stride=1),
+                        nn.MaxPool2d(kernel_size=2, stride=2),  # output tensor with shape (4, 8, 2, 2)
+                        nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (4, 16, 2, 2)
                         nn.ReLU(),
-                        nn.Linear(32, 16),
+                        nn.Flatten(start_dim=0, end_dim= -1),  # output tensor with shape (1, 256)
+                        nn.Linear(in_features=16*2*2*4, out_features=32), # output tensor with shape (32)
                         nn.ReLU(),
-                        nn.Linear(16, 1),
+                        nn.Linear(in_features=32, out_features=16), # output tensor with shape (16)
                         nn.ReLU(),
-                        nn.Linear(1, 1),
-                        nn.Softmax() # TODO softmax here too?
+                        nn.Linear(in_features=16, out_features=5), # output tensor with shape (5)
+                        nn.Softmax()  # Put in range [0,1]
                     )
-        
-        # TODO Delete me
-        # print(self.actor)
-        # print(self.actor[0].weight)
-        # print()
         
     def set_action_std(self, new_action_std):
         print("--------------------------------------------------------------------------------------------")
-        print("WARNING : Calling ActorCritic::set_action_std() on discrete action space policy")
+        print("WARNING : Calling Actor::set_action_std() on discrete action space policy")
         print("--------------------------------------------------------------------------------------------")
         raise NotImplementedError
 
@@ -184,7 +192,7 @@ class ActorCritic(nn.Module):
         dist = Categorical(action_probs)
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
-        state_values = self.critic(state)
+        state_values = self.local_critic(state)
         
         return action_logprobs, state_values, dist_entropy
 
@@ -197,13 +205,13 @@ class PPO:
         
         self.buffer = RolloutBuffer()
 
-        self.policy = ActorCritic(state_dim, action_dim, action_std_init).to(device) 
+        self.policy = Actor(state_dim, action_dim, action_std_init).to(device) 
         self.optimizer = torch.optim.Adam([
                         {'params': self.policy.actor.parameters(), 'lr': lr_actor},
-                        {'params': self.policy.critic.parameters(), 'lr': lr_critic}
+                        {'params': self.policy.local_critic.parameters(), 'lr': lr_critic}
                     ])
 
-        self.policy_old = ActorCritic(state_dim, action_dim, action_std_init).to(device)
+        self.policy_old = Actor(state_dim, action_dim, action_std_init).to(device)
         self.policy_old.load_state_dict(self.policy.state_dict())
         
         self.MseLoss = nn.MSELoss()
