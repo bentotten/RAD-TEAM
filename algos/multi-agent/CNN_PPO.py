@@ -1,3 +1,4 @@
+from numpy import dtype
 import torch
 import torch.nn as nn
 from torch.distributions import MultivariateNormal
@@ -5,6 +6,17 @@ from torch.distributions import Categorical
 
 import pytorch_lightning as pl
 
+from dataclasses import dataclass, field, asdict
+from typing import Any, List, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict
+from typing_extensions import TypeAlias
+
+# Maps
+Point: TypeAlias = NewType("Point", tuple[float, float])  # Array indicies to access a GridSquare
+GridSquare: TypeAlias = NewType("GridSquare", float)  # Value stored in a map location
+Map: TypeAlias = NewType("Map", List[List[GridSquare]])  # 2D array that holds gridsquare values
+
+
+# TODO move this somewhere ... else lol
 ################################## set device ##################################
 print("============================================================================================")
 # set device to cpu or cuda
@@ -19,14 +31,18 @@ print("=========================================================================
 
 
 ################################## PPO Policy ##################################
+@dataclass()
 class RolloutBuffer:
-    def __init__(self):
-        self.actions = []
-        self.states = []
-        self.logprobs = []
-        self.rewards = []
-        self.is_terminals = []
-        # TODO add buffer for history
+    # Outdated - TODO remove
+    actions: List = field(init=False)
+    states: List = field(init=False)
+    logprobs: List = field(init=False)
+    rewards: List = field(init=False)
+    is_terminals: List = field(init=False)
+    # TODO add buffer for history
+    
+    def __post_init__(self):
+        pass
     
     def clear(self):
         del self.actions[:]
@@ -36,6 +52,31 @@ class RolloutBuffer:
         del self.is_terminals[:]
         # TODO add buffer for history
 
+@dataclass()
+class MapsBuffer:        
+    '''
+    4 maps: 
+        1. Location Map: a 2D matrix showing the agents location.
+        2. Map of Other Locations: a 2D matrix showing the number of agents located in each grid element (excluding current agent).
+        3. Readings map: a 2D matrix showing the last reading collected in each grid element. Grid elements that have not been visited are given a reading of 0.
+        4. Visit Counts Map: a 2D matrix showing the number of visits each grid element has received from all agents combined.
+    '''
+    location_map: Map = field(init=False)
+    others_locations_map: Map = field(init=False)
+    readings_map: Map = field(init=False)
+    visit_counts_map: Map = field(init=False)
+    is_terminals: List = field(init=False)
+    
+    def __post_init__(self):
+        pass
+    
+    def clear(self):
+        del self.location_map[:]
+        del self.others_locations_map[:]
+        del self.readings_map[:]
+        del self.visit_counts_map[:]
+        del self.is_terminals[:]
+        # TODO add buffer for history
 
 class Actor(nn.Module):
     def __init__(self, state_dim, action_dim, action_std_init, global_critic: bool=False):
@@ -199,10 +240,12 @@ class Actor(nn.Module):
 
 class PPO:
     def __init__(self, state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, action_std_init=0.6):
+        # Hyperparameters
         self.gamma = gamma
         self.eps_clip = eps_clip
         self.K_epochs = K_epochs
         
+        # Initialize
         self.buffer = RolloutBuffer()
 
         self.policy = Actor(state_dim, action_dim, action_std_init).to(device) 
