@@ -106,6 +106,9 @@ def train():
 
     # action space dimension
     action_dim = env.action_space.n
+    
+    # Grid dimensions
+    grid_bounds = env.bbox
 
     ###################### logging ######################
 
@@ -183,7 +186,7 @@ def train():
 
     # initialize a PPO agent
     ppo_agents = {_:
-        PPO(state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, action_std) 
+        PPO(state_dim=state_dim, action_dim=action_dim, grid_bounds=grid_bounds, lr_actor=lr_actor, lr_critic=lr_critic, gamma=gamma, K_epochs=K_epochs, eps_clip=eps_clip) 
         for _ in range(number_of_agents)
         }
 

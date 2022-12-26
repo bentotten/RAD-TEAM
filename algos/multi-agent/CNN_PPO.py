@@ -1,4 +1,7 @@
 from numpy import dtype
+import numpy as np
+import numpy.typing as npt
+
 import torch
 import torch.nn as nn
 from torch.distributions import MultivariateNormal
@@ -10,10 +13,16 @@ from dataclasses import dataclass, field, asdict
 from typing import Any, List, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict
 from typing_extensions import TypeAlias
 
+# Scaling
+DET_STEP = 100.0  # detector step size at each timestep in cm/s
+DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
+DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
+DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm
+
 # Maps
 Point: TypeAlias = NewType("Point", tuple[float, float])  # Array indicies to access a GridSquare
 GridSquare: TypeAlias = NewType("GridSquare", float)  # Value stored in a map location
-Map: TypeAlias = NewType("Map", List[List[GridSquare]])  # 2D array that holds gridsquare values
+Map: TypeAlias = NewType("Map", List[List[GridSquare]])  # 2D array that holds gridsquare values TODO switch to npt.NDArray[]
 
 
 # TODO move this somewhere ... else lol
@@ -32,7 +41,7 @@ print("=========================================================================
 
 ################################## PPO Policy ##################################
 @dataclass()
-class RolloutBuffer:
+class RolloutBuffer():
     # Outdated - TODO remove
     actions: List = field(init=False)
     states: List = field(init=False)
@@ -56,11 +65,12 @@ class RolloutBuffer:
 class MapsBuffer:        
     '''
     4 maps: 
-        1. Location Map: a 2D matrix showing the agents location.
-        2. Map of Other Locations: a 2D matrix showing the number of agents located in each grid element (excluding current agent).
-        3. Readings map: a 2D matrix showing the last reading collected in each grid element. Grid elements that have not been visited are given a reading of 0.
-        4. Visit Counts Map: a 2D matrix showing the number of visits each grid element has received from all agents combined.
+        1. Location Map: a 2D matrix showing the individual agent's location.
+        2. Map of Other Locations: a grid showing the number of agents located in each grid element (excluding current agent).
+        3. Readings map: a grid of the last reading collected in each grid square - unvisited squares are given a reading of 0.
+        4. Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
     '''
+    grid_bounds: List = field(default_factory=List)
     location_map: Map = field(init=False)
     others_locations_map: Map = field(init=False)
     readings_map: Map = field(init=False)
@@ -68,7 +78,16 @@ class MapsBuffer:
     is_terminals: List = field(init=False)
     
     def __post_init__(self):
-        pass
+        '''
+        Scaled maps
+        '''
+        x_limit_scaled = int(self.grid_bounds[2][0] / DET_STEP)
+        y_limit_scaled = int(self.grid_bounds[2][1] / DET_STEP)
+        
+        self.location_map: Map = Map([[GridSquare(0.0)] * x_limit_scaled] * y_limit_scaled)
+        self.others_locations_map: Map = Map([[GridSquare(0.0)] * x_limit_scaled] * y_limit_scaled)
+        self.readings_map: Map = Map([[GridSquare(0.0)] * x_limit_scaled] * y_limit_scaled)
+        self.visit_counts_map: Map = Map([[GridSquare(0.0)] * x_limit_scaled] * y_limit_scaled)
     
     def clear(self):
         del self.location_map[:]
@@ -76,10 +95,10 @@ class MapsBuffer:
         del self.readings_map[:]
         del self.visit_counts_map[:]
         del self.is_terminals[:]
-        # TODO add buffer for history
+
 
 class Actor(nn.Module):
-    def __init__(self, state_dim, action_dim, action_std_init, global_critic: bool=False):
+    def __init__(self, state_dim, action_dim: int =5, global_critic: bool=False):
         super(Actor, self).__init__()
         
         ''' Actor Input tensor shape: (batch size, number of channels, height of grid, width of grid)
@@ -175,6 +194,20 @@ class Actor(nn.Module):
             pass
 
         # Actor network
+        self.step1 = nn.Conv2d(in_channels=3, out_channels=8, kernel_size=3, stride=1, padding=1)  # output tensor with shape (4, 8, Height, Width)
+        self.relu = nn.ReLU()
+        self.step2 = nn.MaxPool2d(kernel_size=2, stride=2)  # output tensor with shape (4, 8, 2, 2)
+        self.step3 = nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1) # output tensor with shape (4, 16, 2, 2)
+        #nn.ReLU()
+        self.step4 = nn.Flatten(start_dim=0, end_dim= -1)  # output tensor with shape (1, 256)
+        self.step5 = nn.Linear(in_features=16*2*2*4, out_features=32) # output tensor with shape (32)
+        #nn.ReLU()
+        self.step6 = nn.Linear(in_features=32, out_features=16) # output tensor with shape (16)
+        #nn.ReLU()
+        self.step7 = nn.Linear(in_features=16, out_features=5) # output tensor with shape (5) # TODO eventually make '5' action_dim instead
+        self.softmax = nn.Softmax()  # Put in range [0,1] 
+
+        # TODO uncomment after ready to combine
         self.actor = nn.Sequential(
                         nn.Conv2d(in_channels=3, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (4, 8, Height, Width)
                         nn.ReLU(),
@@ -191,6 +224,7 @@ class Actor(nn.Module):
                     )
 
         # If decentralized critic
+        # TODO uncomment after ready to combine
         if not global_critic:
             self.local_critic = nn.Sequential(
                         nn.Conv2d(in_channels=3, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (4, 8, Height, Width)
@@ -203,16 +237,9 @@ class Actor(nn.Module):
                         nn.ReLU(),
                         nn.Linear(in_features=32, out_features=16), # output tensor with shape (16)
                         nn.ReLU(),
-                        nn.Linear(in_features=16, out_features=5), # output tensor with shape (5)
-                        nn.Softmax()  # Put in range [0,1]
+                        nn.Linear(in_features=16, out_features=1), # output tensor with shape (1)
+                        nn.Softmax()  # Put in range [0,1] TODO Is this needed for critic?
                     )
-        
-    def set_action_std(self, new_action_std):
-        print("--------------------------------------------------------------------------------------------")
-        print("WARNING : Calling Actor::set_action_std() on discrete action space policy")
-        print("--------------------------------------------------------------------------------------------")
-        raise NotImplementedError
-
 
     def forward(self):
         raise NotImplementedError
@@ -239,7 +266,7 @@ class Actor(nn.Module):
 
 
 class PPO:
-    def __init__(self, state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, action_std_init=0.6):
+    def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, eps_clip):
         # Hyperparameters
         self.gamma = gamma
         self.eps_clip = eps_clip
@@ -247,30 +274,18 @@ class PPO:
         
         # Initialize
         self.buffer = RolloutBuffer()
+        self.maps = MapsBuffer(grid_bounds)
 
-        self.policy = Actor(state_dim, action_dim, action_std_init).to(device) 
+        self.policy = Actor(state_dim, action_dim).to(device) 
         self.optimizer = torch.optim.Adam([
                         {'params': self.policy.actor.parameters(), 'lr': lr_actor},
                         {'params': self.policy.local_critic.parameters(), 'lr': lr_critic}
                     ])
 
-        self.policy_old = Actor(state_dim, action_dim, action_std_init).to(device)
+        self.policy_old = Actor(state_dim, action_dim).to(device)
         self.policy_old.load_state_dict(self.policy.state_dict())
         
         self.MseLoss = nn.MSELoss()
-
-    def set_action_std(self, new_action_std):
-        print("--------------------------------------------------------------------------------------------")
-        print("WARNING : Calling PPO::set_action_std() on discrete action space policy")
-        print("--------------------------------------------------------------------------------------------")
-        raise NotImplementedError
-
-
-    def decay_action_std(self, action_std_decay_rate, min_action_std):
-        print("--------------------------------------------------------------------------------------------")
-        print("WARNING : Calling PPO::decay_action_std() on discrete action space policy")
-        print("--------------------------------------------------------------------------------------------")
-        raise NotImplementedError
 
     def select_action(self, state):
         with torch.no_grad():
