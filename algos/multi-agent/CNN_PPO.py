@@ -1,3 +1,5 @@
+from os import stat
+from matplotlib.streamplot import Grid
 from numpy import dtype
 import numpy as np
 import numpy.typing as npt
@@ -13,17 +15,10 @@ from dataclasses import dataclass, field, asdict
 from typing import Any, List, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict
 from typing_extensions import TypeAlias
 
-# Scaling
-DET_STEP = 100.0  # detector step size at each timestep in cm/s
-DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
-DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
-DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm
-
 # Maps
 Point: TypeAlias = NewType("Point", tuple[float, float])  # Array indicies to access a GridSquare
 GridSquare: TypeAlias = NewType("GridSquare", float)  # Value stored in a map location
-Map: TypeAlias = NewType("Map", List[List[GridSquare]])  # 2D array that holds gridsquare values TODO switch to npt.NDArray[]
-
+Map: TypeAlias = NewType("Map", List[List[GridSquare]])  # 2D array that holds gridsquare values TODO switch to npt.NDArray[] or tensor
 
 # TODO move this somewhere ... else lol
 ################################## set device ##################################
@@ -43,11 +38,11 @@ print("=========================================================================
 @dataclass()
 class RolloutBuffer():
     # Outdated - TODO remove
-    actions: List = field(init=False)
-    states: List = field(init=False)
-    logprobs: List = field(init=False)
-    rewards: List = field(init=False)
-    is_terminals: List = field(init=False)
+    actions: List = field(default_factory=list)
+    states: List = field(default_factory=list)
+    logprobs: List = field(default_factory=list)
+    rewards: List = field(default_factory=list)
+    is_terminals: List = field(default_factory=list)
     # TODO add buffer for history
     
     def __post_init__(self):
@@ -59,7 +54,7 @@ class RolloutBuffer():
         del self.logprobs[:]
         del self.rewards[:]
         del self.is_terminals[:]
-        # TODO add buffer for history
+
 
 @dataclass()
 class MapsBuffer:        
@@ -70,31 +65,56 @@ class MapsBuffer:
         3. Readings map: a grid of the last reading collected in each grid square - unvisited squares are given a reading of 0.
         4. Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
     '''
+    # Parameters
     grid_bounds: List = field(default_factory=List)
+    x_limit_scaled: int = field(init=False)
+    y_limit_scaled: int = field(init=False)
+    resolution_accuracy: int = field(default=100)
+    
+    # Maps
     location_map: Map = field(init=False)
     others_locations_map: Map = field(init=False)
     readings_map: Map = field(init=False)
     visit_counts_map: Map = field(init=False)
-    is_terminals: List = field(init=False)
+    # TODO insert obstacles map
     
+    # Buffers
+    buffer: RolloutBuffer = field(default=RolloutBuffer())
+
     def __post_init__(self):
         '''
         Scaled maps
         '''
-        x_limit_scaled = int(self.grid_bounds[2][0] / DET_STEP)
-        y_limit_scaled = int(self.grid_bounds[2][1] / DET_STEP)
+        self.x_limit_scaled = int(self.grid_bounds[0] * self.resolution_accuracy)
+        self.y_limit_scaled = int(self.grid_bounds[1] * self.resolution_accuracy)
         
-        self.location_map: Map = Map([[GridSquare(0.0)] * x_limit_scaled] * y_limit_scaled)
-        self.others_locations_map: Map = Map([[GridSquare(0.0)] * x_limit_scaled] * y_limit_scaled)
-        self.readings_map: Map = Map([[GridSquare(0.0)] * x_limit_scaled] * y_limit_scaled)
-        self.visit_counts_map: Map = Map([[GridSquare(0.0)] * x_limit_scaled] * y_limit_scaled)
+        self.location_map: Map = Map([[GridSquare(0.0)] * self.x_limit_scaled] * self.y_limit_scaled)  # TODO rethink this, this is very slow
+        self.others_locations_map: Map = Map([[GridSquare(0.0)] * self.x_limit_scaled] * self.y_limit_scaled)  # TODO rethink this, this is very slow
+        self.readings_map: Map = Map([[GridSquare(0.0)] * self.x_limit_scaled] * self.y_limit_scaled)  # TODO rethink this, this is very slow
+        self.visit_counts_map: Map = Map([[GridSquare(0.0)] * self.x_limit_scaled] * self.y_limit_scaled)  # TODO rethink this, this is very slow
     
     def clear(self):
         del self.location_map[:]
         del self.others_locations_map[:]
         del self.readings_map[:]
         del self.visit_counts_map[:]
-        del self.is_terminals[:]
+        self.buffer.clear()
+        
+    def state_to_map(self, state):
+        # Capture current and reset previous location
+        if self.buffer.states:
+            last_state = self.buffer.states[-1]
+            self.location_map[int(last_state[1])][int(last_state[2])]
+            print(self.location_map[int(last_state[1])][int(last_state[2])])
+        
+        # Set new location
+        self.location_map[int(state[1])][int(state[2])] = GridSquare(1) # Convert to Gridsquare datatype
+        print(self.location_map[int(state[1])][int(state[2])])
+        # Insert state
+        
+        print(self.buffer.states)
+        
+        return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map
 
 
 class Actor(nn.Module):
@@ -244,8 +264,25 @@ class Actor(nn.Module):
     def forward(self):
         raise NotImplementedError
     
-    def act(self, state):
-        action_probs = self.actor(state)
+    def act(self, state_map_stack):
+        print("Starting shape, ", state_map_stack.size())
+        x = self.step1(state_map_stack) # conv1
+        x = self.relu(x)
+        print("1st conv shape, ", x.size()) 
+        x = self.step2(x) # Maxpool
+        x = self.step3(x) # conv2
+        x = self.relu(x)
+        x = self.step4(x) # Flatten
+        x = self.step5(x) # linear
+        x = self.relu(x) 
+        x = self.step6(x) # linear
+        x = self.relu(x)
+        x = self.step7(x) # Output layer
+        x = self.softmax(x)
+        
+        print(x)
+        
+        action_probs = self.actor(state_map_stack)
         dist = Categorical(action_probs)
 
         action = dist.sample()
@@ -266,15 +303,15 @@ class Actor(nn.Module):
 
 
 class PPO:
-    def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, eps_clip):
+    def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, eps_clip, resolution_accuracy):
         # Hyperparameters
-        self.gamma = gamma
+        self.gamma = gamma  # Discount factor
         self.eps_clip = eps_clip
         self.K_epochs = K_epochs
+        self.resolution_accuracy = resolution_accuracy
         
         # Initialize
-        self.buffer = RolloutBuffer()
-        self.maps = MapsBuffer(grid_bounds)
+        self.maps = MapsBuffer(grid_bounds, resolution_accuracy)
 
         self.policy = Actor(state_dim, action_dim).to(device) 
         self.optimizer = torch.optim.Adam([
@@ -288,13 +325,25 @@ class PPO:
         self.MseLoss = nn.MSELoss()
 
     def select_action(self, state):
+        # Process state
+        state[1] = state[1] * self.resolution_accuracy
+        state[2] = state[2] * self.resolution_accuracy
         with torch.no_grad():
-            state = torch.FloatTensor(state).to(device)
-            action, action_logprob = self.policy_old.act(state) # Actor-critic
+            (
+                location_map,
+                others_locations_map,
+                readings_map,
+                visit_counts_map
+            ) = self.maps.state_to_map(state)
+            map_stack = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map)]) # Convert to tensor
+            state = torch.FloatTensor(state).to(device) # Convert to tensor
+            
+            #action, action_logprob = self.policy_old.act(state) # Choose action
+            action, action_logprob = self.policy_old.act(map_stack) # Choose action
         
-        self.buffer.states.append(state)
-        self.buffer.actions.append(action)
-        self.buffer.logprobs.append(action_logprob)
+        self.maps.buffer.states.append(state)
+        self.maps.buffer.actions.append(action)
+        self.maps.buffer.logprobs.append(action_logprob)
 
         return action.item()
 
@@ -302,7 +351,7 @@ class PPO:
         # Monte Carlo estimate of returns
         rewards = []
         discounted_reward = 0
-        for reward, is_terminal in zip(reversed(self.buffer.rewards), reversed(self.buffer.is_terminals)):
+        for reward, is_terminal in zip(reversed(self.maps.buffer.rewards), reversed(self.maps.buffer.is_terminals)):
             if is_terminal:
                 discounted_reward = 0
             discounted_reward = reward + (self.gamma * discounted_reward)
@@ -313,9 +362,9 @@ class PPO:
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
 
         # convert list to tensor
-        old_states = torch.squeeze(torch.stack(self.buffer.states, dim=0)).detach().to(device)
-        old_actions = torch.squeeze(torch.stack(self.buffer.actions, dim=0)).detach().to(device)
-        old_logprobs = torch.squeeze(torch.stack(self.buffer.logprobs, dim=0)).detach().to(device)
+        old_states = torch.squeeze(torch.stack(self.maps.buffer.states, dim=0)).detach().to(device)
+        old_actions = torch.squeeze(torch.stack(self.maps.buffer.actions, dim=0)).detach().to(device)
+        old_logprobs = torch.squeeze(torch.stack(self.maps.buffer.logprobs, dim=0)).detach().to(device)
 
         # Optimize policy for K epochs
         for _ in range(self.K_epochs):
@@ -346,7 +395,7 @@ class PPO:
         self.policy_old.load_state_dict(self.policy.state_dict()) # Actor-critic
 
         # clear buffer
-        self.buffer.clear()
+        self.maps.clear() # TODO clear buffer or maps buffer?
     
     def save(self, checkpoint_path):
         torch.save(self.policy_old.state_dict(), checkpoint_path) # Actor-critic
