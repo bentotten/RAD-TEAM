@@ -127,14 +127,14 @@ class ActorCritic(nn.Module):
 
 
 class PPO:
-    def __init__(self, state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, action_std_init=0.6):
+    def __init__(self, state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, grid_bounds, has_continuous_action_space=False, action_std_init=0.6):
 
         self.has_continuous_action_space = has_continuous_action_space
 
         if has_continuous_action_space:
             self.action_std = action_std_init
 
-        self.gamma = gamma
+        self.gamma = gamma  # Discount factor
         self.eps_clip = eps_clip
         self.K_epochs = K_epochs
         

@@ -15,12 +15,18 @@ import gym
 # import roboschool
 from gym_rad_search.envs import RadSearch  # type: ignore
 
-from vanilla_PPO import PPO as vanilla_PPO
+from vanilla_PPO import PPO as Vanilla_PPO # vanilla_PPO
 from CNN_PPO import PPO as PPO
 
 from dataclasses import dataclass, field
 from typing_extensions import TypeAlias
 
+# Scaling
+# TODO get from env instead, remove from global
+DET_STEP = 100.0  # detector step size at each timestep in cm/s
+DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
+DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
+DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm
 
 # These actions correspond to:
 # -1: idle
@@ -84,6 +90,8 @@ def train():
     lr_critic = 0.001       # learning rate for critic network
 
     random_seed = 1         # set random seed if required (0 = no random seed)
+    
+    resolution_accuracy = 100  # Round agent coordinates to nearest 100 for transition to map
     #####################################################
 
     ################ Setup Environment ################
@@ -108,7 +116,7 @@ def train():
     action_dim = env.action_space.n
     
     # Grid dimensions
-    grid_bounds = env.bbox
+    grid_bounds = (env.bbox[2][0] / DET_STEP, env.bbox[2][1] / DET_STEP)  # Scale to match env returned state coords for each agent
 
     ###################### logging ######################
 
@@ -186,7 +194,17 @@ def train():
 
     # initialize a PPO agent
     ppo_agents = {_:
-        PPO(state_dim=state_dim, action_dim=action_dim, grid_bounds=grid_bounds, lr_actor=lr_actor, lr_critic=lr_critic, gamma=gamma, K_epochs=K_epochs, eps_clip=eps_clip) 
+        PPO(
+            state_dim=state_dim, 
+            action_dim=action_dim, 
+            grid_bounds=grid_bounds, 
+            lr_actor=lr_actor, 
+            lr_critic=lr_critic, 
+            gamma=gamma, 
+            K_epochs=K_epochs, 
+            eps_clip=eps_clip,
+            resolution_accuracy=resolution_accuracy
+            ) 
         for _ in range(number_of_agents)
         }
 

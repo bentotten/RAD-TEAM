@@ -404,9 +404,9 @@ class PPO:
         save_gif_freq = epochs // 3
 
         # Set up optimizers and learning rate decay for policy and localization module
-        self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=pi_lr) # TODO make multi-agent
+        self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=pi_lr) # pi is Actor # TODO make multi-agent
         self.train_pi_iters = train_pi_iters
-        self.model_optimizer = Adam(self.ac.model.parameters(), lr=vf_lr) # TODO make multi-agent
+        self.model_optimizer = Adam(self.ac.model.parameters(), lr=vf_lr) # model is PFGRU # TODO make multi-agent
         self.pi_scheduler = torch.optim.lr_scheduler.StepLR(
             self.pi_optimizer, step_size=100, gamma=0.99
         )
@@ -595,7 +595,7 @@ class PPO:
                 trajectories[:, source_loc_idx:].clone(),
             )
             # Calculate new log prob.
-            pi, val, logp, loc = self.ac.grad_step(obs, act, hidden=hidden) # TODO make multi-agent
+            pi, val, logp, loc = self.ac.grad_step(obs, act, hidden=hidden) # Both PFGRU and A2C? # TODO make multi-agent
             logp_diff: torch.Tensor = logp_old - logp
             ratio = torch.exp(logp - logp_old)
 
@@ -667,18 +667,18 @@ class PPO:
         data: dict[str, torch.Tensor] = self.buf.get(self.logger)
 
         # Update function if using the PFGRU, fcn. performs multiple updates per call
-        self.ac.model.train() # TODO make multi-agent
+        self.ac.model.train() # PFGRU # TODO make multi-agent
         loss_mod = self.update_model(data, args)
 
         # Update function if using the regression GRU
         # loss_mod = update_loc_rnn(data,env,loss)
 
-        self.ac.model.eval() # TODO make multi-agent
+        self.ac.model.eval() # PFGRU # TODO make multi-agent
         min_iters = len(data["ep_form"])
         kk = 0
         term = False
 
-        # Train policy with multiple steps of gradient descent (mini batch)
+        # Train Actor-Critic policy with multiple steps of gradient descent (mini batch)
         while not term and kk < self.train_pi_iters:
             # Early stop training if KL-div above certain threshold
             pi_l, pi_info, term, loc_loss = self.update_a2c(data, env, min_iters, kk)

@@ -541,9 +541,9 @@ class RNNModelActorCritic(nn.Module):
             obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(0)
             loc_pred, hidden_part = self.model(obs_t[:, :3], hidden[0]) # PFGRU
             obs_t = torch.cat((obs_t, loc_pred.unsqueeze(0)), dim=1)
-            pi, hidden2, v = self.pi._distribution(obs_t.unsqueeze(0), hidden[1])
+            pi, hidden2, v = self.pi._distribution(obs_t.unsqueeze(0), hidden[1])  # Actor
             a = pi.sample()
-            logp_a: Tensor = self.pi._log_prob_from_distribution(pi, a)
+            logp_a: Tensor = self.pi._log_prob_from_distribution(pi, a)  # Actor
             _hidden: tuple[Tensor, Tensor] = (hidden_part, hidden2)
         return a.numpy(), v.numpy(), logp_a.numpy(), _hidden, loc_pred.numpy()
 
@@ -552,14 +552,15 @@ class RNNModelActorCritic(nn.Module):
         self, obs: Tensor, act: Tensor, hidden: tuple[tuple[Tensor, Tensor], Tensor]
     #) -> tuple[Any, Any, Any, Tensor]:
     ) -> tuple[Any, Tensor, Tensor, Tensor]:
+        ''' Update A2C '''
         obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(1) # TODO this is already a tensor, is this necessary?
         loc_pred = torch.empty((obs_t.shape[0], 2))
         hidden_part = hidden[0]  # TODO his contains two tensors, is that accounted for?
         with torch.no_grad():
             for kk, o in enumerate(obs_t):
-                loc_pred[kk], hidden_part = self.model(o[:, :3], hidden_part)
+                loc_pred[kk], hidden_part = self.model(o[:, :3], hidden_part)  # PFGRU
         obs_t = torch.cat((obs_t, loc_pred.unsqueeze(1)), dim=2)
-        pi, logp_a, hidden2, val = self.pi(obs_t, act=act, hidden=hidden[1])
+        pi, logp_a, hidden2, val = self.pi(obs_t, act=act, hidden=hidden[1])  # Actor
         return pi, val, logp_a, loc_pred
 
     def act(
@@ -574,6 +575,6 @@ class RNNModelActorCritic(nn.Module):
         return self.step(obs, hidden=hidden)
 
     def reset_hidden(self, batch_size: int = 1) -> tuple[tuple[Tensor, Tensor], Tensor]:
-        model_hidden = self.model.init_hidden(batch_size)
-        a2c_hidden = self.pi._reset_state()
+        model_hidden = self.model.init_hidden(batch_size)  # PFGRU
+        a2c_hidden = self.pi._reset_state()  # Actor
         return (model_hidden, a2c_hidden)
