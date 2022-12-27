@@ -12,7 +12,7 @@ from torch.distributions import Categorical
 import pytorch_lightning as pl
 
 from dataclasses import dataclass, field, asdict
-from typing import Any, List, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict
+from typing import Any, List, Tuple, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict
 from typing_extensions import TypeAlias
 
 # Maps
@@ -66,10 +66,11 @@ class MapsBuffer:
         4. Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
     '''
     # Parameters
-    grid_bounds: List = field(default_factory=List)
+    grid_bounds: list = field(default_factory=list)
     x_limit_scaled: int = field(init=False)
     y_limit_scaled: int = field(init=False)
     resolution_accuracy: int = field(default=100)
+    map_dimensions: Tuple = field(init=False)
     
     # Maps
     location_map: Map = field(init=False)
@@ -85,8 +86,10 @@ class MapsBuffer:
         '''
         Scaled maps
         '''
-        self.x_limit_scaled = int(self.grid_bounds[0] * self.resolution_accuracy)
-        self.y_limit_scaled = int(self.grid_bounds[1] * self.resolution_accuracy)
+        self.map_dimensions = (int(self.grid_bounds[0] * self.resolution_accuracy), int(self.grid_bounds[1] * self.resolution_accuracy))
+
+        self.x_limit_scaled: int = self.map_dimensions[0] 
+        self.y_limit_scaled: int = self.map_dimensions[1]
         
         self.location_map: Map = Map([[GridSquare(0.0)] * self.x_limit_scaled] * self.y_limit_scaled)  # TODO rethink this, this is very slow
         self.others_locations_map: Map = Map([[GridSquare(0.0)] * self.x_limit_scaled] * self.y_limit_scaled)  # TODO rethink this, this is very slow
@@ -109,16 +112,16 @@ class MapsBuffer:
         
         # Set new location
         self.location_map[int(state[1])][int(state[2])] = GridSquare(1) # Convert to Gridsquare datatype
-        print(self.location_map[int(state[1])][int(state[2])])
+        print(self.location_map[int(state[1])][int(state[2])]) # TODO delete
         # Insert state
         
-        print(self.buffer.states)
+        print(self.buffer.states) # TODO delete
         
         return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map
 
 
 class Actor(nn.Module):
-    def __init__(self, state_dim, action_dim: int =5, global_critic: bool=False):
+    def __init__(self, map_dim, state_dim, batches: int=1, action_dim: int=5, global_critic: bool=False):
         super(Actor, self).__init__()
         
         ''' Actor Input tensor shape: (batch size, number of channels, height of grid, width of grid)
@@ -213,18 +216,22 @@ class Actor(nn.Module):
             ######################
             pass
 
+        assert map_dim[0] > 0
+        
+        pool_output = int(((map_dim[0]-2) / 2) + 1) # Get maxpool output height/width and floor it
+
         # Actor network
         self.step1 = nn.Conv2d(in_channels=4, out_channels=8, kernel_size=3, stride=1, padding=1)  # output tensor with shape (4, 8, Height, Width)
         self.relu = nn.ReLU()
-        self.step2 = nn.MaxPool2d(kernel_size=2, stride=2)  # output tensor with shape (4, 8, 2, 2)
-        self.step3 = nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1) # output tensor with shape (4, 16, 2, 2)
+        self.step2 = nn.MaxPool2d(kernel_size=2, stride=2)  # output heighth and width is floor(((Width - Size)/ Stride) +1)
+        self.step3 = nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1) 
         #nn.ReLU()
-        self.step4 = nn.Flatten(start_dim=0, end_dim= -1)  # output tensor with shape (1, 256)
-        self.step5 = nn.Linear(in_features=16*2*2*4, out_features=32) # output tensor with shape (32)
+        self.step4 = nn.Flatten(start_dim=0, end_dim= -1) 
+        self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32) 
         #nn.ReLU()
-        self.step6 = nn.Linear(in_features=32, out_features=16) # output tensor with shape (16)
+        self.step6 = nn.Linear(in_features=32, out_features=16) 
         #nn.ReLU()
-        self.step7 = nn.Linear(in_features=16, out_features=5) # output tensor with shape (5) # TODO eventually make '5' action_dim instead
+        self.step7 = nn.Linear(in_features=16, out_features=5) # TODO eventually make '5' action_dim instead
         self.softmax = nn.Softmax()  # Put in range [0,1] 
 
         # TODO uncomment after ready to combine
@@ -235,7 +242,7 @@ class Actor(nn.Module):
                         nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (4, 16, 2, 2)
                         nn.ReLU(),
                         nn.Flatten(start_dim=0, end_dim= -1),  # output tensor with shape (1, 256)
-                        nn.Linear(in_features=16*2*2*4, out_features=32), # output tensor with shape (32)
+                        nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32), # output tensor with shape (32)
                         nn.ReLU(),
                         nn.Linear(in_features=32, out_features=16), # output tensor with shape (16)
                         nn.ReLU(),
@@ -247,10 +254,11 @@ class Actor(nn.Module):
         # TODO uncomment after ready to combine
         if not global_critic:
             self.local_critic = nn.Sequential(
-                        nn.Conv2d(in_channels=4, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (4, 8, Height, Width)
+                        # Starting shape (batch_size, 4, Height, Width)
+                        nn.Conv2d(in_channels=4, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (batch_size, 8, Height, Width)
                         nn.ReLU(),
-                        nn.MaxPool2d(kernel_size=2, stride=2),  # output tensor with shape (4, 8, 2, 2)
-                        nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (4, 16, 2, 2)
+                        nn.MaxPool2d(kernel_size=2, stride=2),  # output tensor with shape (batch_size, 8, x, x) x is the floor(((Width - Size)/ Stride) +1)
+                        nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (batch_size, 16, 2, 2)
                         nn.ReLU(),
                         nn.Flatten(start_dim=0, end_dim= -1),  # output tensor with shape (1, 256)
                         nn.Linear(in_features=16*2*2*4, out_features=32), # output tensor with shape (32)
@@ -268,16 +276,22 @@ class Actor(nn.Module):
         print("Starting shape, ", state_map_stack.size())
         x = self.step1(state_map_stack) # conv1
         x = self.relu(x)
-        print("1st conv shape, ", x.size()) 
+        print("shape, ", x.size()) 
         x = self.step2(x) # Maxpool
+        print("shape, ", x.size()) 
         x = self.step3(x) # conv2
         x = self.relu(x)
+        print("shape, ", x.size()) 
         x = self.step4(x) # Flatten
+        print("shape, ", x.size()) 
         x = self.step5(x) # linear
         x = self.relu(x) 
+        print("shape, ", x.size()) 
         x = self.step6(x) # linear
         x = self.relu(x)
+        print("shape, ", x.size()) 
         x = self.step7(x) # Output layer
+        print("shape, ", x.size()) 
         x = self.softmax(x)
         
         print(x)
@@ -313,14 +327,14 @@ class PPO:
         # Initialize
         self.maps = MapsBuffer(grid_bounds, resolution_accuracy)
 
-        self.policy = Actor(state_dim, action_dim).to(device) 
+        self.policy = Actor(map_dim=self.maps.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(device) 
         self.optimizer = torch.optim.Adam([
                         {'params': self.policy.actor.parameters(), 'lr': lr_actor},
                         {'params': self.policy.local_critic.parameters(), 'lr': lr_critic}
                     ])
 
-        self.policy_old = Actor(state_dim, action_dim).to(device)
-        self.policy_old.load_state_dict(self.policy.state_dict())
+        self.policy_old = Actor(map_dim=self.maps.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(device)  # TODO Really slow
+        self.policy_old.load_state_dict(self.policy.state_dict()) # TODO Really slow
         
         self.MseLoss = nn.MSELoss()
 
@@ -336,6 +350,7 @@ class PPO:
                 visit_counts_map
             ) = self.maps.state_to_map(state)
             map_stack = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map)]) # Convert to tensor
+            map_stack = torch.unsqueeze(map_stack, dim=0)  # TODO Make into real minibatches instead of just a resampling
             state = torch.FloatTensor(state).to(device) # Convert to tensor
             
             #action, action_logprob = self.policy_old.act(state) # Choose action
