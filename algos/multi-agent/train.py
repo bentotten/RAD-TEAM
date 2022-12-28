@@ -53,9 +53,9 @@ def train():
     # max_ep_len = 1000                   # max timesteps in one episode
     #training_timestep_bound = int(3e6)   # break training loop if timeteps > training_timestep_bound
     epochs = 3000
-    max_ep_len = 120                      # max timesteps in one episode
-    #max_ep_len = 30                      # max timesteps in one episode # TODO delete me after fixing
-    training_timestep_bound = int(6e6)  # Change to epoch count
+    #max_ep_len = 120                      # max timesteps in one episode
+    max_ep_len = 5                      # max timesteps in one episode # TODO delete me after fixing
+    training_timestep_bound = 5  # Change to epoch count
 
     # print avg reward in the interval (in num timesteps)
     #print_freq = max_ep_len * 3
@@ -102,11 +102,16 @@ def train():
     #rng = npr.default_rng(robust_seed)
     # Pass np_random=rng, to env creation
 
-    # env = gym.make(env_name)
     obstruction_count = 0
     number_of_agents = 1
-    env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruct=obstruction_count)
-    #env: RadSearch = RadSearch()
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    bbox = tuple(tuple(((0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0))))  # TODO TEST: DELETE ME
+    observation_area = tuple((2.0, 5.0))
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    
+    #env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruct=obstruction_count) # TODO TEST: UNCOMMENT ME
+    env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruct=obstruction_count, bbox=bbox, observation_area=observation_area) # TODO TEST: DELETE ME
 
     # state space dimension
     state_dim = env.observation_space.shape[0]
@@ -170,6 +175,7 @@ def train():
     print("--------------------------------------------------------------------------------------------")
     print("state space dimension : ", state_dim)
     print("action space dimension : ", action_dim)
+    print("Grid space bounds : ", grid_bounds)
     print("--------------------------------------------------------------------------------------------")
     print("Initializing a discrete action space policy")
     print("--------------------------------------------------------------------------------------------")
@@ -236,12 +242,20 @@ def train():
         # TODO why is state 11 long?
         # state = env.reset()['state'] # All agents begin in same location
         starting_result = env.reset()[0] # All agents begin in same location, only need one state
+        
+        print("Source location: ", env.src_coords)
+        print("Agent location: ", env.agents[0].det_coords)
+        
         # TODO turn into array for each agent ID (maybe a dict or tuple)
         current_ep_reward_sample = 0
         epoch_counter += 1
 
         for _ in range(max_ep_len):
-            action_list = {id: agent.select_action(starting_result.state) for id, agent in ppo_agents.items()}
+            raw_action_list = {id: agent.select_action(starting_result.state) for id, agent in ppo_agents.items()}
+            
+            # TODO Make this work in the env instead of here
+            # Convert actions to include -1 as "idle" option
+            action_list = {id: a-1 for id, a in raw_action_list.items()}
 
             #state, reward, done, _
             results = env.step(action_list=action_list, action=None)  #TODO why is return an array of 11?
