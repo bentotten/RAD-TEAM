@@ -17,7 +17,7 @@ from typing_extensions import TypeAlias
 
 # Maps
 Point: TypeAlias = NewType("Point", tuple[float, float])  # Array indicies to access a GridSquare
-Map: TypeAlias = NewType("Map", npt.NDArray[np.int32]) # 2D array that holds gridsquare values
+Map: TypeAlias = NewType("Map", npt.NDArray[np.float32]) # 2D array that holds gridsquare values
 
 # TODO move this somewhere ... else lol
 ################################## set device ##################################
@@ -92,16 +92,15 @@ class MapsBuffer:
 
     
     def clear(self):
-        self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.int32))  # TODO rethink this, this is very slow
-        self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.int32))  # TODO rethink this, this is very slow
-        self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.int32))  # TODO rethink this, this is very slow
-        self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.int32))  # TODO rethink this, this is very slow
+        self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
+        self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
+        self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
+        self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.buffer.clear()
         
     def state_to_map(self, state):
         # TODO put initial readings and location in maps
         # Capture current and reset previous location
-        print(self.location_map)
         if self.buffer.states:
             last_state = self.buffer.states[-1]
             self.location_map[int(last_state[1])][int(last_state[2])]
@@ -110,11 +109,8 @@ class MapsBuffer:
         x = int(state[1])
         y = int(state[2])
         self.location_map[x][y] = 1.0 # Convert to Gridsquare datatype
-        print(self.location_map[x][y])
         # Insert state
         
-        print(self.buffer.states) # TODO delete
-        print(self.location_map)
         
         return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map
 
@@ -215,7 +211,7 @@ class Actor(nn.Module):
             ######################
             pass
 
-        assert map_dim[0] > 0
+        assert map_dim[0] > 0 and map_dim[0] == map_dim[1], 'Map dimensions mismatched. Must have equal x and y bounds.'
         
         pool_output = int(((map_dim[0]-2) / 2) + 1) # Get maxpool output height/width and floor it
 
@@ -340,18 +336,17 @@ class PPO:
 
     def select_action(self, state):
         # Process state
-        state[1] = int(state[1] * self.resolution_accuracy)
-        state[2] = int(state[2] * self.resolution_accuracy)
+        scaled_state = (int(state[1] * self.resolution_accuracy), int(state[2] * self.resolution_accuracy))
         with torch.no_grad():
             (
                 location_map,
                 others_locations_map,
                 readings_map,
                 visit_counts_map
-            ) = self.maps.state_to_map(state)
+            ) = self.maps.state_to_map(scaled_state)
             map_stack = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map)]) # Convert to tensor
             map_stack = torch.unsqueeze(map_stack, dim=0)  # TODO Make into real minibatches instead of just a resampling
-            state = torch.FloatTensor(state).to(device) # Convert to tensor
+            state = torch.FloatTensor(state).to(device) # Convert to tensor TODO already a tensor, is this necessary?
             
             #action, action_logprob = self.policy_old.act(state) # Choose action
             action, action_logprob = self.policy_old.act(map_stack) # Choose action

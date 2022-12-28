@@ -86,6 +86,12 @@ def train():
     #update_timestep = max_ep_len * 4      # update policy every n timesteps # TODO Change to epochs
     update_timestep = 480     # update policy every n timesteps # TODO Change to epochs
     K_epochs = 80               # update policy for K epochs in one PPO update
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    if DEBUG:
+        update_timestep = 2
+        K_epochs = 4
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     eps_clip = 0.2          # clip parameter for PPO
     gamma = 0.99            # discount factor
@@ -113,8 +119,8 @@ def train():
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     if DEBUG:
-        bbox = tuple(tuple(((0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0))))  
-        observation_area = tuple((2.0, 5.0))
+        bbox = tuple(tuple(((0.0, 0.0), (1000.0, 0.0), (1000.0, 1000.0), (0.0, 1000.0))))  
+        observation_area = tuple((20.0, 50.0))
         env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruct=obstruction_count, bbox=bbox, observation_area=observation_area) 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     
@@ -245,7 +251,7 @@ def train():
     
         # TODO why is state 11 long?
         # state = env.reset()['state'] # All agents begin in same location
-        starting_result = env.reset()[0] # All agents begin in same location, only need one state
+        results = env.reset() # All agents begin in same location, only need one state
         
         #print("Source location: ", env.src_coords)
         #print("Agent location: ", env.agents[0].det_coords)
@@ -255,9 +261,9 @@ def train():
         epoch_counter += 1
 
         for _ in range(max_ep_len):
-            raw_action_list = {id: agent.select_action(starting_result.state) for id, agent in ppo_agents.items()}
+            raw_action_list = {id: agent.select_action(results[id].state) for id, agent in ppo_agents.items()}
             
-            # TODO Make this work in the env instead of here
+            # TODO Make this work in the env calculation for actions instead of here, and make 0 the idle state
             # Convert actions to include -1 as "idle" option
             action_list = {id: a-1 for id, a in raw_action_list.items()}
 
