@@ -1,3 +1,6 @@
+'''
+Built from https://github.com/nikhilbarhate99/PPO-PyTorch
+'''
 import os
 import sys
 import glob
@@ -287,11 +290,15 @@ def train():
         epoch_counter += 1
 
         for _ in range(max_ep_len):
-            raw_action_list = {id: agent.select_action(results[id].state) for id, agent in ppo_agents.items()}
+            
+            assert not results[0].error["out_of_bounds"], "Out of bounds not implemented (yet) for CNN"
+            if DEBUG:
+                print("Training [state]: ", results[0].state)
+            raw_action_list = {id: agent.select_action(results[id].state) for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
             
             # TODO Make this work in the env calculation for actions instead of here, and make 0 the idle state
             # Convert actions to include -1 as "idle" option
-            action_list = {id: a-1 for id, a in raw_action_list.items()}
+            action_list = {id: convert_nine_to_five_action_space(action) for id, action in raw_action_list.items()}
 
             #state, reward, done, _
             results = env.step(action_list=action_list, action=None)  #TODO why is return an array of 11?
