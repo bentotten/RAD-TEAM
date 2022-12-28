@@ -504,10 +504,10 @@ class RadSearch(gym.Env):
             
         if DEBUG:
             print()
-            print("Step result - state: ", aggregate_step_result[0].state)
-            print("Step result - reward: ", aggregate_step_result[0].reward)
-            print("Step result - error: ", aggregate_step_result[0].error)
-            print("Step result - success: ", aggregate_step_result[0].done)
+            print("Step result [state]: ", aggregate_step_result[0].state)
+            print("Step result [reward]: ", aggregate_step_result[0].reward)
+            print("Step result [error]: ", aggregate_step_result[0].error)
+            print("Step result [success]: ", aggregate_step_result[0].done)
             print()
         return aggregate_step_result
 

@@ -33,20 +33,46 @@ DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
 DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
 DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm
 
-# These actions correspond to:
-# -1: idle
-# 0: left
-# 1: up and left
-# 2: up
-# 3: up and right
-# 4: right
-# 5: down and right
-# 6: down
-# 7: down and left
-#Action: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7]
-#TODO ^ Finish making this
 
-# TODO make command line args for this stuff
+def convert_nine_to_five_action_space(action):
+    ''' Converts 4 direction + idle action space to 9 dimensional equivelant
+        Environment action values:
+        -1: idle
+        0: left
+        1: up and left
+        2: up
+        3: up and right
+        4: right
+        5: down and right
+        6: down
+        7: down and left
+
+        Cardinal direction action values:
+        0: idle
+        1: left
+        2: up
+        3: right
+        4: down
+    '''
+    match action:
+        # Idle
+        case 0:
+            return -1
+        # Left
+        case 1:
+            return 0
+        # Up
+        case 2:
+            return 2
+        # Right
+        case 3:
+            return 4
+        # Down
+        case 4:
+            return 6
+        case _:
+            raise Exception('Action is not within valid [0,5] range.')
+
 ################################### Training ###################################
 
 def train():

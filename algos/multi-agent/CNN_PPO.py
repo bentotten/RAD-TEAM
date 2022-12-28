@@ -99,6 +99,8 @@ class MapsBuffer:
         self.buffer.clear()
         
     def state_to_map(self, state):
+        # Process state
+        scaled_coordinates = (int(state[1] * self.resolution_accuracy), int(state[2] * self.resolution_accuracy))
         # TODO put initial readings and location in maps
         # Capture current and reset previous location
         if self.buffer.states:
@@ -106,8 +108,8 @@ class MapsBuffer:
             self.location_map[int(last_state[1])][int(last_state[2])]
         
         # Set new location
-        x = int(state[1])
-        y = int(state[2])
+        x = int(scaled_coordinates[0])
+        y = int(scaled_coordinates[1])
         self.location_map[x][y] = 1.0 # Convert to Gridsquare datatype
         # Insert state
         
@@ -335,15 +337,13 @@ class PPO:
         self.MseLoss = nn.MSELoss()
 
     def select_action(self, state):
-        # Process state
-        scaled_state = (int(state[1] * self.resolution_accuracy), int(state[2] * self.resolution_accuracy))
         with torch.no_grad():
             (
                 location_map,
                 others_locations_map,
                 readings_map,
                 visit_counts_map
-            ) = self.maps.state_to_map(scaled_state)
+            ) = self.maps.state_to_map(state)
             map_stack = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map)]) # Convert to tensor
             map_stack = torch.unsqueeze(map_stack, dim=0)  # TODO Make into real minibatches instead of just a resampling
             state = torch.FloatTensor(state).to(device) # Convert to tensor TODO already a tensor, is this necessary?
