@@ -466,6 +466,15 @@ class RadSearch(gym.Env):
         aggregate_step_result: dict[int, StepResult] = {_: StepResult() for _ in self.agents}
         
         if action_list:
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            if DEBUG:  
+                test_step = get_step(action_list[0])
+                print("test step: ", test_step)
+                test = sum_p(self.agents[0].det_coords, test_step)
+                print("tentative coordinates: ", test)
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
             tentative_coords = [sum_p(self.agents[agent_id].det_coords, get_step(action)) for agent_id, action in action_list.items()]
             for agent_id, action in action_list.items():
                 aggregate_step_result[agent_id].id = agent_id
@@ -492,6 +501,14 @@ class RadSearch(gym.Env):
                     aggregate_step_result[agent_id].error,
                 ) = agent_step(action=action, agent=agent)
             self.iter_count += 1
+            
+        if DEBUG:
+            print()
+            print("Step result - state: ", aggregate_step_result[0].state)
+            print("Step result - reward: ", aggregate_step_result[0].reward)
+            print("Step result - error: ", aggregate_step_result[0].error)
+            print("Step result - success: ", aggregate_step_result[0].done)
+            print()
         return aggregate_step_result
 
     def reset(self) -> dict[int, StepResult]:
@@ -694,7 +711,7 @@ class RadSearch(gym.Env):
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         if DEBUG:        
-            source = Point((5.0, 5.0))  # TODO DELETE ME
+            source = Point((500.0, 0.0))  # TODO DELETE ME
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!        
         
         src_point = to_vis_p(source)
@@ -703,7 +720,7 @@ class RadSearch(gym.Env):
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  
         if DEBUG:              
-            detector = Point((0.0, 0.0))  # TODO DELETE ME
+            detector = Point((500.0, 500.0))  # TODO DELETE ME
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!          
         det_point = to_vis_p(detector)
 
