@@ -21,6 +21,11 @@ from CNN_PPO import PPO as PPO
 from dataclasses import dataclass, field
 from typing_extensions import TypeAlias
 
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+DEBUG = True
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 # Scaling
 # TODO get from env instead, remove from global
 DET_STEP = 100.0  # detector step size at each timestep in cm/s
@@ -104,15 +109,15 @@ def train():
 
     obstruction_count = 0
     number_of_agents = 1
+    env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruct=obstruction_count)
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    bbox = tuple(tuple(((0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0))))  # TODO TEST: DELETE ME
-    observation_area = tuple((2.0, 5.0))
+    if DEBUG:
+        bbox = tuple(tuple(((0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0))))  
+        observation_area = tuple((2.0, 5.0))
+        env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruct=obstruction_count, bbox=bbox, observation_area=observation_area) 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     
-    #env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruct=obstruction_count) # TODO TEST: UNCOMMENT ME
-    env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruct=obstruction_count, bbox=bbox, observation_area=observation_area) # TODO TEST: DELETE ME
-
     # state space dimension
     state_dim = env.observation_space.shape[0]
 
@@ -170,8 +175,7 @@ def train():
     print("max timesteps per episode : ", max_ep_len)
     print("model saving frequency : " + str(save_model_freq) + " timesteps")
     print("log frequency : " + str(log_freq) + " timesteps")
-    print("printing average reward over episodes in last : " +
-          str(print_freq) + " timesteps")
+    print("printing average reward over episodes in last : " + str(print_freq) + " timesteps")
     print("--------------------------------------------------------------------------------------------")
     print("state space dimension : ", state_dim)
     print("action space dimension : ", action_dim)
@@ -243,8 +247,8 @@ def train():
         # state = env.reset()['state'] # All agents begin in same location
         starting_result = env.reset()[0] # All agents begin in same location, only need one state
         
-        print("Source location: ", env.src_coords)
-        print("Agent location: ", env.agents[0].det_coords)
+        #print("Source location: ", env.src_coords)
+        #print("Agent location: ", env.agents[0].det_coords)
         
         # TODO turn into array for each agent ID (maybe a dict or tuple)
         current_ep_reward_sample = 0
