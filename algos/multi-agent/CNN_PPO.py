@@ -341,8 +341,8 @@ class PPO:
 
     def select_action(self, state):
         # Process state
-        state[1] = state[1] * self.resolution_accuracy
-        state[2] = state[2] * self.resolution_accuracy
+        state[1] = int(state[1] * self.resolution_accuracy)
+        state[2] = int(state[2] * self.resolution_accuracy)
         with torch.no_grad():
             (
                 location_map,

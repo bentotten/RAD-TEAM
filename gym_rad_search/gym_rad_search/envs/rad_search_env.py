@@ -50,6 +50,11 @@ Metadata: TypeAlias = TypedDict(
 Action: TypeAlias = Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7]
 Directions: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7]
 
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+DEBUG = True
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 A_SIZE = len(get_args(Action))
 DETECTABLE_DIRECTIONS = len(get_args(Directions)) # Ignores -1 idle state
 FPS = 50
@@ -536,6 +541,12 @@ class RadSearch(gym.Env):
         
         self.intensity = self.np_random.integers(self.radiation_intensity_bounds[0], self.radiation_intensity_bounds[1])  # type: ignore
         self.bkg_intensity = self.np_random.integers(self.background_radiation_bounds[0], self.background_radiation_bounds[1])  # type: ignore
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        if DEBUG:  
+            self.intensity = np.int_(10000)
+            self.bkg_intensity = np.int_(0)
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
         # Check if the environment is valid
         if not (self.world.is_valid(EPSILON)):
@@ -678,11 +689,22 @@ class RadSearch(gym.Env):
             )
 
         # Generate initial point values
-        source = rand_point()
+        source: Point = rand_point()
+
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        if DEBUG:        
+            source = Point((5.0, 5.0))  # TODO DELETE ME
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!        
+        
         src_point = to_vis_p(source)
         
         detector = rand_point()
-        
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  
+        if DEBUG:              
+            detector = Point((0.0, 0.0))  # TODO DELETE ME
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!          
         det_point = to_vis_p(detector)
 
         # Check if detectors starting location is in an object
@@ -705,29 +727,36 @@ class RadSearch(gym.Env):
         inter = False
         obstacle_index = 0
         num_retry = 0
-        while not src_clear:
-            while dist_p(detector, source) < 1000:
-                source = rand_point()
-            src_point = to_vis_p(source)
-            L: vis.Line_Segment = vis.Line_Segment(det_point, src_point)
-            while not resamp and obstacle_index < self.num_obs:
-                poly_p: vis.Polygon = to_vis_poly(self.poly[obstacle_index])
-                if src_point._in(poly_p, EPSILON):  # type: ignore
-                    resamp = True
-                if not resamp and vis.boundary_distance(L, poly_p) < 0.001:  # type: ignore
-                    inter = True
-                obstacle_index += 1
-            if self.num_obs == 0 or (num_retry > 20 and not resamp):
-                src_clear = True
-            elif resamp or not inter:
-                source = rand_point()
+
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  
+        if DEBUG:   
+            pass
+        else:
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!          
+            while not src_clear:
+                while dist_p(detector, source) < 1000:
+                    source = rand_point()
                 src_point = to_vis_p(source)
-                obstacle_index = 0
-                resamp = False
-                inter = False
-                num_retry += 1
-            elif inter:
-                src_clear = True
+                L: vis.Line_Segment = vis.Line_Segment(det_point, src_point)
+                while not resamp and obstacle_index < self.num_obs:
+                    poly_p: vis.Polygon = to_vis_poly(self.poly[obstacle_index])
+                    if src_point._in(poly_p, EPSILON):  # type: ignore
+                        resamp = True
+                    if not resamp and vis.boundary_distance(L, poly_p) < 0.001:  # type: ignore
+                        inter = True
+                    obstacle_index += 1
+                if self.num_obs == 0 or (num_retry > 20 and not resamp):
+                    src_clear = True
+                elif resamp or not inter:
+                    source = rand_point()
+                    src_point = to_vis_p(source)
+                    obstacle_index = 0
+                    resamp = False
+                    inter = False
+                    num_retry += 1
+                elif inter:
+                    src_clear = True
 
         return src_point, det_point, detector, source
 
