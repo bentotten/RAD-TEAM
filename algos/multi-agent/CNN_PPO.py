@@ -17,8 +17,7 @@ from typing_extensions import TypeAlias
 
 # Maps
 Point: TypeAlias = NewType("Point", tuple[float, float])  # Array indicies to access a GridSquare
-GridSquare: TypeAlias = NewType("GridSquare", float)  # Value stored in a map location
-Map: TypeAlias = NewType("Map", List[List[GridSquare]])  # 2D array that holds gridsquare values TODO switch to npt.NDArray[] or tensor
+Map: TypeAlias = NewType("Map", npt.NDArray[np.int32]) # 2D array that holds gridsquare values
 
 # TODO move this somewhere ... else lol
 ################################## set device ##################################
@@ -87,35 +86,35 @@ class MapsBuffer:
         Scaled maps
         '''
         self.map_dimensions = (int(self.grid_bounds[0] * self.resolution_accuracy), int(self.grid_bounds[1] * self.resolution_accuracy))
-
         self.x_limit_scaled: int = self.map_dimensions[0] 
         self.y_limit_scaled: int = self.map_dimensions[1]
-        
-        self.location_map: Map = Map([[GridSquare(0.0)] * self.x_limit_scaled] * self.y_limit_scaled)  # TODO rethink this, this is very slow
-        self.others_locations_map: Map = Map([[GridSquare(0.0)] * self.x_limit_scaled] * self.y_limit_scaled)  # TODO rethink this, this is very slow
-        self.readings_map: Map = Map([[GridSquare(0.0)] * self.x_limit_scaled] * self.y_limit_scaled)  # TODO rethink this, this is very slow
-        self.visit_counts_map: Map = Map([[GridSquare(0.0)] * self.x_limit_scaled] * self.y_limit_scaled)  # TODO rethink this, this is very slow
+        self.clear()
+
     
     def clear(self):
-        del self.location_map[:]
-        del self.others_locations_map[:]
-        del self.readings_map[:]
-        del self.visit_counts_map[:]
+        self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.int32))  # TODO rethink this, this is very slow
+        self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.int32))  # TODO rethink this, this is very slow
+        self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.int32))  # TODO rethink this, this is very slow
+        self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.int32))  # TODO rethink this, this is very slow
         self.buffer.clear()
         
     def state_to_map(self, state):
+        # TODO put initial readings and location in maps
         # Capture current and reset previous location
+        print(self.location_map)
         if self.buffer.states:
             last_state = self.buffer.states[-1]
             self.location_map[int(last_state[1])][int(last_state[2])]
-            print(self.location_map[int(last_state[1])][int(last_state[2])])
         
         # Set new location
-        self.location_map[int(state[1])][int(state[2])] = GridSquare(1) # Convert to Gridsquare datatype
-        print(self.location_map[int(state[1])][int(state[2])]) # TODO delete
+        x = int(state[1])
+        y = int(state[2])
+        self.location_map[x][y] = 1.0 # Convert to Gridsquare datatype
+        print(self.location_map[x][y])
         # Insert state
         
         print(self.buffer.states) # TODO delete
+        print(self.location_map)
         
         return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map
 
