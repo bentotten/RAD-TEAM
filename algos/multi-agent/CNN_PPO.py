@@ -1,3 +1,6 @@
+'''
+Implementation of "Target Localization using Multi-Agent Deep Reinforcement Learning with Proximal Policy Optimization" by Alagha et al.
+'''
 from os import stat
 from matplotlib.streamplot import Grid
 from numpy import dtype
@@ -102,15 +105,19 @@ class MapsBuffer:
         # Process state
         scaled_coordinates = (int(state[1] * self.resolution_accuracy), int(state[2] * self.resolution_accuracy))
         # TODO put initial readings and location in maps
+        
         # Capture current and reset previous location
         if self.buffer.states:
             last_state = self.buffer.states[-1]
-            self.location_map[int(last_state[1])][int(last_state[2])]
+            scaled_last_coordinates = (int(last_state[1] * self.resolution_accuracy), int(last_state[2] * self.resolution_accuracy))
+            x_old = int(scaled_coordinates[0])
+            y_old = int(scaled_coordinates[1])
+            self.location_map[x_old][y_old] = 0.0 
         
         # Set new location
         x = int(scaled_coordinates[0])
         y = int(scaled_coordinates[1])
-        self.location_map[x][y] = 1.0 # Convert to Gridsquare datatype
+        self.location_map[x][y] = 1.0 
         # Insert state
         
         
@@ -336,7 +343,7 @@ class PPO:
         
         self.MseLoss = nn.MSELoss()
 
-    def select_action(self, state):
+    def select_action(self, state):        
         with torch.no_grad():
             (
                 location_map,
@@ -370,7 +377,7 @@ class PPO:
         # Normalizing the rewards
         rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
-
+https://github.com/nikhilbarhate99/PPO-PyTorch
         # convert list to tensor
         old_states = torch.squeeze(torch.stack(self.maps.buffer.states, dim=0)).detach().to(device)
         old_actions = torch.squeeze(torch.stack(self.maps.buffer.actions, dim=0)).detach().to(device)
