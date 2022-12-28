@@ -56,7 +56,6 @@ def train():
     max_ep_len = 120                      # max timesteps in one episode
     #max_ep_len = 30                      # max timesteps in one episode # TODO delete me after fixing
     training_timestep_bound = int(6e6)  # Change to epoch count
-    render_buffer_rewards = []
 
     # print avg reward in the interval (in num timesteps)
     #print_freq = max_ep_len * 3
@@ -237,7 +236,6 @@ def train():
         # TODO why is state 11 long?
         # state = env.reset()['state'] # All agents begin in same location
         starting_result = env.reset()[0] # All agents begin in same location, only need one state
-        render_buffer_rewards.clear()  # Reset render buffer for a new episode
         # TODO turn into array for each agent ID (maybe a dict or tuple)
         current_ep_reward_sample = 0
         epoch_counter += 1
@@ -254,11 +252,9 @@ def train():
 
             # saving reward and is_terminals
             for id, agent in ppo_agents.items():
-                agent.buffer.rewards.append(results[id].reward)
-                agent.buffer.is_terminals.append(results[id].done)
+                agent.maps.buffer.rewards.append(results[id].reward)
+                agent.maps.buffer.is_terminals.append(results[id].done)
                 
-                render_buffer_rewards.append(results[id].reward)
-
                 ####
                 # update PPO agent
                 if total_time_step % update_timestep == 0:

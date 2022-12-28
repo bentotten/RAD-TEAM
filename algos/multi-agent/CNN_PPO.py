@@ -221,18 +221,18 @@ class Actor(nn.Module):
         pool_output = int(((map_dim[0]-2) / 2) + 1) # Get maxpool output height/width and floor it
 
         # Actor network
-        self.step1 = nn.Conv2d(in_channels=4, out_channels=8, kernel_size=3, stride=1, padding=1)  # output tensor with shape (4, 8, Height, Width)
+        self.step1 = nn.Conv2d(in_channels=4, out_channels=8, kernel_size=3, stride=1, padding=1)  # output tensor with shape (batchs, 8, Height, Width)
         self.relu = nn.ReLU()
-        self.step2 = nn.MaxPool2d(kernel_size=2, stride=2)  # output heighth and width is floor(((Width - Size)/ Stride) +1)
+        self.step2 = nn.MaxPool2d(kernel_size=2, stride=2)  # output height and width is floor(((Width - Size)/ Stride) +1)
         self.step3 = nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1) 
         #nn.ReLU()
-        self.step4 = nn.Flatten(start_dim=0, end_dim= -1) 
+        self.step4 = nn.Flatten(start_dim=0, end_dim= -1) # output tensor with shape (1, x)
         self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32) 
         #nn.ReLU()
         self.step6 = nn.Linear(in_features=32, out_features=16) 
         #nn.ReLU()
         self.step7 = nn.Linear(in_features=16, out_features=5) # TODO eventually make '5' action_dim instead
-        self.softmax = nn.Softmax()  # Put in range [0,1] 
+        self.softmax = nn.Softmax(dim=0)  # Put in range [0,1] 
 
         # TODO uncomment after ready to combine
         self.actor = nn.Sequential(
@@ -241,13 +241,13 @@ class Actor(nn.Module):
                         nn.MaxPool2d(kernel_size=2, stride=2),  # output tensor with shape (4, 8, 2, 2)
                         nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (4, 16, 2, 2)
                         nn.ReLU(),
-                        nn.Flatten(start_dim=0, end_dim= -1),  # output tensor with shape (1, 256)
+                        nn.Flatten(start_dim=0, end_dim= -1),  # output tensor with shape (1, x)
                         nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32), # output tensor with shape (32)
                         nn.ReLU(),
                         nn.Linear(in_features=32, out_features=16), # output tensor with shape (16)
                         nn.ReLU(),
                         nn.Linear(in_features=16, out_features=5), # output tensor with shape (5)
-                        nn.Softmax()  # Put in range [0,1]
+                        nn.Softmax(dim=0)  # Put in range [0,1]
                     )
 
         # If decentralized critic
@@ -260,43 +260,44 @@ class Actor(nn.Module):
                         nn.MaxPool2d(kernel_size=2, stride=2),  # output tensor with shape (batch_size, 8, x, x) x is the floor(((Width - Size)/ Stride) +1)
                         nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (batch_size, 16, 2, 2)
                         nn.ReLU(),
-                        nn.Flatten(start_dim=0, end_dim= -1),  # output tensor with shape (1, 256)
-                        nn.Linear(in_features=16*2*2*4, out_features=32), # output tensor with shape (32)
+                        nn.Flatten(start_dim=0, end_dim= -1),  # output tensor with shape (1, x)
+                        nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32), # output tensor with shape (32)
                         nn.ReLU(),
                         nn.Linear(in_features=32, out_features=16), # output tensor with shape (16)
                         nn.ReLU(),
                         nn.Linear(in_features=16, out_features=1), # output tensor with shape (1)
-                        nn.Softmax()  # Put in range [0,1] TODO Is this needed for critic?
+                        nn.Softmax(dim=0)  # Put in range [0,1] TODO Is this needed for critic?
                     )
 
     def forward(self):
         raise NotImplementedError
     
     def act(self, state_map_stack):
-        print("Starting shape, ", state_map_stack.size())
-        x = self.step1(state_map_stack) # conv1
-        x = self.relu(x)
-        print("shape, ", x.size()) 
-        x = self.step2(x) # Maxpool
-        print("shape, ", x.size()) 
-        x = self.step3(x) # conv2
-        x = self.relu(x)
-        print("shape, ", x.size()) 
-        x = self.step4(x) # Flatten
-        print("shape, ", x.size()) 
-        x = self.step5(x) # linear
-        x = self.relu(x) 
-        print("shape, ", x.size()) 
-        x = self.step6(x) # linear
-        x = self.relu(x)
-        print("shape, ", x.size()) 
-        x = self.step7(x) # Output layer
-        print("shape, ", x.size()) 
-        x = self.softmax(x)
+        # print("Starting shape, ", state_map_stack.size())
+        # x = self.step1(state_map_stack) # conv1
+        # x = self.relu(x)
+        # print("shape, ", x.size()) 
+        # x = self.step2(x) # Maxpool
+        # print("shape, ", x.size()) 
+        # x = self.step3(x) # conv2
+        # x = self.relu(x)
+        # print("shape, ", x.size()) 
+        # x = self.step4(x) # Flatten
+        # print("shape, ", x.size()) 
+        # x = self.step5(x) # linear
+        # x = self.relu(x) 
+        # print("shape, ", x.size()) 
+        # x = self.step6(x) # linear
+        # x = self.relu(x)
+        # print("shape, ", x.size()) 
+        # x = self.step7(x) # Output layer
+        # print("shape, ", x.size()) 
+        # x = self.softmax(x)
         
-        print(x)
+        # print(x)
         
         action_probs = self.actor(state_map_stack)
+        # print(x)
         dist = Categorical(action_probs)
 
         action = dist.sample()
