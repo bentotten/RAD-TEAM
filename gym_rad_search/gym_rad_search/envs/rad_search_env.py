@@ -72,6 +72,7 @@ COLORS = [
     Colorcode([255, 127, 0]) # Orange
     ]
 
+
 def sum_p(p1: Point, p2: Point) -> Point:
     """
     Return the sum of the two points.
