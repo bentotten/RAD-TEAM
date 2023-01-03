@@ -50,13 +50,9 @@ Metadata: TypeAlias = TypedDict(
 Action: TypeAlias = Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7]
 Directions: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7]
 
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-DEBUG = True
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
 A_SIZE = len(get_args(Action))
 DETECTABLE_DIRECTIONS = len(get_args(Directions)) # Ignores -1 idle state
+MAX_CREATION_TRIES = 10
 FPS = 50
 DET_STEP = 100.0  # detector step size at each timestep in cm/s
 DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
@@ -261,8 +257,6 @@ class RadSearch(gym.Env):
         # obstruct
         # Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions
     """ 
-    # Backwards compatiblility with single-agent step returns
-    backwards_compatible: Union[Literal[1], None] = field(default=None)
     # Environment
     bbox: BBox = field(default_factory=lambda: BBox(
             tuple((Point((0.0, 0.0)), Point((2700.0, 0.0)), Point((2700.0, 2700.0)), Point((0.0, 2700.0))))
@@ -275,7 +269,7 @@ class RadSearch(gym.Env):
     max_dist: float = field(init=False)
     line_segs: list[list[vis.Line_Segment]] = field(init=False)
     poly: list[Polygon] = field(init=False)
-    search_area: BBox = field(init=False)
+    search_area: BBox = field(init=False)  # Area Detector and Source will spawn - each must be 1000 cm apart from the source
     walls: Polygon = field(init=False)
     world: vis.Environment = field(init=False)
     vis_graph: vis.Visibility_Graph = field(init=False)
@@ -307,6 +301,13 @@ class RadSearch(gym.Env):
     
     # Rendering
     iter_count: int = field(default=0)   # For render function, believe it counts timesteps
+    
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    # For debugging
+    DEBUG: bool = field(default=False)
+    DEBUG_SOURCE_LOCATION: Point = field(default=Point((0.0, 0.0)))
+    DEBUG_DETECTOR_LOCATION: Point = Point((500.0, 500.0))  
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     def __post_init__(self):
         self.search_area: BBox = BBox(
@@ -339,9 +340,13 @@ class RadSearch(gym.Env):
         )
         self.epoch_end = True
         self.agents = {i: Agent(id=i) for i in range(self.number_agents)}
-        self.max_dist: float = dist_p(self.search_area[2], self.search_area[1])
+        self.max_dist: float = dist_p(self.search_area[2], self.search_area[1])  # Maximum distance between two points within search area
         if self.seed != None:
             np.random.seed(self.seed) # TODO Fix to work with rng arg?
+            
+        # Sanity Check
+        assert self.max_dist > 1000  # Assure there is room to spawn detectors and source with proper spacing
+        
         self.reset()
 
     def step(
@@ -469,7 +474,7 @@ class RadSearch(gym.Env):
         if action_list:
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            if DEBUG:  
+            if self.DEBUG:  
                 test_step = get_step(action_list[0])
                 print("test step: ", test_step)
                 test = sum_p(self.agents[0].det_coords, test_step)
@@ -503,7 +508,7 @@ class RadSearch(gym.Env):
                 ) = agent_step(action=action, agent=agent)
             self.iter_count += 1
             
-        if DEBUG:
+        if self.DEBUG:
             print()
             print("Step result [state]: ", aggregate_step_result[0].state)
             #print("Step result [reward]: ", aggregate_step_result[0].reward)
@@ -561,7 +566,7 @@ class RadSearch(gym.Env):
         self.bkg_intensity = self.np_random.integers(self.background_radiation_bounds[0], self.background_radiation_bounds[1])  # type: ignore
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        if DEBUG:  
+        if self.DEBUG:  
             self.intensity = np.int_(10000)
             self.bkg_intensity = np.int_(0)
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -711,8 +716,8 @@ class RadSearch(gym.Env):
 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        if DEBUG:        
-            source = Point((500.0, 0.0))  # TODO DELETE ME
+        if self.DEBUG:        
+            source = self.DEBUG_SOURCE_LOCATION
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!        
         
         src_point = to_vis_p(source)
@@ -720,13 +725,14 @@ class RadSearch(gym.Env):
         detector = rand_point()
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  
-        if DEBUG:              
-            detector = Point((500.0, 500.0))  # TODO DELETE ME
+        if self.DEBUG:              
+            detector = self.DEBUG_DETECTOR_LOCATION 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!          
         det_point = to_vis_p(detector)
 
         # Check if detectors starting location is in an object
-        while not det_clear:
+        test_count = 0
+        while not det_clear and test_count < MAX_CREATION_TRIES:
             while not resamp and obstacle_index < self.num_obs:
                 if det_point._in(to_vis_poly(self.poly[obstacle_index]), EPSILON):  # type: ignore
                     resamp = True
@@ -738,6 +744,10 @@ class RadSearch(gym.Env):
                 resamp = False
             else:
                 det_clear = True
+            
+            test_count += 1
+            if test_count == MAX_CREATION_TRIES:
+                raise ValueError('Creating Environment Failed - Maximum tries exceeded to clear Detector. Check bounds and observation area to ensure source and detector can spawn 10 meters apart (1000 cm).')
         
         # Check if source starting location is in object and is far enough away from detector
         # TODO change to multi-source
@@ -748,13 +758,18 @@ class RadSearch(gym.Env):
 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  
-        if DEBUG:   
+        if self.DEBUG:   
             pass
         else:
-        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!          
-            while not src_clear:
-                while dist_p(detector, source) < 1000:
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            test_count = 0          
+            while not src_clear and test_count < MAX_CREATION_TRIES:
+                subtest_count = 0
+                while dist_p(detector, source) < 1000 and subtest_count < MAX_CREATION_TRIES:
                     source = rand_point()
+                    subtest_count += 1
+                    if subtest_count == MAX_CREATION_TRIES:
+                        raise ValueError('Creating Environment Failed - Maximum tries exceeded to clear Detector. Check bounds and observation area to ensure source and detector can spawn 10 meters apart (1000 cm).')
                 src_point = to_vis_p(source)
                 L: vis.Line_Segment = vis.Line_Segment(det_point, src_point)
                 while not resamp and obstacle_index < self.num_obs:
@@ -775,6 +790,10 @@ class RadSearch(gym.Env):
                     num_retry += 1
                 elif inter:
                     src_clear = True
+                    
+                test_count += 1
+                if test_count == MAX_CREATION_TRIES:
+                    raise ValueError('Creating Environment Failed - Maximum tries exceeded to clear Detector. Check bounds and observation area to ensure source and detector can spawn 10 meters apart (1000 cm).')
 
         return src_point, det_point, detector, source
 

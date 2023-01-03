@@ -1,21 +1,34 @@
 import unittest
-#from gym_rad_search.envs import RadSearch  # type: ignore 
+from gym_rad_search.envs import RadSearch
+from gym_rad_search.envs.rad_search_env import BBox 
 
 class UnitTestModule(unittest.TestCase):
     def test_dummy(self):
+        print('\n:: test_dummy ::')
         self.assertEqual(2+2,4)
 
 
-# class MathHelpers(unittest.TestCase):
-#     # def __init__(self):
-#     #     self.env = RadSearch()
+class MathHelpers(unittest.TestCase):
+    def setUp(self):
+        self.env = RadSearch()
+
+    def tearDown(self):
+        del self.env
         
-#     def test_sum_p(self):
-#         """ Return the sum of the two points. """
-#         # data = []
-#         # result = self.env.sum_p(data[0], data[1])
-#         # self.assertEqual(result, 15)
-#         pass 
+    def test_args(self):
+        """ Test parameters"""
+        print('\n:: test_args ::')
+        test_bbox = tuple(((0.0, 0.0), (1000.0, 0.0), (1000.0, 1000.0), (0.0, 1000.0)))
+        test_observation_area = (200.0, 500.0)
+
+        test_env = RadSearch(
+            bbox=test_bbox,
+            observation_area=test_observation_area,
+            )
+        self.assertEqual(test_env.bbox, test_bbox)
+        self.assertEqual(test_env.observation_area, test_observation_area)
+
+        pass 
     
 # def sub_p(p1: Point, p2: Point) -> Point:
 #     """
