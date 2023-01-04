@@ -234,9 +234,12 @@ def train():
         # TODO turn into array for each agent ID (maybe a dict or tuple)
         current_ep_reward_sample = 0
         epoch_counter += 1
-        prior_state = [results[0].state[1], results[0].state[2]]
-        fail_count = 0 # TODO DELETE ME
-        
+
+        # Sanity check
+        prior_state = []
+        for result in results.values():
+            prior_state.append([result.state[1], result.state[2]])     
+            
         for _ in range(max_ep_len):
             action_list = {id: agent.select_action(results[id].state) - 1 for id, agent in ppo_agents.items()} # -1 to account for existance of -1 for "idle" 
 
@@ -247,18 +250,12 @@ def train():
             #state, reward, done, _
             results = env.step(action_list=action_list, action=None)  #TODO why is return an array of 11?
             
-            # Sanity check TODO DELETE ME
-            if 8 in action_list.values():
-                print("8 in the house")
-                raise ValueError ""
-            try:
-                assert (results[0].state[1] != prior_state[0] and results[0].state[2] != prior_state[1])
-            except:
-                fail_count += 1
-                print(f"Failed did-agent-move assertion! {fail_count} times for move {action_list[0]}!")
-                print(f"Failed at ({results[0].state[1]}, {results[0].state[2]})")
-            prior_state[0] = results[0].state[1]
-            prior_state[1] = results[0].state[2]            
+            # Ensure Agent moved in a direction
+            for id, result in results.items():
+                if action_list[id] != -1:
+                    assert (result.state[1] != prior_state[id][0] or result.state[2] != prior_state[id][1])
+                prior_state[id][0] = result.state[1]
+                prior_state[id][1] = result.state[2]         
 
             total_time_step += 1
             # TODO make work with averaged rewards from all agent, not just first agent

@@ -429,8 +429,7 @@ class RadSearch(gym.Env):
 
                 reward = -0.5 * agent.sp_dist / self.max_dist
 
-            # If detector coordinate noise is desired
-            # TODO why is noise coordinate being added here? Why is noise a coordinate at all?
+            # If detector coordinate noise is desired, will be added to the detector coordinates
             noise: Point = Point(
                 tuple(self.np_random.normal(scale=5, size=2))
                 if self.coord_noise
@@ -461,7 +460,7 @@ class RadSearch(gym.Env):
         aggregate_step_result: dict[int, StepResult] = {_: StepResult() for _ in self.agents}
         
         if action_list:
-            tentative_coords = [sum_p(self.agents[agent_id].det_coords, get_step(action)) for agent_id, action in action_list.items()]
+            proposed_coordinates = [sum_p(self.agents[agent_id].det_coords, get_step(action)) for agent_id, action in action_list.items()]
             for agent_id, action in action_list.items():
                 aggregate_step_result[agent_id].id = agent_id
                 (
@@ -469,7 +468,7 @@ class RadSearch(gym.Env):
                     aggregate_step_result[agent_id].reward, 
                     aggregate_step_result[agent_id].done,
                     aggregate_step_result[agent_id].error,
-                ) = agent_step(agent=self.agents[agent_id], action=action, proposed_coordinates=tentative_coords)   
+                ) = agent_step(agent=self.agents[agent_id], action=action, proposed_coordinates=proposed_coordinates)   
             self.iter_count += 1
             #return {k: asdict(v) for k, v in aggregate_step_result.items()}       
         else:
@@ -554,7 +553,8 @@ class RadSearch(gym.Env):
         Method that checks which direction to move the detector based on the action.
         If the action moves the detector into an obstruction, the detector position
         will be reset to the prior position.
-        0: #left
+        -1: idle
+        0: left
         1: up left
         2: up
         3: up right             
@@ -571,7 +571,8 @@ class RadSearch(gym.Env):
 
         roll_back_action: bool = False
         step = get_step(action)
-        tentative_coordinates = sum_p(agent.det_coords, step)
+        
+        tentative_coordinates = sum_p(agent.det_coords, step)         # TODO can delete and use value from proposed coords
         
         # If proposed move will collide with another agents proposed move, 
         if count_matching_p(tentative_coordinates, proposed_coordinates) > 1:
