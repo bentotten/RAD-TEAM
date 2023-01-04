@@ -18,8 +18,7 @@ from gym_rad_search.envs import RadSearch  # type: ignore
 from dataclasses import dataclass, field
 from typing_extensions import TypeAlias
 
-from vanilla_PPO import PPO as vanilla_PPO
-from CNN_PPO import PPO as CNN_PPO
+from vanilla_PPO import PPO as PPO
 
 
 # These actions correspond to:
