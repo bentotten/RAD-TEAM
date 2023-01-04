@@ -215,8 +215,8 @@ class Agent():
     sp_dist: float = field(init=False) # Shortest path distance between agent and source
     euc_dist: float =  field(init=False) # Crow-Flies distance between agent and source
     det_coords: Point = field(init=False) # Detector Coordinates
-    out_of_bounds: bool = field(init=False) # Artifact from rad_ppo; TODO remove from rad_ppo and have as a part of state return instead?
-    out_of_bounds_count: int = field(init=False)  # Artifact - TODO decouple from rad_ppo agent?
+    out_of_bounds: bool = field(init=False) 
+    out_of_bounds_count: int = field(init=False)
     intersect: bool = field(default=False)  # Check if line of sight is blocked by obstacle 
     detector: vis.Point = field(init=False) # Visilibity graph detector coordinates 
     prev_det_dist: float = field(init=False)
@@ -384,6 +384,7 @@ class RadSearch(gym.Env):
             A list of all resulting coordinates if all agents successfully take their actions. Used for collision prevention.
             """
             reward = field(init=False) # Ensure not unbound
+            agent.out_of_bounds = False
                      
             if self.take_action(agent, action, proposed_coordinates):
                 # Check if out of bounds
@@ -469,7 +470,7 @@ class RadSearch(gym.Env):
             sensor_meas: npt.NDArray[np.float64] = self.dist_sensors(agent=agent) if self.num_obs > 0 else np.zeros(DETECTABLE_DIRECTIONS)  # type: ignore
             # State is an 11-tuple ndarray
             state: npt.NDArray[np.float32] = np.array([meas, *det_coord_scaled, *sensor_meas])  # type: ignore
-            agent.out_of_bounds = False  # Artifact - TODO decouple from rad_ppo agent?
+            
             agent.det_sto.append(agent.det_coords)
             agent.meas_sto.append(meas)
             agent.reward_sto.append(reward)
