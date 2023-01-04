@@ -229,17 +229,36 @@ def train():
     
         # TODO why is state 11 long?
         # state = env.reset()['state'] # All agents begin in same location
-        starting_result = env.reset()[0] # All agents begin in same location, only need one state
+        results = env.reset() # All agents begin in same location, only need one state
         render_buffer_rewards.clear()  # Reset render buffer for a new episode
         # TODO turn into array for each agent ID (maybe a dict or tuple)
         current_ep_reward_sample = 0
         epoch_counter += 1
-
+        prior_state = [results[0].state[1], results[0].state[2]]
+        fail_count = 0 # TODO DELETE ME
+        
         for _ in range(max_ep_len):
-            action_list = {id: agent.select_action(starting_result.state) for id, agent in ppo_agents.items()}
+            action_list = {id: agent.select_action(results[id].state) - 1 for id, agent in ppo_agents.items()} # -1 to account for existance of -1 for "idle" 
+
+            # Ensure no item is above 7 or below -1
+            for action in action_list.values():
+                assert action < 8 and action >= -1
 
             #state, reward, done, _
             results = env.step(action_list=action_list, action=None)  #TODO why is return an array of 11?
+            
+            # Sanity check TODO DELETE ME
+            if 8 in action_list.values():
+                print("8 in the house")
+                raise ValueError ""
+            try:
+                assert (results[0].state[1] != prior_state[0] and results[0].state[2] != prior_state[1])
+            except:
+                fail_count += 1
+                print(f"Failed did-agent-move assertion! {fail_count} times for move {action_list[0]}!")
+                print(f"Failed at ({results[0].state[1]}, {results[0].state[2]})")
+            prior_state[0] = results[0].state[1]
+            prior_state[1] = results[0].state[2]            
 
             total_time_step += 1
             # TODO make work with averaged rewards from all agent, not just first agent
