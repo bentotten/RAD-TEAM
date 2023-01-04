@@ -165,7 +165,7 @@ def get_y_step_coeff(action: Action) -> int:
 
 # The signs of the x-coefficients follow the signs of cos(pi * (1 - action/4)) = sin(pi * (1 - (action + 6)/4))
 def get_x_step_coeff(action: Action) -> int:
-    return get_y_step_coeff((action + 6) % 8)
+    return get_y_step_coeff((action + 6) % 8) # TODO CHANGE TO A_SIZE and make work correctly
 
 
 def get_step(action: Action) -> Point:
