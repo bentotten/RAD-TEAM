@@ -289,19 +289,35 @@ def train():
         current_ep_reward_sample = 0
         epoch_counter += 1
 
+        # Sanity check
+        prior_state = []
+        for result in results.values():
+            prior_state.append([result.state[1], result.state[2]])  
+
         for _ in range(max_ep_len):
             
             assert not results[0].error["out_of_bounds"], "Out of bounds not implemented (yet) for CNN"
             if DEBUG:
                 print("Training [state]: ", results[0].state)
-            raw_action_list = {id: agent.select_action(results[id].state) for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
+            raw_action_list = {id: agent.select_action(results[id].state) -1 for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
             
             # TODO Make this work in the env calculation for actions instead of here, and make 0 the idle state
             # Convert actions to include -1 as "idle" option
             action_list = {id: convert_nine_to_five_action_space(action) for id, action in raw_action_list.items()}
+            
+            # Ensure no item is above 7 or below -1
+            for action in action_list.values():
+                assert action < 8 and action >= -1
 
             #state, reward, done, _
             results = env.step(action_list=action_list, action=None)  #TODO why is return an array of 11?
+
+            # Ensure Agent moved in a direction
+            for id, result in results.items():
+                if action_list[id] != -1:
+                    assert (result.state[1] != prior_state[id][0] or result.state[2] != prior_state[id][1])
+                prior_state[id][0] = result.state[1]
+                prior_state[id][1] = result.state[2]
 
             total_time_step += 1
             # TODO make work with averaged rewards from all agent, not just first agent
