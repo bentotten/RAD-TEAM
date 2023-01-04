@@ -74,7 +74,7 @@ def convert_nine_to_five_action_space(action):
         case 4:
             return 6
         case _:
-            raise Exception('Action is not within valid [0,5] range.')
+            raise Exception('Action is not within valid [0,4] range.')
 
 ################################### Training ###################################
 

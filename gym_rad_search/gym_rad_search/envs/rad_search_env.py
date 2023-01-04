@@ -343,7 +343,7 @@ class RadSearch(gym.Env):
         self.max_dist: float = dist_p(self.search_area[2], self.search_area[1])  # Maximum distance between two points within search area
         if self.seed != None:
             np.random.seed(self.seed) # TODO Fix to work with rng arg?
-            
+            self.np_random: npr.Generator = npr.default_rng(self.seed)     
         # Sanity Check
         # Assure there is room to spawn detectors and source with proper spacing
         assert self.max_dist > 1000, "Maximum distance available is too small, unable to spawn source and detector 1000 cm apart" 
