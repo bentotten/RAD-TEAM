@@ -1,5 +1,6 @@
 '''
 Implementation of "Target Localization using Multi-Agent Deep Reinforcement Learning with Proximal Policy Optimization" by Alagha et al.
+
 '''
 from os import stat
 from matplotlib.streamplot import Grid
@@ -377,7 +378,7 @@ class PPO:
         # Normalizing the rewards
         rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
-https://github.com/nikhilbarhate99/PPO-PyTorch
+
         # convert list to tensor
         old_states = torch.squeeze(torch.stack(self.maps.buffer.states, dim=0)).detach().to(device)
         old_actions = torch.squeeze(torch.stack(self.maps.buffer.actions, dim=0)).detach().to(device)
