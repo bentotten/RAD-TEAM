@@ -18,8 +18,8 @@ import gym
 # import roboschool
 from gym_rad_search.envs import RadSearch  # type: ignore
 
-from vanilla_PPO import PPO as Vanilla_PPO # vanilla_PPO
-from CNN_PPO import PPO as PPO
+from vanilla_PPO import PPO as PPO # vanilla_PPO
+from CNN_PPO import PPO as CNN_PPO
 
 from dataclasses import dataclass, field
 from typing_extensions import TypeAlias
@@ -85,11 +85,11 @@ def train():
     env_name = "radppo-v2"
 
     # max_ep_len = 1000                   # max timesteps in one episode
-    #training_timestep_bound = int(3e6)   # break training loop if timeteps > training_timestep_bound
-    epochs = 3000
+    #training_timestep_bound = int(3e6)   # break training loop if timeteps > training_timestep_bound TODO DELETE
+    epochs = 100  # Actual epoch will be a maximum of this number + max_ep_len
     #max_ep_len = 120                      # max timesteps in one episode
-    max_ep_len = 5                      # max timesteps in one episode # TODO delete me after fixing
-    training_timestep_bound = 5  # Change to epoch count
+    max_ep_len = 10                      # max timesteps in one episode # TODO delete me after fixing
+    #training_timestep_bound = 100  # Change to epoch count DELETE ME
 
     # print avg reward in the interval (in num timesteps)
     #print_freq = max_ep_len * 3
@@ -133,35 +133,6 @@ def train():
     resolution_accuracy = 100  # Round agent coordinates to nearest 100 for transition to map
     #####################################################
 
-    ################ Setup Environment ################
-
-    print("training environment name : " + env_name)
-    
-    # Generate a large random seed and random generator object for reproducibility
-    #robust_seed = _int_list_from_bigint(hash_seed(seed))[0] # TODO get this to work
-    #rng = npr.default_rng(robust_seed)
-    # Pass np_random=rng, to env creation
-
-    obstruction_count = 0
-    number_of_agents = 1
-    env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    if DEBUG:
-        bbox = tuple(tuple(((0.0, 0.0), (1000.0, 0.0), (1000.0, 1000.0), (0.0, 1000.0))))  
-        observation_area = tuple((20.0, 50.0))
-        env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count, bbox=bbox, observation_area=observation_area) 
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    
-    # state space dimension
-    state_dim = env.observation_space.shape[0]
-
-    # action space dimension
-    action_dim = env.action_space.n
-    
-    # Grid dimensions
-    grid_bounds = (env.bbox[2][0] / DET_STEP, env.bbox[2][1] / DET_STEP)  # Scale to match env returned state coords for each agent
-
     ###################### logging ######################
 
     # log files for multiple runs are NOT overwritten
@@ -204,9 +175,46 @@ def train():
     print(f"Current directory: {os.getcwd()}")
     #####################################################
 
+    ################ Setup Environment ################
+
+    print("training environment name : " + env_name)
+    
+    # Generate a large random seed and random generator object for reproducibility
+    #robust_seed = _int_list_from_bigint(hash_seed(seed))[0] # TODO get this to work
+    #rng = npr.default_rng(robust_seed)
+    # Pass np_random=rng, to env creation
+
+    obstruction_count = 0
+    number_of_agents = 1
+    env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    CNN = False
+    if DEBUG:
+        obstruction_count = 1
+        bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
+        #observation_area = tuple((20.0, 50.0))
+        env: RadSearch = RadSearch(DEBUG=True, number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count, bbox=bbox) 
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    env.render(
+        just_env=True,
+        path=directory,
+        save_gif=True
+    )
+    # state space dimension
+    state_dim = env.observation_space.shape[0]
+
+    # action space dimension
+    action_dim = env.action_space.n
+    
+    # Grid dimensions
+    grid_bounds = (env.bbox[2][0] / DET_STEP, env.bbox[2][1] / DET_STEP)  # Scale to match env returned state coords for each agent
+
+
     ############# print all hyperparameters #############
     print("--------------------------------------------------------------------------------------------")
-    print("max training timesteps : ", training_timestep_bound)
+    #print("max training timesteps : ", training_timestep_bound)
+    print("max training epochs : ", epochs)    
     print("max timesteps per episode : ", max_ep_len)
     print("model saving frequency : " + str(save_model_freq) + " timesteps")
     print("log frequency : " + str(log_freq) + " timesteps")
@@ -276,7 +284,8 @@ def train():
     epoch_counter = 0
 
     # training loop
-    while total_time_step < training_timestep_bound:
+    #while total_time_step < training_timestep_bound:
+    while epoch_counter < epochs:
     
         # TODO why is state 11 long?
         # state = env.reset()['state'] # All agents begin in same location
@@ -303,7 +312,11 @@ def train():
             
             # TODO Make this work in the env calculation for actions instead of here, and make 0 the idle state
             # Convert actions to include -1 as "idle" option
-            action_list = {id: convert_nine_to_five_action_space(action) for id, action in raw_action_list.items()}
+            # TODO REMOVE THIS AFTER WORKING
+            if CNN:
+                action_list = {id: convert_nine_to_five_action_space(action) for id, action in raw_action_list.items()}
+            else:
+                action_list = raw_action_list
             
             # Ensure no item is above 7 or below -1
             for action in action_list.values():
@@ -324,29 +337,15 @@ def train():
             current_ep_reward_sample += results[0].reward # Just take first agents rewards for now
 
             # saving reward and is_terminals
-            for id, agent in ppo_agents.items():
-                agent.maps.buffer.rewards.append(results[id].reward)
-                agent.maps.buffer.is_terminals.append(results[id].done)
-                
-                ####
-                # update PPO agent
-                if total_time_step % update_timestep == 0:
-                    agent.update()
-
-            # log in logging file
-            # TODO Log each agent instead of one
-            if total_time_step % log_freq == 0:
-
-                # log average reward till last episode
-                log_avg_reward = log_running_reward / log_running_episodes
-                log_avg_reward = round(log_avg_reward, 4)
-
-                log_f.write('{},{},{}\n'.format(
-                    i_episode, total_time_step, log_avg_reward))
-                log_f.flush()
-
-                log_running_reward = 0
-                log_running_episodes = 0
+            # Vanilla
+            if CNN:
+                for id, agent in ppo_agents.items():
+                    agent.maps.buffer.rewards.append(results[id].reward)
+                    agent.maps.buffer.is_terminals.append(results[id].done)
+            else:
+                for id, agent in ppo_agents.items():
+                    agent.buffer.rewards.append(results[id].reward)
+                    agent.buffer.is_terminals.append(results[id].done)
 
             # printing average reward
             # TODO print each agent instead of one
@@ -395,6 +394,27 @@ def train():
             # break; if the episode is over
             if done:
                 break
+        
+        ####
+        # update PPO agent and log
+        if total_time_step % update_timestep == 0:
+            for agent in ppo_agents.values():
+                agent.update()
+                epoch_counter += 1
+        # log in logging file
+        # TODO Log each agent instead of one
+        if total_time_step % log_freq == 0:
+
+            # log average reward till last episode
+            log_avg_reward = log_running_reward / log_running_episodes
+            log_avg_reward = round(log_avg_reward, 4)
+
+            log_f.write('{},{},{}\n'.format(
+                i_episode, total_time_step, log_avg_reward))
+            log_f.flush()
+
+            log_running_reward = 0
+            log_running_episodes = 0
 
         # TODO Print array instead
         print_running_reward += current_ep_reward_sample
@@ -404,14 +424,18 @@ def train():
         log_running_episodes += 1
 
         i_episode += 1
+        
+        # TODO Delete me
+        if DEBUG:
+            env.render(
+                save_gif=True,
+                path=directory,
+                epoch_count=epoch_counter,
+                #episode_rewards=episode_rewards
+            )
 
     # Render last episode
     # episode_rewards = {id: render_buffer_rewards[-max_ep_len:] for id, agent in ppo_agents.items()}
-    env.render(
-        just_env=True,
-        path=directory,
-        save_gif=True
-    )
     env.render(
         save_gif=True,
         path=directory,

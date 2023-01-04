@@ -305,7 +305,7 @@ class RadSearch(gym.Env):
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     # For debugging
     DEBUG: bool = field(default=False)
-    DEBUG_SOURCE_LOCATION: Point = field(default=Point((0.0, 0.0)))
+    DEBUG_SOURCE_LOCATION: Point = field(default=Point((1.0, 1.0)))
     DEBUG_DETECTOR_LOCATION: Point = Point((500.0, 500.0))  
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -383,7 +383,8 @@ class RadSearch(gym.Env):
             Proposed Coordinates:
             A list of all resulting coordinates if all agents successfully take their actions. Used for collision prevention.
             """
-            
+            reward = field(init=False) # Ensure not unbound
+                     
             if self.take_action(agent, action, proposed_coordinates):
                 # Check if out of bounds
                 if (
@@ -574,7 +575,7 @@ class RadSearch(gym.Env):
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         if self.DEBUG:  
-            self.intensity = np.int_(10000)
+            self.intensity = np.int_(1000000)
             self.bkg_intensity = np.int_(0)
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -951,7 +952,7 @@ class RadSearch(gym.Env):
         """
         Method that produces a gif of the agent interacting in the environment. Only renders one episode at a time.
         """       
-        reward_length = field(init=False) 
+        reward_length = field(init=False) # Prevent from being unbound
         # global location_estimate 
         # location_estimate = None # TODO Trying to get out of global scope; this is for source prediction
 
@@ -1067,7 +1068,7 @@ class RadSearch(gym.Env):
                 ax1.yaxis.set_major_formatter(FormatStrFormatter("%d"))
                 ax1.set_xlabel("X[m]")
                 ax1.set_ylabel("Y[m]")
-                ax1.legend(loc="lower left", fontsize=8)
+                ax1.legend(loc="lower right", fontsize=8)
 
                 # Set up radiation graph
                 # TODO make this less terrible
@@ -1200,15 +1201,6 @@ class RadSearch(gym.Env):
         if obstacles == []:
             obstacles = self.obs_coord
 
-        # Check only rendering one episode aka data readings available match number of rewards 
-        # (+1 as rewards dont include the first position). 
-        reward_length = len(ep_rew)
-        if data.shape[0] != len(ep_rew)+1:
-            print(f"Error: episode reward array length: {reward_length} does not match existing detector locations array length, \
-            minus initial start position: {data.shape[0]}. \
-            Check: Are you trying to render more than one episode?")
-            return 1
-
         if just_env:
             # Setup Graph
             plt.rc("font", size=12)
@@ -1258,7 +1250,7 @@ class RadSearch(gym.Env):
             ax1.set_ylim(0, self.search_area[2][1] / 100)
             ax1.set_xlabel("X[m]")
             ax1.set_ylabel("Y[m]")
-            ax1.legend(loc="lower left", fontsize=8)
+            ax1.legend(loc="lower right", fontsize=8)
         
             # Save
             if save_gif:
@@ -1294,11 +1286,11 @@ class RadSearch(gym.Env):
             if save_gif:
                 writer = PillowWriter(fps=5)
                 if os.path.isdir(str(path) + "/gifs/"):
-                    ani.save(str(path) + f"/gifs/test_{epoch_count}.gif", writer=writer)
+                    ani.save(str(path) + f"/gifs/test_epoch{epoch_count}.gif", writer=writer)
                     print("")
                 else:
                     os.mkdir(str(path) + "/gifs/")
-                    ani.save(str(path) + f"/gifs/test_{epoch_count}.gif", writer=writer)
+                    ani.save(str(path) + f"/gifs/test_epoch{epoch_count}.gif", writer=writer)
             else:
                 plt.show()
             return
