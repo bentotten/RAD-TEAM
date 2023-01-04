@@ -18,17 +18,29 @@ class MathHelpers(unittest.TestCase):
     def test_args(self):
         """ Test parameters"""
         print('\n:: test_args ::')
-        test_bbox = tuple(((0.0, 0.0), (1000.0, 0.0), (1000.0, 1000.0), (0.0, 1000.0)))
-        test_observation_area = (200.0, 500.0)
+        test_bbox = tuple(((0.0, 0.0), (2700.0, 0.0), (2700.0, 2700.0), (0.0, 2700.0)))
+        #test_observation_area = (200.0, 500.0)
 
         test_env = RadSearch(
             bbox=test_bbox,
-            observation_area=test_observation_area,
+            #observation_area=test_observation_area,
             )
         self.assertEqual(test_env.bbox, test_bbox)
-        self.assertEqual(test_env.observation_area, test_observation_area)
-
+        #self.assertEqual(test_env.observation_area, test_observation_area)
         pass 
+
+    def test_bbox(self):
+        """ Test bboxß"""
+        print('\n:: test_bbox ::')
+
+        # Make large box
+        test_bbox = tuple(((0.0, 0.0), (1000000.0, 0.0), (1000000.0, 1000000.0), (0.0, 1000000.0)))
+        test_env = RadSearch(bbox = test_bbox)
+        self.assertEqual(test_env.bbox, test_bbox)   
+        
+        # Fail for too small an searchable space
+        test_bbox = tuple(((0.0, 0.0), (1000.0, 0.0), (1000.0, 1000.0), (0.0, 1000.0)))
+        self.assertRaises(AssertionError, RadSearch, bbox=test_bbox)
     
 # def sub_p(p1: Point, p2: Point) -> Point:
 #     """

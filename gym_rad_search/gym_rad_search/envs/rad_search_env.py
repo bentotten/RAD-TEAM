@@ -249,12 +249,12 @@ class RadSearch(gym.Env):
         # Dimensions of radiation source search area in cm, decreased by observation_area param. to ensure visilibity graph setup is valid.
         #
         # observation_area
-        # Interval for each obstruction area in cm aka observation area
+        # Interval for each obstruction area in cm. The actual search area will be the bounds box decreased by this amount. This is also used to offset obstacles from one another
         #
-        # seed
+        # np_random
         # A random number generator
         #
-        # obstruct
+        # obstruction_count
         # Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions
     """ 
     # Environment
@@ -263,13 +263,13 @@ class RadSearch(gym.Env):
             ))
     observation_area: Interval = field(default_factory=lambda: Interval((200.0, 500.0)))
     np_random: npr.Generator = field(default_factory=lambda: npr.default_rng(0))
-    obstruct: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
+    obstruction_count: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
 
     env_ls: list[Polygon] = field(init=False)
     max_dist: float = field(init=False)
     line_segs: list[list[vis.Line_Segment]] = field(init=False)
     poly: list[Polygon] = field(init=False)
-    search_area: BBox = field(init=False)  # Area Detector and Source will spawn - each must be 1000 cm apart from the source
+    search_area: BBox = field(init=False)  # Area Detector and Source will spawn in - each must be 1000 cm apart from the source
     walls: Polygon = field(init=False)
     world: vis.Environment = field(init=False)
     vis_graph: vis.Visibility_Graph = field(init=False)
@@ -345,7 +345,8 @@ class RadSearch(gym.Env):
             np.random.seed(self.seed) # TODO Fix to work with rng arg?
             
         # Sanity Check
-        assert self.max_dist > 1000  # Assure there is room to spawn detectors and source with proper spacing
+        # Assure there is room to spawn detectors and source with proper spacing
+        assert self.max_dist > 1000, "Maximum distance available is too small, unable to spawn source and detector 1000 cm apart" 
         
         self.reset()
 
@@ -529,12 +530,12 @@ class RadSearch(gym.Env):
         self.dwell_time = 1
 
         if self.epoch_end:
-            if self.obstruct == -1:
+            if self.obstruction_count == -1:
                 self.num_obs = self.np_random.integers(1, 6)  # type: ignore
-            elif self.obstruct == 0:
+            elif self.obstruction_count == 0:
                 self.num_obs = 0
             else:
-                self.num_obs = self.obstruct
+                self.num_obs = self.obstruction_count
 
             self.create_obs()
             self.walls = Polygon(list(self.bbox))
@@ -644,12 +645,14 @@ class RadSearch(gym.Env):
             seed_y: float = self.np_random.integers(  # type: ignore
                 self.search_area[0][1], self.search_area[2][1] * 0.9  # type: ignore
             ).astype(np.float64)
+            
             ext_x: float = self.np_random.integers(  # type: ignore
                 self.observation_area[0], self.observation_area[1]  # type: ignore
             ).astype(np.float64)
             ext_y: float = self.np_random.integers(  # type: ignore
                 self.observation_area[0], self.observation_area[1]  # type: ignore
             ).astype(np.float64)
+            
             obs_coord = [
                 Point(t)
                 for t in (
