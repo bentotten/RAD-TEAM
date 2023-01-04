@@ -402,7 +402,10 @@ class RadSearch(gym.Env):
                     reward = 0.1
                     agent.prev_det_dist = agent.sp_dist
                 else:
-                    reward = -0.5 * agent.sp_dist / self.max_dist
+                    if action == -1:
+                        reward = -1.0 * agent.sp_dist / self.max_dist  # If idle, extra penalty
+                    else:
+                        reward = -0.5 * agent.sp_dist / self.max_dist
             # If take_action is false, usually due to agent being in obstacle or empty action on env reset.
             else:
                 # If detector starts on obs. edge, it won't have the shortest path distance calculated
@@ -426,8 +429,11 @@ class RadSearch(gym.Env):
                         if agent.intersect
                         else self.intensity / agent.euc_dist + self.bkg_intensity
                     )
-
-                reward = -0.5 * agent.sp_dist / self.max_dist
+                    
+                    if action == -1:
+                        raise ValueError("Take Action function returned false, but 'Idle' indicated")
+                    else:
+                        reward = -0.5 * agent.sp_dist / self.max_dist
 
             # If detector coordinate noise is desired, will be added to the detector coordinates
             noise: Point = Point(
