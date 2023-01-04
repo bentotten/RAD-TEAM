@@ -86,7 +86,7 @@ def train():
 
     # max_ep_len = 1000                   # max timesteps in one episode
     #training_timestep_bound = int(3e6)   # break training loop if timeteps > training_timestep_bound TODO DELETE
-    epochs = 100  # Actual epoch will be a maximum of this number + max_ep_len
+    epochs = 62  # Actual epoch will be a maximum of this number + max_ep_len
     #max_ep_len = 120                      # max timesteps in one episode
     max_ep_len = 10                      # max timesteps in one episode # TODO delete me after fixing
     #training_timestep_bound = 100  # Change to epoch count DELETE ME
@@ -337,15 +337,41 @@ def train():
             current_ep_reward_sample += results[0].reward # Just take first agents rewards for now
 
             # saving reward and is_terminals
+            # TODO move out of episode
             # Vanilla
             if CNN:
                 for id, agent in ppo_agents.items():
                     agent.maps.buffer.rewards.append(results[id].reward)
                     agent.maps.buffer.is_terminals.append(results[id].done)
+                    ####
+                    # update PPO agent
+                    if total_time_step % update_timestep == 0:
+                        agent.update()
+                        epoch_counter += 1
             else:
                 for id, agent in ppo_agents.items():
                     agent.buffer.rewards.append(results[id].reward)
                     agent.buffer.is_terminals.append(results[id].done)
+                    ####
+                    # update PPO agent
+                    if total_time_step % update_timestep == 0:
+                        agent.update()
+                        epoch_counter += 1
+                                    
+            # log in logging file
+            # TODO Log each agent instead of one
+            if total_time_step % log_freq == 0:
+
+                # log average reward till last episode
+                log_avg_reward = log_running_reward / log_running_episodes
+                log_avg_reward = round(log_avg_reward, 4)
+
+                log_f.write('{},{},{}\n'.format(
+                    i_episode, total_time_step, log_avg_reward))
+                log_f.flush()
+
+                log_running_reward = 0
+                log_running_episodes = 0
 
             # printing average reward
             # TODO print each agent instead of one
@@ -394,27 +420,6 @@ def train():
             # break; if the episode is over
             if done:
                 break
-        
-        ####
-        # update PPO agent and log
-        if total_time_step % update_timestep == 0:
-            for agent in ppo_agents.values():
-                agent.update()
-                epoch_counter += 1
-        # log in logging file
-        # TODO Log each agent instead of one
-        if total_time_step % log_freq == 0:
-
-            # log average reward till last episode
-            log_avg_reward = log_running_reward / log_running_episodes
-            log_avg_reward = round(log_avg_reward, 4)
-
-            log_f.write('{},{},{}\n'.format(
-                i_episode, total_time_step, log_avg_reward))
-            log_f.flush()
-
-            log_running_reward = 0
-            log_running_episodes = 0
 
         # TODO Print array instead
         print_running_reward += current_ep_reward_sample
