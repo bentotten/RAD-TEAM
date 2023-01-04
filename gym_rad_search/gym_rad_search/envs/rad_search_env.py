@@ -1133,12 +1133,12 @@ class RadSearch(gym.Env):
 
         # Check only rendering one episode aka data readings available match number of rewards 
         # (+1 as rewards dont include the first position). 
-        reward_length = len(ep_rew)
-        if data.shape[0] != len(ep_rew)+1:
-            print(f"Error: episode reward array length: {reward_length} does not match existing detector locations array length, \
-            minus initial start position: {data.shape[0]}. \
-            Check: Are you trying to render more than one episode?")
-            return 1
+        #reward_length = len(ep_rew)
+        # if data.shape[0] != len(ep_rew)+1:
+        #     print(f"Error: episode reward array length: {reward_length} does not match existing detector locations array length, \
+        #     minus initial start position: {data.shape[0]}. \
+        #     Check: Are you trying to render more than one episode?")
+        #     return 1
 
         if just_env:
             # Setup Graph

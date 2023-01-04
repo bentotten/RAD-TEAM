@@ -44,11 +44,11 @@ def train():
     has_continuous_action_space = False  # continuous action space; else discrete
 
     # max_ep_len = 1000                   # max timesteps in one episode
-    #training_timestep_bound = int(3e6)   # break training loop if timeteps > training_timestep_bound
+    training_timestep_bound = int(3e6)   # break training loop if timeteps > training_timestep_bound
     epochs = 3000
     max_ep_len = 120                      # max timesteps in one episode
     #max_ep_len = 30                      # max timesteps in one episode # TODO delete me after fixing
-    training_timestep_bound = int(6e6)  # Change to epoch count
+    #training_timestep_bound = int(6e6)  # Change to epoch count
     render_buffer_rewards = []
 
     # print avg reward in the interval (in num timesteps)
