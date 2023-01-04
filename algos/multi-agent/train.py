@@ -304,15 +304,13 @@ def train():
             prior_state.append([result.state[1], result.state[2]])  
 
         for _ in range(max_ep_len):
-            
-            assert not results[0].error["out_of_bounds"], "Out of bounds not implemented (yet) for CNN"
             if DEBUG:
                 print("Training [state]: ", results[0].state)
             raw_action_list = {id: agent.select_action(results[id].state) -1 for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
             
             # TODO Make this work in the env calculation for actions instead of here, and make 0 the idle state
             # Convert actions to include -1 as "idle" option
-            # TODO REMOVE THIS AFTER WORKING
+            # TODO REMOVE THIS AFTER WORKING WITH DIAGONALS
             if CNN:
                 action_list = {id: convert_nine_to_five_action_space(action) for id, action in raw_action_list.items()}
             else:
@@ -324,7 +322,11 @@ def train():
 
             #state, reward, done, _
             results = env.step(action_list=action_list, action=None)  #TODO why is return an array of 11?
-
+            print(results[0].error["out_of_bounds"])
+            assert not results[0].error["out_of_bounds"], "Out of bounds not implemented (yet) for CNN"
+            if results[0].error["out_of_bounds_count"] > 0:
+                pass
+                
             # Ensure Agent moved in a direction
             for id, result in results.items():
                 if action_list[id] != -1:
