@@ -175,7 +175,7 @@ if __name__ == "__main__":
             [[0.0, 0.0], [dim_length, 0.0], [dim_length, dim_height], [0.0, dim_height]]
         ),
         observation_area=np.array(args.area_obs),  # type: ignore
-        obstruct=args.obstruct,
+        obstruction_count=args.obstruct,
         np_random=rng,
         number_agents = number_of_agents
     )

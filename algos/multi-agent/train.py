@@ -144,13 +144,13 @@ def train():
 
     obstruction_count = 0
     number_of_agents = 1
-    env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruct=obstruction_count)
+    env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     if DEBUG:
         bbox = tuple(tuple(((0.0, 0.0), (1000.0, 0.0), (1000.0, 1000.0), (0.0, 1000.0))))  
         observation_area = tuple((20.0, 50.0))
-        env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruct=obstruction_count, bbox=bbox, observation_area=observation_area) 
+        env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count, bbox=bbox, observation_area=observation_area) 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     
     # state space dimension
