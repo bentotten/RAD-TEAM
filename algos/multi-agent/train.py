@@ -322,10 +322,14 @@ def train():
 
             #state, reward, done, _
             results = env.step(action_list=action_list, action=None)  #TODO why is return an array of 11?
-            print(results[0].error["out_of_bounds"])
-            assert not results[0].error["out_of_bounds"], "Out of bounds not implemented (yet) for CNN"
-            if results[0].error["out_of_bounds_count"] > 0:
-                pass
+
+            # TODO Put more thought into how to handle this for CNN
+            if CNN:
+                for id, result in results.items():
+                    if result.error["out_of_bounds"]:
+                        print("WARNING: Out of bounds not implemented for CNN! Resetting location to last known.")
+                        result.state[1] = prior_state[id][0]
+                        result.state[2] = prior_state[id][1]
                 
             # Ensure Agent moved in a direction
             for id, result in results.items():
