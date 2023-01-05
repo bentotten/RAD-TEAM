@@ -187,7 +187,7 @@ def train():
     # Pass np_random=rng, to env creation
 
     obstruction_count = 0
-    number_of_agents = 1
+    number_of_agents = 2
     env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -327,7 +327,7 @@ def train():
                 assert action < 8 and action >= -1
 
             #state, reward, done, _
-            results = env.step(action_list=action_list, action=None)  #TODO why is return an array of 11?
+            results = env.step(action_list=action_list, action=None) 
 
             # TODO Put more thought into how to handle this for CNN
             if CNN:
