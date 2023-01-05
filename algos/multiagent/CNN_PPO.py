@@ -391,10 +391,6 @@ class PPO:
         self.MseLoss = nn.MSELoss()
 
     def select_action(self, state, id):    
-        # TODO DELETE ME
-        print("ID", self.id)
-        print("Max map value",np.max(self.maps.location_map)) # CHANGE TO TORCH
-        print("Buffer", self.maps.buffer.states)
         
         # Add intensity readings to a list if reading has not been seen before at that location. 
         for observation in state.values():

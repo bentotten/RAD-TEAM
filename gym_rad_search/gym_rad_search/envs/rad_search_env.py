@@ -264,7 +264,7 @@ class RadSearch(gym.Env):
     observation_area: Interval = field(default_factory=lambda: Interval((200.0, 500.0)))
     np_random: npr.Generator = field(default_factory=lambda: npr.default_rng(0))
     obstruction_count: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
-
+    enforce_grid_boundaries: bool = field(default=True)
     env_ls: list[Polygon] = field(init=False)
     max_dist: float = field(init=False)
     line_segs: list[list[vis.Line_Segment]] = field(init=False)
@@ -488,6 +488,8 @@ class RadSearch(gym.Env):
                 print("test step: ", test_step)
                 test = sum_p(self.agents[0].det_coords, test_step)
                 print("tentative coordinates: ", test)
+                test_scaled = scale_p(self.agents[0].det_coords, 1 / self.search_area[2][1])
+                print("Tentative scaled return coords: ", test_scaled)
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
             proposed_coordinates = [sum_p(self.agents[agent_id].det_coords, get_step(action)) for agent_id, action in action_list.items()]
@@ -620,6 +622,16 @@ class RadSearch(gym.Env):
         # If proposed move will collide with another agents proposed move, 
         if count_matching_p(tentative_coordinates, proposed_coordinates) > 1:
             return False
+
+        # If boundaries are being enforced, do not take action
+        if self.enforce_grid_boundaries:
+            if (
+                agent.det_coords < self.search_area[0]
+                or self.search_area[2] < agent.det_coords
+            ):
+                agent.out_of_bounds = True  
+                agent.out_of_bounds_count += 1
+            return False              
         
         agent.detector = to_vis_p(tentative_coordinates)
 
