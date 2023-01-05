@@ -86,10 +86,10 @@ def train():
 
     # max_ep_len = 1000                   # max timesteps in one episode
     #training_timestep_bound = int(3e6)   # break training loop if timeteps > training_timestep_bound TODO DELETE
-    #epochs = 62  # Actual epoch will be a maximum of this number + max_ep_len
-    epochs = int(3e6)  # Actual epoch will be a maximum of this number + max_ep_len
-    max_ep_len = 120                      # max timesteps in one episode
-    #max_ep_len = 10                      # max timesteps in one episode # TODO delete me after fixing
+    epochs = 62  # Actual epoch will be a maximum of this number + max_ep_len
+    #epochs = int(3e6)  # Actual epoch will be a maximum of this number + max_ep_len
+    #max_ep_len = 120                      # max timesteps in one episode
+    max_ep_len = 10                      # max timesteps in one episode # TODO delete me after fixing
     #training_timestep_bound = 100  # Change to epoch count DELETE ME
 
     # print avg reward in the interval (in num timesteps)
@@ -187,7 +187,7 @@ def train():
     # Pass np_random=rng, to env creation
 
     obstruction_count = 0
-    number_of_agents = 2
+    number_of_agents = 1
     env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -196,7 +196,7 @@ def train():
         obstruction_count = 1
         bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
         #observation_area = tuple((20.0, 50.0))
-        env: RadSearch = RadSearch(DEBUG=True, number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count, bbox=bbox) 
+        env: RadSearch = RadSearch(DEBUG=DEBUG, number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count, bbox=bbox) 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     env.render(
         just_env=True,
@@ -330,17 +330,18 @@ def train():
             results = env.step(action_list=action_list, action=None) 
 
             # TODO Put more thought into how to handle this for CNN
-            if CNN:
-                for id, result in results.items():
-                    if result.error["out_of_bounds"]:
-                        print("WARNING: Out of bounds not implemented for CNN! Resetting location to last known.")
-                        result.state[1] = prior_state[id][0]
-                        result.state[2] = prior_state[id][1]
+            #      Moved to environment
+            # if CNN:
+            #     for id, result in results.items():
+            #         if result.error["out_of_bounds"]:
+            #             print("WARNING: Out of bounds not implemented for CNN! Resetting location to last known.")
+            #             result.state[1] = prior_state[id][0]
+            #             result.state[2] = prior_state[id][1]
                 
             # Ensure Agent moved in a direction
             for id, result in results.items():
-                if action_list[id] != -1:
-                    assert (result.state[1] != prior_state[id][0] or result.state[2] != prior_state[id][1])
+                if action_list[id] != -1 and not result.error["out_of_bounds"]:
+                    assert (result.state[1] != prior_state[id][0] or result.state[2] != prior_state[id][1]), "Agent coodinates did not change when should have"
                 prior_state[id][0] = result.state[1]
                 prior_state[id][1] = result.state[2]
 
