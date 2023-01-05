@@ -46,6 +46,7 @@ class RolloutBuffer():
     logprobs: List = field(default_factory=list)
     rewards: List = field(default_factory=list)
     is_terminals: List = field(default_factory=list)
+    mapstacks: List = field(default_factory=list) #TODO change to tensor?
     # TODO add buffer for history
     
     def __post_init__(self):
@@ -57,6 +58,7 @@ class RolloutBuffer():
         del self.logprobs[:]
         del self.rewards[:]
         del self.is_terminals[:]
+        del self.mapstacks[:]
 
 
 @dataclass()
@@ -83,7 +85,7 @@ class MapsBuffer:
     # TODO insert obstacles map
     
     # Buffers
-    buffer: RolloutBuffer = field(default=RolloutBuffer())
+    buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
 
     def __post_init__(self):
         '''
@@ -96,31 +98,50 @@ class MapsBuffer:
 
     
     def clear(self):
-        self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
+        self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow - potentially change to torch?
         self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.buffer.clear()
         
-    def state_to_map(self, state):
-        # Process state
-        scaled_coordinates = (int(state[1] * self.resolution_accuracy), int(state[2] * self.resolution_accuracy))
-        # TODO put initial readings and location in maps
-        
+    def state_to_map(self, observation, id):
+        '''
+        state: observations from environment for all agents
+        id: ID of agent to reference in state object 
+        '''
+        # Process state for current agent's locations map
+        scaled_coordinates = (int(observation[id].state[1] * self.resolution_accuracy), int(observation[id].state[2] * self.resolution_accuracy))        
         # Capture current and reset previous location
         if self.buffer.states:
-            last_state = self.buffer.states[-1]
+            last_state = self.buffer.states[-1][id].state
             scaled_last_coordinates = (int(last_state[1] * self.resolution_accuracy), int(last_state[2] * self.resolution_accuracy))
-            x_old = int(scaled_coordinates[0])
-            y_old = int(scaled_coordinates[1])
-            self.location_map[x_old][y_old] = 0.0 
-        
+            x_old = int(scaled_last_coordinates[0])
+            y_old = int(scaled_last_coordinates[1])
+            self.location_map[x_old][y_old] -= 1 # In case agents are at same location, usually the start-point
+            assert self.location_map[x_old][y_old] > -1, "location_map grid coordinate reset where agent was not present. The map location that was reset was already at 0."
         # Set new location
         x = int(scaled_coordinates[0])
         y = int(scaled_coordinates[1])
         self.location_map[x][y] = 1.0 
-        # Insert state
         
+        # Process state for other agent's locations map
+        for other_agent_id in observation:
+            # Do not add current agent to other_agent map
+            if other_agent_id != id:
+                others_scaled_coordinates = (int(observation[other_agent_id].state[1] * self.resolution_accuracy), int(observation[other_agent_id].state[2] * self.resolution_accuracy))
+                # Capture current and reset previous location
+                if self.buffer.states:
+                    last_state = self.buffer.states[-1][other_agent_id].state
+                    scaled_last_coordinates = (int(last_state[1] * self.resolution_accuracy), int(last_state[2] * self.resolution_accuracy))
+                    x_old = int(scaled_last_coordinates[0])
+                    y_old = int(scaled_last_coordinates[1])
+                    self.others_locations_map[x_old][y_old] -= 1 # In case agents are at same location, usually the start-point
+                    assert self.others_locations_map[x_old][y_old] > -1, "Location map grid coordinate reset where agent was not present"
+        
+                # Set new location
+                x = int(others_scaled_coordinates[0])
+                y = int(others_scaled_coordinates[1])
+                self.others_locations_map[x][y] += 1.0  # Initial agents begin at same location         
         
         return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map
 
@@ -323,12 +344,13 @@ class Actor(nn.Module):
 
 
 class PPO:
-    def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, eps_clip, resolution_accuracy):
+    def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, eps_clip, resolution_accuracy, id):
         # Hyperparameters
         self.gamma = gamma  # Discount factor
         self.eps_clip = eps_clip
         self.K_epochs = K_epochs
         self.resolution_accuracy = resolution_accuracy
+        self.id = id
         
         # Initialize
         self.maps = MapsBuffer(grid_bounds, resolution_accuracy)
@@ -344,18 +366,29 @@ class PPO:
         
         self.MseLoss = nn.MSELoss()
 
-    def select_action(self, state):        
+    def select_action(self, state, id):    
+        # TODO DELETE ME
+        print("ID", self.id)
+        print("Max map value",np.max(self.maps.location_map)) # CHANGE TO TORCH
+        print("Buffer", self.maps.buffer.states)
+        
         with torch.no_grad():
             (
                 location_map,
                 others_locations_map,
                 readings_map,
                 visit_counts_map
-            ) = self.maps.state_to_map(state)
-            map_stack = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map)]) # Convert to tensor
-            map_stack = torch.unsqueeze(map_stack, dim=0)  # TODO Make into real minibatches instead of just a resampling
-            state = torch.FloatTensor(state).to(device) # Convert to tensor TODO already a tensor, is this necessary?
+            ) = self.maps.state_to_map(state, id)
             
+            map_stack = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map)]) # Convert to tensor
+            
+            # Add to mapstack buffer to eventually be converted into tensor with minibatches
+            self.maps.buffer.mapstacks.append(map_stack)
+            
+            # Add single minibatch for action selection
+            map_stack = torch.unsqueeze(map_stack, dim=0) 
+            
+            #state = torch.FloatTensor(state).to(device) # Convert to tensor TODO already a tensor, is this necessary?
             #action, action_logprob = self.policy_old.act(state) # Choose action
             action, action_logprob = self.policy_old.act(map_stack) # Choose action
         
@@ -379,11 +412,20 @@ class PPO:
         rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
 
+        # TODO for memory efficiency, could remap state buffers here instead of storing them
+
         # convert list to tensor
         old_states = torch.squeeze(torch.stack(self.maps.buffer.states, dim=0)).detach().to(device)
         old_actions = torch.squeeze(torch.stack(self.maps.buffer.actions, dim=0)).detach().to(device)
         old_logprobs = torch.squeeze(torch.stack(self.maps.buffer.logprobs, dim=0)).detach().to(device)
-
+        
+        ### DELETE 
+        print(self.maps.buffer.mapstacks)
+        print(torch.max(self.maps.buffer.mapstacks[0]))
+        print(torch.max(self.maps.buffer.mapstacks[1]))
+        print(torch.min(self.maps.buffer.mapstacks[0]))
+        print(torch.min(self.maps.buffer.mapstacks[1]))
+        
         # Optimize policy for K epochs
         for _ in range(self.K_epochs):
 

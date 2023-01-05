@@ -18,8 +18,8 @@ import gym
 # import roboschool
 from gym_rad_search.envs import RadSearch  # type: ignore
 
-from vanilla_PPO import PPO as PPO # vanilla_PPO
-from CNN_PPO import PPO as CNN_PPO
+from vanilla_PPO import PPO as vanilla_PPO # vanilla_PPO
+from CNN_PPO import PPO as PPO
 
 from dataclasses import dataclass, field
 from typing_extensions import TypeAlias
@@ -131,6 +131,7 @@ def train():
     random_seed = 1         # set random seed if required (0 = no random seed)
     
     resolution_accuracy = 100  # Round agent coordinates to nearest 100 for transition to map
+    resolution_accuracy = 10
     #####################################################
 
     ###################### logging ######################
@@ -185,11 +186,11 @@ def train():
     # Pass np_random=rng, to env creation
 
     obstruction_count = 0
-    number_of_agents = 1
+    number_of_agents = 2
     env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    CNN = False
+    CNN = True  # TODO remove after done
     if DEBUG:
         obstruction_count = 1
         bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
@@ -245,7 +246,7 @@ def train():
     ################# training procedure ################
 
     # initialize a PPO agent
-    ppo_agents = {_:
+    ppo_agents = {i:
         PPO(
             state_dim=state_dim, 
             action_dim=action_dim, 
@@ -255,9 +256,10 @@ def train():
             gamma=gamma, 
             K_epochs=K_epochs, 
             eps_clip=eps_clip,
-            resolution_accuracy=resolution_accuracy
+            resolution_accuracy=resolution_accuracy,
+            id=i
             ) 
-        for _ in range(number_of_agents)
+        for i in range(number_of_agents)
         }
 
     # track total training time
@@ -306,7 +308,7 @@ def train():
         for _ in range(max_ep_len):
             if DEBUG:
                 print("Training [state]: ", results[0].state)
-            raw_action_list = {id: agent.select_action(results[id].state) -1 for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
+            raw_action_list = {id: agent.select_action(results, id) -1 for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
             
             # TODO Make this work in the env calculation for actions instead of here, and make 0 the idle state
             # Convert actions to include -1 as "idle" option
