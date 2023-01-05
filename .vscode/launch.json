@@ -44,7 +44,7 @@
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": [],
-      "cwd": "${workspaceFolder}/algos/multi-agent"
+      "cwd": "${workspaceFolder}/algos/multiagent"
     }
   ]
 }
