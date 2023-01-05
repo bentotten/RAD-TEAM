@@ -177,7 +177,7 @@ class PPO:
             print("WARNING : Calling PPO::decay_action_std() on discrete action space policy")
         print("--------------------------------------------------------------------------------------------")
 
-    def select_action(self, state):
+    def select_action(self, state, id=None):
 
         if self.has_continuous_action_space:
             with torch.no_grad():

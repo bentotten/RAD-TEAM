@@ -52,7 +52,7 @@ Directions: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7]
 
 A_SIZE = len(get_args(Action))
 DETECTABLE_DIRECTIONS = len(get_args(Directions)) # Ignores -1 idle state
-MAX_CREATION_TRIES = 10
+MAX_CREATION_TRIES = 1000
 FPS = 50
 DET_STEP = 100.0  # detector step size at each timestep in cm/s
 DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
