@@ -18,8 +18,8 @@ import gym
 # import roboschool
 from gym_rad_search.envs import RadSearch  # type: ignore
 
-from vanilla_PPO import PPO as PPO # vanilla_PPO
-from CNN_PPO import PPO as CNN_PPO
+from vanilla_PPO import PPO as van_PPO # vanilla_PPO
+from CNN_PPO import PPO as PPO
 
 from dataclasses import dataclass, field
 from typing_extensions import TypeAlias
@@ -51,30 +51,30 @@ def convert_nine_to_five_action_space(action):
         7: down and left
 
         Cardinal direction action values:
-        0: idle
-        1: left
-        2: up
-        3: right
-        4: down
+        -1: idle
+        0: left
+        1: up
+        2: right
+        3: down
     '''
     match action:
         # Idle
-        case 0:
+        case -1:
             return -1
         # Left
-        case 1:
+        case 0:
             return 0
         # Up
-        case 2:
+        case 1:
             return 2
         # Right
-        case 3:
+        case 2:
             return 4
         # Down
-        case 4:
+        case 3:
             return 6
         case _:
-            raise Exception('Action is not within valid [0,4] range.')
+            raise Exception('Action is not within valid [-1,3] range.')
 
 ################################### Training ###################################
 
@@ -191,7 +191,7 @@ def train():
     env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    CNN = False  # TODO remove after done
+    CNN = True  # TODO remove after done
     if DEBUG:
         obstruction_count = 1
         bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
