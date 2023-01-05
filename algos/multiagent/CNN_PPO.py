@@ -47,7 +47,8 @@ class RolloutBuffer():
     rewards: List = field(default_factory=list)
     is_terminals: List = field(default_factory=list)
     mapstacks: List = field(default_factory=list) #TODO change to tensor?
-    # TODO add buffer for history
+
+    readings: Dict[Any, list] = field(default_factory=dict)
     
     def __post_init__(self):
         pass
@@ -141,7 +142,16 @@ class MapsBuffer:
                 # Set new location
                 x = int(others_scaled_coordinates[0])
                 y = int(others_scaled_coordinates[1])
-                self.others_locations_map[x][y] += 1.0  # Initial agents begin at same location         
+                self.others_locations_map[x][y] += 1.0  # Initial agents begin at same location        
+                 
+        # Process state for readings_map
+        for agent_id in observation:
+
+            others_scaled_coordinates = (int(observation[agent_id].state[1] * self.resolution_accuracy), int(observation[agent_id].state[2] * self.resolution_accuracy))
+            # Add reading to location. Because reading is probablistic, add reading to a buffer and resample for map value from a poisson distribution. 
+            x = int(others_scaled_coordinates[0])
+            y = int(others_scaled_coordinates[1])
+            self.others_locations_map[x][y] += 1.0  # Initial agents begin at same location
         
         return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map
 
@@ -372,6 +382,17 @@ class PPO:
         print("Max map value",np.max(self.maps.location_map)) # CHANGE TO TORCH
         print("Buffer", self.maps.buffer.states)
         
+        # Add intensity readings to a list if reading has not been seen before at that location. 
+        for observation in state.values():
+            key = (observation.state[1], observation.state[2])
+            if key in self.maps.buffer.readings:
+                if observation.state[0] not in self.maps.buffer.readings[key]:
+                    self.maps.buffer.readings[key].append(observation.state[0])
+            else:
+                self.maps.buffer.readings[key] = [observation.state[0]]
+                
+            assert observation.state[0] in self.maps.buffer.readings[key], "Observation not recorded into readings buffer"
+
         with torch.no_grad():
             (
                 location_map,
