@@ -18,15 +18,15 @@ import gym
 # import roboschool
 from gym_rad_search.envs import RadSearch  # type: ignore
 
-from vanilla_PPO import PPO as vanilla_PPO # vanilla_PPO
-from CNN_PPO import PPO as PPO
+from vanilla_PPO import PPO as PPO # vanilla_PPO
+from CNN_PPO import PPO as CNN_PPO
 
 from dataclasses import dataclass, field
 from typing_extensions import TypeAlias
 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-DEBUG = True
+DEBUG = False
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 # Scaling
@@ -86,9 +86,10 @@ def train():
 
     # max_ep_len = 1000                   # max timesteps in one episode
     #training_timestep_bound = int(3e6)   # break training loop if timeteps > training_timestep_bound TODO DELETE
-    epochs = 62  # Actual epoch will be a maximum of this number + max_ep_len
-    #max_ep_len = 120                      # max timesteps in one episode
-    max_ep_len = 10                      # max timesteps in one episode # TODO delete me after fixing
+    #epochs = 62  # Actual epoch will be a maximum of this number + max_ep_len
+    epochs = int(3e6)  # Actual epoch will be a maximum of this number + max_ep_len
+    max_ep_len = 120                      # max timesteps in one episode
+    #max_ep_len = 10                      # max timesteps in one episode # TODO delete me after fixing
     #training_timestep_bound = 100  # Change to epoch count DELETE ME
 
     # print avg reward in the interval (in num timesteps)
@@ -190,7 +191,7 @@ def train():
     env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    CNN = True  # TODO remove after done
+    CNN = False  # TODO remove after done
     if DEBUG:
         obstruction_count = 1
         bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
