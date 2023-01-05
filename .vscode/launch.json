@@ -11,7 +11,7 @@
       "module": "unittest",
       "justMyCode": true,
       "args": [
-          "unit_testing/unit_rad_search_env.py"
+          "unit_testing/unit_cnn_ppo.py"
       ],
       "cwd": "${workspaceFolder}"
     },

@@ -1,6 +1,5 @@
 import unittest
 from gym_rad_search.envs import RadSearch
-from gym_rad_search.envs.rad_search_env import BBox 
 
 # https://github.com/cgoldberg/python-unittest-tutorial
 
