@@ -110,6 +110,9 @@ class MapsBuffer:
         state: observations from environment for all agents
         id: ID of agent to reference in state object 
         '''
+        
+        # TODO Remove redundant calculations
+        
         # Process state for current agent's locations map
         scaled_coordinates = (int(observation[id].state[1] * self.resolution_accuracy), int(observation[id].state[2] * self.resolution_accuracy))        
         # Capture current and reset previous location
@@ -146,12 +149,23 @@ class MapsBuffer:
                  
         # Process state for readings_map
         for agent_id in observation:
+            scaled_coordinates = (int(observation[agent_id].state[1] * self.resolution_accuracy), int(observation[agent_id].state[2] * self.resolution_accuracy))            
+            x = int(scaled_coordinates[0])
+            y = int(scaled_coordinates[1])
+            unscaled_coordinates = (observation[agent_id].state[1], observation[agent_id].state[2])
+                        
+            assert len(self.buffer.readings[unscaled_coordinates]) > 0
+            # TODO onsider using a particle filter for resampling            
+            estimated_reading = np.median(self.buffer.readings[unscaled_coordinates])
+            self.readings_map[x][y] += estimated_reading  # Initial agents begin at same location
 
-            others_scaled_coordinates = (int(observation[agent_id].state[1] * self.resolution_accuracy), int(observation[agent_id].state[2] * self.resolution_accuracy))
-            # Add reading to location. Because reading is probablistic, add reading to a buffer and resample for map value from a poisson distribution. 
-            x = int(others_scaled_coordinates[0])
-            y = int(others_scaled_coordinates[1])
-            self.others_locations_map[x][y] += 1.0  # Initial agents begin at same location
+        # Process state for visit_counts_map
+        for agent_id in observation:
+            scaled_coordinates = (int(observation[agent_id].state[1] * self.resolution_accuracy), int(observation[agent_id].state[2] * self.resolution_accuracy))            
+            x = int(scaled_coordinates[0])
+            y = int(scaled_coordinates[1])
+
+            self.visit_counts_map[x][y] += 1
         
         return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map
 
@@ -390,7 +404,6 @@ class PPO:
                     self.maps.buffer.readings[key].append(observation.state[0])
             else:
                 self.maps.buffer.readings[key] = [observation.state[0]]
-                
             assert observation.state[0] in self.maps.buffer.readings[key], "Observation not recorded into readings buffer"
 
         with torch.no_grad():
