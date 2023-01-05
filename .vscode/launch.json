@@ -40,7 +40,7 @@
       "type": "python",
       //"python": "${command:python.interpreterPath}/../multi_ppo_torch", # Specify which interpreter
       "request": "launch",
-      "program": "${workspaceFolder}/algos/multi-agent/main.py",
+      "program": "${workspaceFolder}/algos/multiagent/main.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": [],
