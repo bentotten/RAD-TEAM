@@ -631,7 +631,7 @@ class RadSearch(gym.Env):
             ):
                 agent.out_of_bounds = True  
                 agent.out_of_bounds_count += 1
-            return False              
+                return False              
         
         agent.detector = to_vis_p(tentative_coordinates)
 
