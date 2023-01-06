@@ -60,6 +60,7 @@ class RolloutBuffer():
         del self.rewards[:]
         del self.is_terminals[:]
         del self.mapstacks[:]
+        self.readings.clear()
 
 
 @dataclass()
@@ -425,6 +426,9 @@ class PPO:
         self.maps.buffer.states.append(state)
         self.maps.buffer.actions.append(action)
         self.maps.buffer.logprobs.append(action_logprob)
+        
+        # DELETE 
+        print(self.maps.buffer.readings)
 
         return action.item()
 

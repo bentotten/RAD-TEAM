@@ -132,7 +132,8 @@ def train():
     random_seed = 1         # set random seed if required (0 = no random seed)
     
     resolution_accuracy = 100  # Round agent coordinates to nearest 100 for transition to map
-    resolution_accuracy = 10
+    if DEBUG:
+        resolution_accuracy = 1 
     #####################################################
 
     ###################### logging ######################
