@@ -434,6 +434,7 @@ class RadSearch(gym.Env):
                         if agent.intersect
                         else self.intensity / agent.euc_dist + self.bkg_intensity
                     )
+                    raise Exception("Check state, no return will be returned from this! Why does this exist?")
                 else:
                     agent.sp_dist = agent.prev_det_dist  # Set in reset function with current coordinates
                     agent.euc_dist = dist_p(agent.det_coords, self.src_coords)
