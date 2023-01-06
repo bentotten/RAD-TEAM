@@ -298,6 +298,7 @@ class RadSearch(gym.Env):
     observation_space: spaces.Box = spaces.Box(0, np.inf, shape=(11,), dtype=np.float32)
     coord_noise: bool = False
     seed: Union[int, None] = field(default=None)  # TODO make env generation work with this
+    scale: float = field(init=False)
     
     # Rendering
     iter_count: int = field(default=0)   # For render function, believe it counts timesteps
@@ -347,6 +348,8 @@ class RadSearch(gym.Env):
         # Sanity Check
         # Assure there is room to spawn detectors and source with proper spacing
         assert self.max_dist > 1000, "Maximum distance available is too small, unable to spawn source and detector 1000 cm apart" 
+        
+        self.scale = 1 / self.search_area[2][1]  # Needed for CNN network scaling
         
         self.reset()
 
@@ -475,7 +478,7 @@ class RadSearch(gym.Env):
             agent.meas_sto.append(meas)
             agent.reward_sto.append(reward)
             agent.cum_reward_sto.append(reward + agent.cum_reward_sto[-1] if len(agent.cum_reward_sto) > 0 else reward)
-            return state, round(reward, 2), self.done, {'out_of_bounds': agent.out_of_bounds, 'out_of_bounds_count': agent.out_of_bounds_count}
+            return state, round(reward, 2), self.done, {'out_of_bounds': agent.out_of_bounds, 'out_of_bounds_count': agent.out_of_bounds_count, 'scale': 1 / self.search_area[2][1]}
             #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 
         aggregate_step_result: dict[int, StepResult] = {_: StepResult() for _ in self.agents}

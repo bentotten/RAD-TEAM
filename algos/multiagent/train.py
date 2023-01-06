@@ -27,6 +27,7 @@ from typing_extensions import TypeAlias
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 DEBUG = True
+CNN = True  # TODO remove after done
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 # Scaling
@@ -86,10 +87,8 @@ def train():
 
     # max_ep_len = 1000                   # max timesteps in one episode
     #training_timestep_bound = int(3e6)   # break training loop if timeteps > training_timestep_bound TODO DELETE
-    epochs = 62  # Actual epoch will be a maximum of this number + max_ep_len
-    #epochs = int(3e6)  # Actual epoch will be a maximum of this number + max_ep_len
-    #max_ep_len = 120                      # max timesteps in one episode
-    max_ep_len = 10                      # max timesteps in one episode # TODO delete me after fixing
+    epochs = int(3e6)  # Actual epoch will be a maximum of this number + max_ep_len
+    max_ep_len = 120                      # max timesteps in one episode
     #training_timestep_bound = 100  # Change to epoch count DELETE ME
 
     # print avg reward in the interval (in num timesteps)
@@ -116,13 +115,6 @@ def train():
     #update_timestep = max_ep_len * 4      # update policy every n timesteps # TODO Change to epochs
     update_timestep = 480     # update policy every n timesteps # TODO Change to epochs
     K_epochs = 80               # update policy for K epochs in one PPO update
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    if DEBUG:
-        update_timestep = 2
-        K_epochs = 4
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
     eps_clip = 0.2          # clip parameter for PPO
     gamma = 0.99            # discount factor
 
@@ -132,8 +124,6 @@ def train():
     random_seed = 1         # set random seed if required (0 = no random seed)
     
     resolution_accuracy = 100  # Round agent coordinates to nearest 100 for transition to map
-    if DEBUG:
-        resolution_accuracy = 1 
     #####################################################
 
     ###################### logging ######################
@@ -192,13 +182,26 @@ def train():
     env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    CNN = True  # TODO remove after done
     if DEBUG:
+        epochs = 5  # Actual epoch will be a maximum of this number + max_ep_len
+        max_ep_len = 5                      # max timesteps in one episode # TODO delete me after fixing
+        update_timestep = 20
+        K_epochs = 4
+                     
         obstruction_count = 1
+        number_of_agents = 1
+        
         bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
+        
         #observation_area = tuple((20.0, 50.0))
         env: RadSearch = RadSearch(DEBUG=DEBUG, number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count, bbox=bbox) 
+        
+        # How much unscaling to do. State returnes scaled coordinates for each agent. 
+        # A value of 1 here means no unscaling, so all agents will fit within 1x1 grid
+        resolution_accuracy = 1 * 1/env.scale  
+        #resolution_accuracy = 1  
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    
     env.render(
         just_env=True,
         path=directory,
@@ -210,8 +213,8 @@ def train():
     # action space dimension
     action_dim = env.action_space.n
     
-    # Grid dimensions
-    grid_bounds = (env.bbox[2][0] / DET_STEP, env.bbox[2][1] / DET_STEP)  # Scale to match env returned state coords for each agent
+    # Scaled grid dimensions
+    scaled_grid_bounds = (1, 1)  # Scaled to match return from env.step(). Can be reinflated with resolution_accuracy
 
 
     ############# print all hyperparameters #############
@@ -225,7 +228,7 @@ def train():
     print("--------------------------------------------------------------------------------------------")
     print("state space dimension : ", state_dim)
     print("action space dimension : ", action_dim)
-    print("Grid space bounds : ", grid_bounds)
+    print("Grid space bounds : ", scaled_grid_bounds)
     print("--------------------------------------------------------------------------------------------")
     print("Initializing a discrete action space policy")
     print("--------------------------------------------------------------------------------------------")
@@ -252,7 +255,7 @@ def train():
         PPO(
             state_dim=state_dim, 
             action_dim=action_dim, 
-            grid_bounds=grid_bounds, 
+            grid_bounds=scaled_grid_bounds, 
             lr_actor=lr_actor, 
             lr_critic=lr_critic, 
             gamma=gamma, 
@@ -317,7 +320,7 @@ def train():
             
             # TODO Make this work in the env calculation for actions instead of here, and make 0 the idle state
             # Convert actions to include -1 as "idle" option
-            # TODO REMOVE THIS AFTER WORKING WITH DIAGONALS
+            # TODO REMOVE convert_nine_to_five_action_space AFTER WORKING WITH DIAGONALS
             if CNN:
                 action_list = {id: convert_nine_to_five_action_space(action) for id, action in raw_action_list.items()}
             else:
@@ -328,16 +331,11 @@ def train():
                 assert action < 8 and action >= -1
 
             #state, reward, done, _
-            results = env.step(action_list=action_list, action=None) 
-
-            # TODO Put more thought into how to handle this for CNN
-            #      Moved to environment
-            # if CNN:
-            #     for id, result in results.items():
-            #         if result.error["out_of_bounds"]:
-            #             print("WARNING: Out of bounds not implemented for CNN! Resetting location to last known.")
-            #             result.state[1] = prior_state[id][0]
-            #             result.state[2] = prior_state[id][1]
+            results = env.step(action_list=action_list, action=None)
+            
+            if DEBUG:
+                for agent in ppo_agents.values():
+                    agent.render()
                 
             # Ensure Agent moved in a direction
             for id, result in results.items():

@@ -32,7 +32,7 @@
       "program": "${workspaceFolder}/algos/ppo/main.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "args": ["--seed", "0", "--exp-name", "exp1"],
+      "args": ["--seed", "0", "--exp-name", "exp1", "--render", "True"],
       "cwd": "${workspaceFolder}/algos/ppo"
     },
     {
