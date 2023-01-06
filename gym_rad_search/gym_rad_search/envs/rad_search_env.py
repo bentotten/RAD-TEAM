@@ -434,7 +434,6 @@ class RadSearch(gym.Env):
                         if agent.intersect
                         else self.intensity / agent.euc_dist + self.bkg_intensity
                     )
-                    raise Exception("Check state, no return will be returned from this! Why does this exist?")
                 else:
                     agent.sp_dist = agent.prev_det_dist  # Set in reset function with current coordinates
                     agent.euc_dist = dist_p(agent.det_coords, self.src_coords)
@@ -445,10 +444,10 @@ class RadSearch(gym.Env):
                         else self.intensity / agent.euc_dist + self.bkg_intensity
                     )
 
-                    if action == -1:
-                        raise ValueError("Take Action function returned false, but 'Idle' indicated")
-                    else:
-                        reward = -0.5 * agent.sp_dist / self.max_dist
+                if action == -1:
+                    raise ValueError("Take Action function returned false, but 'Idle' indicated")
+                else:
+                    reward = -0.5 * agent.sp_dist / self.max_dist
 
             # If detector coordinate noise is desired
             # TODO why is noise coordinate being added here? Why is noise a coordinate at all?
