@@ -342,6 +342,7 @@ def train():
             for id, result in results.items():
                 if action_list[id] != -1 and not result.error["out_of_bounds"]:
                     assert (result.state[1] != prior_state[id][0] or result.state[2] != prior_state[id][1]), "Agent coodinates did not change when should have"
+                    pass
                 prior_state[id][0] = result.state[1]
                 prior_state[id][1] = result.state[2]
 
