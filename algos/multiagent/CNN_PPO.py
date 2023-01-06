@@ -2,7 +2,7 @@
 Implementation of "Target Localization using Multi-Agent Deep Reinforcement Learning with Proximal Policy Optimization" by Alagha et al.
 
 '''
-from os import stat
+from os import stat, path, mkdir, getcwd
 from matplotlib.streamplot import Grid
 from numpy import dtype
 import numpy as np
@@ -18,6 +18,8 @@ import pytorch_lightning as pl
 from dataclasses import dataclass, field, asdict
 from typing import Any, List, Tuple, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict
 from typing_extensions import TypeAlias
+
+import matplotlib.pyplot as plt
 
 # Maps
 Point: TypeAlias = NewType("Point", tuple[float, float])  # Array indicies to access a GridSquare
@@ -73,7 +75,7 @@ class MapsBuffer:
         4. Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
     '''
     # Parameters
-    grid_bounds: list = field(default_factory=list)
+    grid_bounds: tuple = field(default_factory= lambda: (1,1))
     x_limit_scaled: int = field(init=False)
     y_limit_scaled: int = field(init=False)
     resolution_accuracy: int = field(default=100)
@@ -390,6 +392,9 @@ class PPO:
         self.policy_old.load_state_dict(self.policy.state_dict()) # TODO Really slow
         
         self.MseLoss = nn.MSELoss()
+        
+        # Rendering
+        self.render_counter = 0        
 
     def select_action(self, state, id):    
         
@@ -426,9 +431,6 @@ class PPO:
         self.maps.buffer.states.append(state)
         self.maps.buffer.actions.append(action)
         self.maps.buffer.logprobs.append(action_logprob)
-        
-        # DELETE 
-        print(self.maps.buffer.readings)
 
         return action.item()
 
@@ -497,3 +499,38 @@ class PPO:
     def load(self, checkpoint_path):
         self.policy_old.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage)) # Actor-critic
         self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage)) # Actor-critic
+        
+    def render(self, savepath=getcwd(), save_map=True):
+        def foo(self, savepath):
+            plt.imshow(self.maps.location_map, cmap='hot', interpolation='nearest')
+            plt.colorbar()  
+            plt.savefig(f'{str(savepath)}/heatmaps/location_map_{self.render_counter}.png')
+            plt.close()
+
+            plt.imshow(self.maps.others_locations_map, cmap='hot', interpolation='nearest')
+            plt.colorbar()  
+            plt.savefig(f'{str(savepath)}/heatmaps/others_map_{self.render_counter}.png')
+            plt.close()
+            
+            plt.imshow(self.maps.readings_map, cmap='hot', interpolation='nearest')
+            plt.colorbar()  
+            plt.savefig(f'{str(savepath)}/heatmaps/readings_map_{self.render_counter}.png')
+            plt.close()
+
+            plt.imshow(self.maps.visit_counts_map, cmap='hot', interpolation='nearest')
+            plt.colorbar()  
+            plt.savefig(f'{str(savepath)}/heatmaps/visit_counts_map_{self.render_counter}.png')
+            plt.close()        
+            
+            print("rendered")
+            self.render_counter += 1
+            #exit()             
+              
+        if save_map:
+            if path.isdir(str(savepath) + "/heatmaps/"):
+                foo(self, savepath)
+            else:
+                mkdir(str(savepath) + "/heatmaps/")
+                foo(self, savepath)
+        else:
+            plt.show()
