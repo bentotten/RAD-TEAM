@@ -320,6 +320,9 @@ def train():
             else:
                 raw_action_list = {id: agent.select_action(results[id].state) -1 for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
             
+            if number_of_agents == 1:
+                assert ppo_agents[0].maps.others_locations_map.max() == 0.0
+            
             # TODO Make this work in the env calculation for actions instead of here, and make 0 the idle state
             # Convert actions to include -1 as "idle" option
             # TODO REMOVE convert_nine_to_five_action_space AFTER WORKING WITH DIAGONALS
