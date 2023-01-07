@@ -18,7 +18,7 @@ import gym
 # import roboschool
 from gym_rad_search.envs import RadSearch  # type: ignore
 
-from vanilla_PPO import PPO as van_PPO # vanilla_PPO
+#from vanilla_PPO import PPO as van_PPO # vanilla_PPO
 from CNN_PPO import PPO as PPO
 
 from dataclasses import dataclass, field
@@ -184,9 +184,9 @@ def train():
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     if DEBUG:
-        epochs = 1  # Actual epoch will be a maximum of this number + max_ep_len
-        max_ep_len = 120                      # max timesteps in one episode # TODO delete me after fixing
-        update_timestep = 200
+        epochs = 2   # Actual epoch will be a maximum of this number + max_ep_len
+        max_ep_len = 20                      # max timesteps in one episode # TODO delete me after fixing
+        update_timestep = 2
         K_epochs = 4
                      
         obstruction_count = 1
