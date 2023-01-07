@@ -217,6 +217,7 @@ class Agent():
     det_coords: Point = field(init=False) # Detector Coordinates
     out_of_bounds: bool = field(init=False) 
     out_of_bounds_count: int = field(init=False)
+    collision: bool = field(init=False)
     intersect: bool = field(default=False)  # Check if line of sight is blocked by obstacle 
     detector: vis.Point = field(init=False) # Visilibity graph detector coordinates 
     prev_det_dist: float = field(init=False)
@@ -386,8 +387,8 @@ class RadSearch(gym.Env):
             Proposed Coordinates:
             A list of all resulting coordinates if all agents successfully take their actions. Used for collision prevention.
             """
-            reward = field(init=False) # Ensure not unbound
             agent.out_of_bounds = False
+            agent.collision = False
                      
             if self.take_action(agent, action, proposed_coordinates):
                 # Check if out of bounds
@@ -447,7 +448,7 @@ class RadSearch(gym.Env):
                         else self.intensity / agent.euc_dist + self.bkg_intensity
                     )
 
-                if action == -1:
+                if action == -1 and not agent.collision:
                     reward = -0.5 * agent.sp_dist / self.max_dist
                     raise ValueError("Agent should not return false if the tentative step is an idle step")
                 else:
@@ -627,10 +628,9 @@ class RadSearch(gym.Env):
         step = get_step(action)
         tentative_coordinates = sum_p(agent.det_coords, step)  # TODO can delete and use value from proposed coords
         
-
-        
         # If proposed move will collide with another agents proposed move, 
         if count_matching_p(tentative_coordinates, proposed_coordinates) > 1:
+            agent.collision = True
             return False
         
         # If boundaries are being enforced, do not take action        
