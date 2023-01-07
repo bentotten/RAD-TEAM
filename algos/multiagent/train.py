@@ -123,7 +123,6 @@ def train():
 
     random_seed = 1         # set random seed if required (0 = no random seed)
     
-    resolution_accuracy = 100  # Round agent coordinates to nearest 100 for transition to map
     #####################################################
 
     ###################### logging ######################
@@ -180,6 +179,8 @@ def train():
     obstruction_count = 0
     number_of_agents = 1
     env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)
+    
+    resolution_accuracy = 1 * 1/env.scale  
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     if DEBUG:
@@ -189,7 +190,7 @@ def train():
         K_epochs = 4
                      
         obstruction_count = 1
-        number_of_agents = 1
+        number_of_agents = 10
         
         bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
         
@@ -198,7 +199,7 @@ def train():
         
         # How much unscaling to do. State returnes scaled coordinates for each agent. 
         # A value of 1 here means no unscaling, so all agents will fit within 1x1 grid
-        resolution_accuracy = 1 * 1/env.scale  
+        resolution_accuracy = .01 * 1/env.scale  
         #resolution_accuracy = 1  
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     
@@ -312,11 +313,18 @@ def train():
 
         for _ in range(max_ep_len):
             if DEBUG:
-                print("Training [state]: ", results[0].state)
+                #print("Training [state]: ", results[0].state)
+                pass
             if CNN:
                 raw_action_list = {id: agent.select_action(results, id) -1 for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
             else:
                 raw_action_list = {id: agent.select_action(results[id].state) -1 for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
+                
+            if DEBUG:
+                # methods = [None, 'none', 'nearest', 'bilinear', 'bicubic', 'spline16', 'spline36', 'hanning', 'hamming', 'hermite', 
+                #            'kaiser', 'quadric', 'catrom', 'gaussian', 'bessel', 'mitchell', 'sinc', 'lanczos']      
+                for agent in ppo_agents.values():
+                    agent.render(add_value_text=True)
             
             # TODO Make this work in the env calculation for actions instead of here, and make 0 the idle state
             # Convert actions to include -1 as "idle" option
@@ -331,17 +339,13 @@ def train():
                 assert action < 8 and action >= -1
 
             #state, reward, done, _
-            results = env.step(action_list=action_list, action=None)
-            
-            if DEBUG:
-                for agent in ppo_agents.values():
-                    agent.render()
+            results = env.step(action_list=action_list, action=None) # TODO agents seem to not be stepping in location map for first step
                 
             # Ensure Agent moved in a direction
             for id, result in results.items():
-                if action_list[id] != -1 and not result.error["out_of_bounds"]:
+                # Because of collision avoidance, this assert will not hold true for multiple agents
+                if number_of_agents == 1 and action_list[id] != -1 and not result.error["out_of_bounds"]:
                     assert (result.state[1] != prior_state[id][0] or result.state[2] != prior_state[id][1]), "Agent coodinates did not change when should have"
-                    pass
                 prior_state[id][0] = result.state[1]
                 prior_state[id][1] = result.state[2]
 
