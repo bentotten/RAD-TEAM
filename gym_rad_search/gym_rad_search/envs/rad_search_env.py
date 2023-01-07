@@ -470,9 +470,10 @@ class RadSearch(gym.Env):
             # TODO: State should really be better organized. If there are distinct components to it, why not make it
             # a named tuple?
 
-            # Sensor measurement for in obstacles?
+            # Sensor measurement for obstacles directly around agent
             sensor_meas: npt.NDArray[np.float64] = self.dist_sensors(agent=agent) if self.num_obs > 0 else np.zeros(DETECTABLE_DIRECTIONS)  # type: ignore
             # State is an 11-tuple ndarray
+            # [intensity, x-coord, y-coord, 8 directions of obstacle detection]
             state: npt.NDArray[np.float32] = np.array([meas, *det_coord_scaled, *sensor_meas])  # type: ignore
             
             agent.det_sto.append(agent.det_coords)
@@ -578,7 +579,7 @@ class RadSearch(gym.Env):
             ).length()
             
             ##### TEST
-            assert agent.det_coords > 0  # TODO DELETE ME
+            assert agent.det_coords[0] > 0 and agent.det_coords[1] > 0   # TODO DELETE ME
         
         self.intensity = self.np_random.integers(self.radiation_intensity_bounds[0], self.radiation_intensity_bounds[1])  # type: ignore
         self.bkg_intensity = self.np_random.integers(self.background_radiation_bounds[0], self.background_radiation_bounds[1])  # type: ignore
@@ -626,15 +627,26 @@ class RadSearch(gym.Env):
         step = get_step(action)
         tentative_coordinates = sum_p(agent.det_coords, step)  # TODO can delete and use value from proposed coords
         
+
+        
         # If proposed move will collide with another agents proposed move, 
         if count_matching_p(tentative_coordinates, proposed_coordinates) > 1:
             return False
 
-        # If boundaries are being enforced, do not take action
+        ##### TEST        
+        if tentative_coordinates[0] < 200 or tentative_coordinates[1] < 200:   # TODO DELETE ME        
+            pass        
+        if tentative_coordinates[0] >= 1500:
+            pass
+        
+        # If boundaries are being enforced, do not take action        
         if self.enforce_grid_boundaries:
             if (
-                tentative_coordinates < self.search_area[0]
-                or self.search_area[2] < tentative_coordinates
+                (tentative_coordinates[0] < self.search_area[0][0]
+                or tentative_coordinates[1] < self.search_area[0][1])
+                or 
+                (self.search_area[2][0] <= tentative_coordinates[0] 
+                or self.search_area[2][1] <= tentative_coordinates[1])
             ):
                 agent.out_of_bounds = True  
                 agent.out_of_bounds_count += 1
@@ -652,8 +664,9 @@ class RadSearch(gym.Env):
             # If we're not in an obstacle, update the detector coordinates
             agent.det_coords = from_vis_p(agent.detector)
             
-            ##### TEST
-            assert agent.det_coords > 0  # TODO DELETE ME
+        ##### TEST
+        if self.enforce_grid_boundaries:
+            assert agent.det_coords[0] > 0 and agent.det_coords[1] > 0   # TODO DELETE ME
 
         return False if roll_back_action else True
 

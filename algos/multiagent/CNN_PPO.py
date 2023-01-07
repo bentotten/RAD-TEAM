@@ -97,8 +97,8 @@ class MapsBuffer:
         Scaled maps
         '''
         self.map_dimensions = (int(self.grid_bounds[0] * self.resolution_accuracy), int(self.grid_bounds[1] * self.resolution_accuracy))
-        self.x_limit_scaled: int = self.map_dimensions[0] 
-        self.y_limit_scaled: int = self.map_dimensions[1]
+        self.x_limit_scaled: int = self.map_dimensions[0]
+        self.y_limit_scaled: int = self.map_dimensions[1] 
         self.clear()
 
     
