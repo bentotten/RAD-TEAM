@@ -185,12 +185,12 @@ def train():
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     if DEBUG:
         epochs = 5  # Actual epoch will be a maximum of this number + max_ep_len
-        max_ep_len = 5                      # max timesteps in one episode # TODO delete me after fixing
+        max_ep_len = 15                      # max timesteps in one episode # TODO delete me after fixing
         update_timestep = 20
         K_epochs = 4
                      
         obstruction_count = 1
-        number_of_agents = 3
+        number_of_agents = 1
         
         bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
         
@@ -199,7 +199,7 @@ def train():
         
         # How much unscaling to do. State returnes scaled coordinates for each agent. 
         # A value of 1 here means no unscaling, so all agents will fit within 1x1 grid
-        resolution_accuracy = .01 * 1/env.scale  
+        resolution_accuracy = .1 * 1/env.scale  
         #resolution_accuracy = 1  
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     
@@ -319,12 +319,6 @@ def train():
                 raw_action_list = {id: agent.select_action(results, id) -1 for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
             else:
                 raw_action_list = {id: agent.select_action(results[id].state) -1 for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
-                
-            if DEBUG:
-                # methods = [None, 'none', 'nearest', 'bilinear', 'bicubic', 'spline16', 'spline36', 'hanning', 'hamming', 'hermite', 
-                #            'kaiser', 'quadric', 'catrom', 'gaussian', 'bessel', 'mitchell', 'sinc', 'lanczos']      
-                for agent in ppo_agents.values():
-                    agent.render(add_value_text=True)
             
             # TODO Make this work in the env calculation for actions instead of here, and make 0 the idle state
             # Convert actions to include -1 as "idle" option
@@ -449,12 +443,14 @@ def train():
         
         # TODO Delete me
         if DEBUG:
+            for agent in ppo_agents.values():
+                agent.render(add_value_text=True, savepath=directory)                   
             env.render(
                 save_gif=True,
                 path=directory,
                 epoch_count=epoch_counter,
                 #episode_rewards=episode_rewards
-            )
+            )   
 
     # Render last episode
     # episode_rewards = {id: render_buffer_rewards[-max_ep_len:] for id, agent in ppo_agents.items()}
