@@ -199,7 +199,7 @@ def train():
         
         # How much unscaling to do. State returnes scaled coordinates for each agent. 
         # A value of 1 here means no unscaling, so all agents will fit within 1x1 grid
-        resolution_accuracy = .1 * 1/env.scale  
+        resolution_accuracy = 0.01 * 1/env.scale  
         #resolution_accuracy = 1  
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     
@@ -450,7 +450,8 @@ def train():
                 path=directory,
                 epoch_count=epoch_counter,
                 #episode_rewards=episode_rewards
-            )   
+            ) 
+            pass  
 
     # Render last episode
     # episode_rewards = {id: render_buffer_rewards[-max_ep_len:] for id, agent in ppo_agents.items()}
@@ -460,6 +461,8 @@ def train():
         epoch_count=epoch_counter,
         #episode_rewards=episode_rewards
     )
+    for agent in ppo_agents.values():
+        agent.render(add_value_text=True, savepath=directory)   
 
     log_f.close()
     env.close()

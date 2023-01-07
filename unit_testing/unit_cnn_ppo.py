@@ -1,6 +1,8 @@
 import pytest
 import unittest
 import torch
+from dataclasses import field
+
 
 from algos.multiagent.CNN_PPO import RolloutBuffer, MapsBuffer, Actor, PPO
 
@@ -12,10 +14,12 @@ class UnitTestModule(unittest.TestCase):
 
 class Unit_RolloutBuffer(unittest.TestCase):
     def setUp(self):
-        self.buffer = RolloutBuffer()
+        self.buffer = field(default_factory = lambda: RolloutBuffer())
+        self.buffer2 = field(default_factory = lambda: RolloutBuffer())
 
     def tearDown(self):
         del self.buffer
+        del self.buffer2
 
     def test_actions(self):
         sample = torch.tensor(2)
