@@ -501,7 +501,7 @@ class PPO:
         self.policy_old.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage)) # Actor-critic
         self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage)) # Actor-critic
         
-    def render(self, savepath=getcwd(), save_map=True):
+    def render(self, savepath=getcwd(), save_map=True, add_value_text=False, interpolation_method='nearest'):  
         if save_map:
             if not path.isdir(str(savepath) + "/heatmaps/"):
                 mkdir(str(savepath) + "/heatmaps/")
@@ -510,26 +510,39 @@ class PPO:
      
         fig, (loc_ax, other_ax, intensity_ax, visit_ax) = plt.subplots(nrows=1, ncols=4, figsize=(15, 5))
         
-        loc_ax.imshow(self.maps.location_map, interpolation='nearest', cmap='viridis')
-        loc_ax.set_title('Agent Location') 
+        loc_ax.imshow(self.maps.location_map, cmap='viridis', interpolation=interpolation_method)
+        loc_ax.set_title('Agent Location')
         
-        other_ax.imshow(self.maps.others_locations_map, cmap='viridis', interpolation='nearest')
+        other_ax.imshow(self.maps.others_locations_map, cmap='viridis', interpolation=interpolation_method)
         other_ax.set_title('Other Agent Locations') 
         
-        intensity_ax.imshow(self.maps.readings_map, cmap='viridis', interpolation='nearest')
+        intensity_ax.imshow(self.maps.readings_map, cmap='viridis', interpolation=interpolation_method)
         intensity_ax.set_title('Radiation Intensity') 
         
-        visit_ax.imshow(self.maps.visit_counts_map, cmap='viridis', interpolation='nearest')
+        visit_ax.imshow(self.maps.visit_counts_map, cmap='viridis', interpolation=interpolation_method)
         visit_ax.set_title('Visit Counts') 
         
         #divider = make_axes_locatable(loc_ax)
         #cax = divider.append_axes('right', size='5%', pad=0.05)             
         #fig.colorbar(loc_ax, cax=cax, orientation='vertical')
         
-        fig.savefig(f'{str(savepath)}/heatmaps/heatmaps_{self.render_counter}.png')
+        # Add values to gridsquares if value is greater than 0 #TODO if large grid, this will be slow
+        if add_value_text:
+            for i in range(self.maps.location_map.shape[0]):
+                for j in range(self.maps.location_map.shape[1]):
+                    if self.maps.location_map[i, j] > 0: 
+                        loc_ax.text(j, i, self.maps.location_map[i, j].astype(int), ha="center", va="center", color="b", size=6)
+                    if self.maps.others_locations_map[i, j] > 0: 
+                        other_ax.text(j, i, self.maps.others_locations_map[i, j].astype(int), ha="center", va="center", color="b", size=6)
+                    if self.maps.readings_map[i, j] > 0:
+                        intensity_ax.text(j, i, self.maps.readings_map[i, j].astype(int), ha="center", va="center", color="b", size=6)
+                    if self.maps.visit_counts_map[i, j] > 0:
+                        visit_ax.text(j, i, self.maps.visit_counts_map[i, j].astype(int), ha="center", va="center", color="b", size=6)
+        
+        fig.savefig(f'{str(savepath)}/heatmaps/agent{self.id}_heatmaps_{self.render_counter}.png')
         
         self.render_counter += 1
-        print("rendered")
+        plt.close(fig)
         
         def foo(self, savepath):
             # # fig
