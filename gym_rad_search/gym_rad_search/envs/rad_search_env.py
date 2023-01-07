@@ -632,12 +632,6 @@ class RadSearch(gym.Env):
         # If proposed move will collide with another agents proposed move, 
         if count_matching_p(tentative_coordinates, proposed_coordinates) > 1:
             return False
-
-        ##### TEST        
-        if tentative_coordinates[0] < 200 or tentative_coordinates[1] < 200:   # TODO DELETE ME        
-            pass        
-        if tentative_coordinates[0] >= 1500:
-            pass
         
         # If boundaries are being enforced, do not take action        
         if self.enforce_grid_boundaries:

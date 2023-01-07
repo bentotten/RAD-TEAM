@@ -511,7 +511,7 @@ class PPO:
             plt.show()                
      
         loc_transposed = self.maps.location_map.T # TODO this seems expensive
-        other_transposed = self.maps.location_map.T 
+        other_transposed = self.maps.others_locations_map.T 
         readings_transposed = self.maps.readings_map.T
         visits_transposed = self.maps.visit_counts_map.T
      
