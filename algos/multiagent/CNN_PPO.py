@@ -161,7 +161,7 @@ class MapsBuffer:
             assert len(self.buffer.readings[unscaled_coordinates]) > 0
             # TODO onsider using a particle filter for resampling            
             estimated_reading = np.median(self.buffer.readings[unscaled_coordinates])
-            self.readings_map[x][y] += estimated_reading  # Initial agents begin at same location
+            self.readings_map[x][y] = estimated_reading  # Initial agents begin at same location
 
         # Process state for visit_counts_map
         for agent_id in observation:
@@ -539,7 +539,7 @@ class PPO:
                     if self.maps.others_locations_map[i, j] > 0: 
                         other_ax.text(j, i, self.maps.others_locations_map[i, j].astype(int), ha="center", va="center", color="b", size=6)
                     if self.maps.readings_map[i, j] > 0:
-                        intensity_ax.text(j, i, self.maps.readings_map[i, j].astype(int), ha="center", va="center", color="b", size=6)
+                        intensity_ax.text(j, i, self.maps.readings_map[i, j].astype(int), ha="center", va="center", color="b", size=4)
                     if self.maps.visit_counts_map[i, j] > 0:
                         visit_ax.text(j, i, self.maps.visit_counts_map[i, j].astype(int), ha="center", va="center", color="b", size=6)
         
@@ -547,29 +547,3 @@ class PPO:
         
         self.render_counter += 1
         plt.close(fig)
-        
-        def foo(self, savepath):
-            # # fig
-            # # loc_map = plt.imshow(self.maps.location_map, cmap='hot', interpolation='nearest')
-            # # loc_map.colorbar()  
-            # # loc_map.savefig
-            # # plt.close()
-
-            # plt.imshow(self.maps.others_locations_map, cmap='hot', interpolation='nearest')
-            # plt.colorbar()  
-            # plt.savefig(f'{str(savepath)}/heatmaps/others_map_{self.render_counter}.png')
-            # plt.close()
-            
-            # plt.imshow(self.maps.readings_map, cmap='hot', interpolation='nearest')
-            # plt.colorbar()  
-            # plt.savefig(f'{str(savepath)}/heatmaps/readings_map_{self.render_counter}.png')
-            # plt.close()
-
-            # plt.imshow(self.maps.visit_counts_map, cmap='hot', interpolation='nearest')
-            # plt.colorbar()  
-            # plt.savefig(f'{str(savepath)}/heatmaps/visit_counts_map_{self.render_counter}.png')
-            # plt.close()        
-            
-            print("rendered")
-            self.render_counter += 1
-            #exit()             
