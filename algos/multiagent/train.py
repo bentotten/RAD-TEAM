@@ -184,9 +184,9 @@ def train():
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     if DEBUG:
-        epochs = 5  # Actual epoch will be a maximum of this number + max_ep_len
-        max_ep_len = 15                      # max timesteps in one episode # TODO delete me after fixing
-        update_timestep = 20
+        epochs = 1  # Actual epoch will be a maximum of this number + max_ep_len
+        max_ep_len = 120                      # max timesteps in one episode # TODO delete me after fixing
+        update_timestep = 200
         K_epochs = 4
                      
         obstruction_count = 1

@@ -539,8 +539,8 @@ class PPO:
         
         # Add values to gridsquares if value is greater than 0 #TODO if large grid, this will be slow
         if add_value_text:
-            for i in range(loc_transposed[0]):
-                for j in range(loc_transposed[1]):
+            for i in range(loc_transposed.shape[0]):
+                for j in range(loc_transposed.shape[1]):
                     if loc_transposed[i, j] > 0: 
                         loc_ax.text(j, i, loc_transposed[i, j].astype(int), ha="center", va="center", color="w", size=6)
                     if other_transposed[i, j] > 0: 
