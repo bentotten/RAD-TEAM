@@ -448,7 +448,8 @@ class RadSearch(gym.Env):
                     )
 
                 if action == -1:
-                    raise ValueError("Take Action function returned false, but 'Idle' indicated")
+                    reward = -0.5 * agent.sp_dist / self.max_dist
+                    raise ValueError("Agent should not return false if the tentative step is an idle step")
                 else:
                     reward = -0.5 * agent.sp_dist / self.max_dist
 
@@ -575,6 +576,9 @@ class RadSearch(gym.Env):
             agent.prev_det_dist: float = self.world.shortest_path(  # type: ignore
                 self.source, agent.detector, self.vis_graph, EPSILON
             ).length()
+            
+            ##### TEST
+            assert agent.det_coords > 0  # TODO DELETE ME
         
         self.intensity = self.np_random.integers(self.radiation_intensity_bounds[0], self.radiation_intensity_bounds[1])  # type: ignore
         self.bkg_intensity = self.np_random.integers(self.background_radiation_bounds[0], self.background_radiation_bounds[1])  # type: ignore
@@ -629,8 +633,8 @@ class RadSearch(gym.Env):
         # If boundaries are being enforced, do not take action
         if self.enforce_grid_boundaries:
             if (
-                agent.det_coords < self.search_area[0]
-                or self.search_area[2] < agent.det_coords
+                tentative_coordinates < self.search_area[0]
+                or self.search_area[2] < tentative_coordinates
             ):
                 agent.out_of_bounds = True  
                 agent.out_of_bounds_count += 1
@@ -642,11 +646,14 @@ class RadSearch(gym.Env):
             roll_back_action = True
                         
         if roll_back_action:
-            # If we're in an obsticle, roll back
+            # If we're in an obstacle, roll back
             agent.detector = to_vis_p(agent.det_coords)
         else:
-            # If we're not in an obsticle, update the detector coordinates
+            # If we're not in an obstacle, update the detector coordinates
             agent.det_coords = from_vis_p(agent.detector)
+            
+            ##### TEST
+            assert agent.det_coords > 0  # TODO DELETE ME
 
         return False if roll_back_action else True
 
