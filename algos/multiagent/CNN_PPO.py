@@ -321,7 +321,8 @@ class Actor(nn.Module):
                         nn.Linear(in_features=32, out_features=16), # output tensor with shape (16)
                         nn.ReLU(),
                         nn.Linear(in_features=16, out_features=1), # output tensor with shape (1)
-                        nn.Softmax(dim=0)  # Put in range [0,1] TODO Is this needed for critic?
+                        nn.Tanh(), #TODO Did the original maker implement softmax here?
+                        #nn.Softmax(dim=0)  #TODO Did the original maker implement softmax here?
                     )
 
     def forward(self):
