@@ -190,7 +190,7 @@ def train():
         K_epochs = 4
                      
         obstruction_count = 1
-        number_of_agents = 10
+        number_of_agents = 3
         
         bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
         

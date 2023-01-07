@@ -512,15 +512,19 @@ class PPO:
         
         loc_ax.imshow(self.maps.location_map, cmap='viridis', interpolation=interpolation_method)
         loc_ax.set_title('Agent Location')
+        loc_ax.invert_yaxis()        
         
         other_ax.imshow(self.maps.others_locations_map, cmap='viridis', interpolation=interpolation_method)
         other_ax.set_title('Other Agent Locations') 
+        other_ax.invert_yaxis()  
         
         intensity_ax.imshow(self.maps.readings_map, cmap='viridis', interpolation=interpolation_method)
-        intensity_ax.set_title('Radiation Intensity') 
+        intensity_ax.set_title('Radiation Intensity')
+        intensity_ax.invert_yaxis()
         
         visit_ax.imshow(self.maps.visit_counts_map, cmap='viridis', interpolation=interpolation_method)
         visit_ax.set_title('Visit Counts') 
+        visit_ax.invert_yaxis()
         
         #divider = make_axes_locatable(loc_ax)
         #cax = divider.append_axes('right', size='5%', pad=0.05)             
