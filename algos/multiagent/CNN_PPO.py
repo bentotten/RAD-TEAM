@@ -47,6 +47,7 @@ class RolloutBuffer():
     actions: List = field(default_factory=list)
     states: List = field(default_factory=list)
     logprobs: List = field(default_factory=list)
+    state_values: List = field(default_factory=list)
     rewards: List = field(default_factory=list)
     is_terminals: List = field(default_factory=list)
     mapstacks: List = field(default_factory=list) #TODO change to tensor?
@@ -60,6 +61,7 @@ class RolloutBuffer():
         del self.actions[:]
         del self.states[:]
         del self.logprobs[:]
+        del self.state_values[:]
         del self.rewards[:]
         del self.is_terminals[:]
         del self.mapstacks[:]
@@ -288,6 +290,7 @@ class Actor(nn.Module):
         #nn.ReLU()
         self.step7 = nn.Linear(in_features=16, out_features=5) # TODO eventually make '5' action_dim instead
         self.softmax = nn.Softmax(dim=0)  # Put in range [0,1] 
+        self.global_critic = global_critic
 
         # TODO uncomment after ready to combine
         self.actor = nn.Sequential(
@@ -307,7 +310,7 @@ class Actor(nn.Module):
 
         # If decentralized critic
         # TODO uncomment after ready to combine
-        if not global_critic:
+        if not self.global_critic:
             self.local_critic = nn.Sequential(
                         # Starting shape (batch_size, 4, Height, Width)
                         nn.Conv2d(in_channels=4, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (batch_size, 8, Height, Width)
@@ -352,14 +355,16 @@ class Actor(nn.Module):
         
         # print(x)
         
+        # Select Action from Actor
         action_probs = self.actor(state_map_stack)
-        # print(x)
         dist = Categorical(action_probs)
-
         action = dist.sample()
         action_logprob = dist.log_prob(action)
         
-        return action.detach(), action_logprob.detach()
+        # Get q-value from critic
+        state_value = self.local_critic(state_map_stack) if not self.global_critic # else TODO implement global critic
+        
+        return action.detach(), action_logprob.detach(), state_value.detach()
     
     def evaluate(self, state, action):
         action_probs = self.actor(state)
@@ -432,11 +437,12 @@ class PPO:
             
             #state = torch.FloatTensor(state).to(device) # Convert to tensor TODO already a tensor, is this necessary?
             #action, action_logprob = self.policy_old.act(state) # Choose action
-            action, action_logprob = self.policy_old.act(map_stack) # Choose action
+            action, action_logprob, state_value = self.policy_old.act(map_stack) # Choose action # TODO why old policy?
         
         self.maps.buffer.states.append(state)
         self.maps.buffer.actions.append(action)
         self.maps.buffer.logprobs.append(action_logprob)
+        self.maps.buffer.state_values.append(state_value)
 
         return action.item()
 
