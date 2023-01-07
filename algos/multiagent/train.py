@@ -121,7 +121,7 @@ def train():
     lr_actor = 0.0003       # learning rate for actor network
     lr_critic = 0.001       # learning rate for critic network
 
-    random_seed = 1         # set random seed if required (0 = no random seed)
+    random_seed = 0        # set random seed if required (0 = no random seed)
     
     #####################################################
 
@@ -190,7 +190,8 @@ def train():
         K_epochs = 4
                      
         obstruction_count = 1
-        number_of_agents = 1
+        number_of_agents = 5
+        random_seed = 0
         
         bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
         
@@ -263,7 +264,8 @@ def train():
             K_epochs=K_epochs, 
             eps_clip=eps_clip,
             resolution_accuracy=resolution_accuracy,
-            id=i
+            id=i,
+            random_seed=random_seed
             ) 
         for i in range(number_of_agents)
         }

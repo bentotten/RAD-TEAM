@@ -361,8 +361,6 @@ class Actor(nn.Module):
         return action.detach(), action_logprob.detach()
     
     def evaluate(self, state, action):
-        #robust_seed = _int_list_from_bigint(hash_seed(seed))[0] # TODO get this to work
-
         action_probs = self.actor(state)
         dist = Categorical(action_probs)
         action_logprobs = dist.log_prob(action)
@@ -373,7 +371,12 @@ class Actor(nn.Module):
 
 
 class PPO:
-    def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, eps_clip, resolution_accuracy, id):
+    def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, eps_clip, resolution_accuracy, id, random_seed=None):
+        # Testing
+        if random_seed:
+            torch.manual_seed(random_seed)
+            np.random.seed(random_seed)            
+        
         # Hyperparameters
         self.gamma = gamma  # Discount factor
         self.eps_clip = eps_clip
