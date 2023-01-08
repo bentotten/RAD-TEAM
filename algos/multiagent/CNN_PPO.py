@@ -385,7 +385,8 @@ class Actor(nn.Module):
         action_logprob = dist.log_prob(action)
         
         # Get q-value from critic
-        state_value = self.local_critic(state_map_stack) if not self.global_critic # else TODO implement global critic
+        #state_value = self.local_critic(state_map_stack) if not self.global_critic else global_critic(state_map_stack) # TODO implement global critic
+        state_value = self.local_critic(state_map_stack)
         
         return action.detach(), action_logprob.detach(), state_value.detach()
     
