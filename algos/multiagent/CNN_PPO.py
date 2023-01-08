@@ -483,7 +483,7 @@ class PPO:
 
         return action.item()
 
-    def calculate_advantage(self, rewards):
+    def calculate_advantages(self, rewards=self.maps.buffer.rewards):
         ''' Advantage is roughly "how much better off will the actor be if a particular action is taken over the course of the episode"
         Generalized Advantage Estimation (GAE)
         
@@ -501,16 +501,17 @@ class PPO:
             Return_values = GAE_t + value_t
         5. Reverse return_values to get back in original order
         '''
-        returns = []
+        returns = [] 
         gae = 0
+        # Slow way
         for i in reversed(range(len(rewards))):
             mask = 0 if self.maps.buffer.is_terminals[i] else 1 
-            delta = rewards[i] + self.gamma * self.maps.buffer.state_values[i + 1] * mask - self.maps.buffer.state_values[i]
-            gae = delta + self.gamma * self.lmbda * mask * gae
-            returns.insert(0, gae + self.maps.buffer.state_values[i])
+            delta = rewards[i] + (self.gamma * self.maps.buffer.state_values[i + 1] * mask) - self.maps.buffer.state_values[i] # TODO does the discount factor need to be gamma^t?  
+            gae = delta + (self.gamma * self.lmbda * mask * gae) 
+            returns.insert(0, gae + self.maps.buffer.state_values[i]) # Puts back in correct order
             
         # TODO Get to work with discount_cumsum() instead
-        # From Philippe
+        # From OpenAI
         # path_slice = slice(self.path_start_idx, self.ptr)
         # rews = np.append(self.rew_buf[path_slice], last_val)
         # vals = np.append(self.val_buf[path_slice], last_val)
@@ -527,35 +528,42 @@ class PPO:
         # self.path_start_idx = self.ptr
 
         adv = np.array(returns) - self.maps.buffer.state_values[:-1]
-        return returns, (adv - np.mean(adv)) / (np.std(adv) + 1e-10)
+        normalized_returns = (adv - np.mean(adv)) / (np.std(adv) + 1e-10)
+        return returns, normalized_returns
+
+    def calculate_losses():
+        '''
+        Calculate how much the policy has changed, as in a ratio of the new policy over the old policy, in log form for easier computation
+        Decide update tolerance using the clipping parameter epsilon to ensure only make the maximum of epsilon% change to our policy at a time. 
+        Calculate Actor loss using the policy change ratio and the clipping parameter
+        Calculate Critic loss (Critic loss is nothing but the usual mean squared error loss with the Returns)
+        Calculate total loss (using a discount factor to bring them to the same order of magnitude)
+        An entropy term is optional, but it encourages our actor model to explore different policies and the degree to which we want to experiment can be controlled by an entropy beta parameter.
+        '''
+        
 
     def update(self):
+        # TODO I believe this is wrong; see vanilla_PPO.py TODO comment
         # Monte Carlo estimate of returns
-        rewards = []
-        discounted_reward = 0
-        for reward, is_terminal in zip(reversed(self.maps.buffer.rewards), reversed(self.maps.buffer.is_terminals)):
-            if is_terminal:
-                discounted_reward = 0
-            discounted_reward = reward + (self.gamma * discounted_reward)
-            rewards.insert(0, discounted_reward)
+        # rewards = []
+        # discounted_reward = 0
+        # for reward, is_terminal in zip(reversed(self.maps.buffer.rewards), reversed(self.maps.buffer.is_terminals)):
+        #     if is_terminal:
+        #         discounted_reward = 0
+        #     discounted_reward = reward + (self.gamma * discounted_reward)
+        #     rewards.insert(0, discounted_reward)
             
         # Normalizing the rewards
-        rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
-        rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
+        # rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
+        # rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
+        
+        returns, normalized_advantages = self.calculate_advantages()
 
         # TODO for memory efficiency, could remap state buffers here instead of storing them
-
         # convert list to tensor
         old_states = torch.squeeze(torch.stack(self.maps.buffer.states, dim=0)).detach().to(device)
         old_actions = torch.squeeze(torch.stack(self.maps.buffer.actions, dim=0)).detach().to(device)
         old_logprobs = torch.squeeze(torch.stack(self.maps.buffer.logprobs, dim=0)).detach().to(device)
-        
-        ### DELETE 
-        print(self.maps.buffer.mapstacks)
-        print(torch.max(self.maps.buffer.mapstacks[0]))
-        print(torch.max(self.maps.buffer.mapstacks[1]))
-        print(torch.min(self.maps.buffer.mapstacks[0]))
-        print(torch.min(self.maps.buffer.mapstacks[1]))
         
         # Optimize policy for K epochs
         for _ in range(self.K_epochs):
