@@ -1,3 +1,6 @@
+#    - github.com/nikhilbarhate99/PPO-PyTorch
+
+
 import torch
 import torch.nn as nn
 from torch.distributions import MultivariateNormal
@@ -202,13 +205,14 @@ class PPO:
 
     def update(self):
         # Monte Carlo estimate of returns
+        
         rewards = []
         discounted_reward = 0
         for reward, is_terminal in zip(reversed(self.buffer.rewards), reversed(self.buffer.is_terminals)):
             if is_terminal:
                 discounted_reward = 0
-            discounted_reward = reward + (self.gamma * discounted_reward)
-            rewards.insert(0, discounted_reward)
+            discounted_reward = reward + (self.gamma * discounted_reward) # TODO I think the discounted_reward and reward are reversed here, doublecheck
+            rewards.insert(0, discounted_reward) # Puts back in correct order
             
         # Normalizing the rewards
         rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
