@@ -18,7 +18,7 @@ import gym
 # import roboschool
 from gym_rad_search.envs import RadSearch  # type: ignore
 
-#from vanilla_PPO import PPO as van_PPO # vanilla_PPO
+from vanilla_PPO import PPO as van_PPO # vanilla_PPO
 from CNN_PPO import PPO as PPO
 
 from dataclasses import dataclass, field

@@ -27,6 +27,7 @@ class Unit_RolloutBuffer(unittest.TestCase):
         self.assertEqual(len(self.buffer.actions), 1)
         self.assertEqual(self.buffer.actions[0], 2)
         self.buffer.actions.append(torch.tensor([3]))
+        self.assertFalse(len(self.buffer.actions), (len(self.buffer2.actions))        
         self.buffer.clear()
         self.assertEqual(len(self.buffer.actions), 0)
         
