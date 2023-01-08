@@ -14,8 +14,8 @@ class UnitTestModule(unittest.TestCase):
 
 class Unit_RolloutBuffer(unittest.TestCase):
     def setUp(self):
-        self.buffer = field(default_factory = lambda: RolloutBuffer())
-        self.buffer2 = field(default_factory = lambda: RolloutBuffer())
+        self.buffer = RolloutBuffer()
+        self.buffer2 = RolloutBuffer()
 
     def tearDown(self):
         del self.buffer
@@ -27,7 +27,8 @@ class Unit_RolloutBuffer(unittest.TestCase):
         self.assertEqual(len(self.buffer.actions), 1)
         self.assertEqual(self.buffer.actions[0], 2)
         self.buffer.actions.append(torch.tensor([3]))
-        self.assertFalse(len(self.buffer.actions), (len(self.buffer2.actions))        
+        self.assertFalse(len(self.buffer.actions) == len(self.buffer2.actions))
+        self.assertFalse(self.buffer.actions == self.buffer2.actions)
         self.buffer.clear()
         self.assertEqual(len(self.buffer.actions), 0)
         
@@ -48,7 +49,9 @@ class Unit_RolloutBuffer(unittest.TestCase):
         self.buffer.states.append(sample)
         self.assertEqual(len(self.buffer.states), 1)
         self.assertEqual(len(self.buffer.states[0][0]), 5)   
-        self.buffer.states.append(4)             
+        self.buffer.states.append(4)
+        self.assertFalse(len(self.buffer.states) == len(self.buffer2.states))
+        self.assertFalse(self.buffer.states == self.buffer2.states) 
         self.buffer.clear()
         self.assertEqual(len(self.buffer.states), 0)
                 
@@ -57,7 +60,9 @@ class Unit_RolloutBuffer(unittest.TestCase):
         self.buffer.logprobs.append(sample)
         self.assertEqual(len(self.buffer.logprobs), 1)
         self.assertEqual(self.buffer.logprobs[0], -1.4719) 
-        self.buffer.logprobs.append(4)               
+        self.buffer.logprobs.append(4)
+        self.assertFalse(len(self.buffer.logprobs) == len(self.buffer2.logprobs))
+        self.assertFalse(self.buffer.logprobs == self.buffer2.logprobs)                     
         self.buffer.clear()
         self.assertEqual(len(self.buffer.logprobs), 0)
         
@@ -65,7 +70,9 @@ class Unit_RolloutBuffer(unittest.TestCase):
         self.buffer.rewards.append(-0.3)
         self.assertEqual(len(self.buffer.rewards), 1)
         self.assertEqual(self.buffer.rewards[0], -0.3)    
-        self.buffer.rewards.append(4)            
+        self.buffer.rewards.append(4)
+        self.assertFalse(len(self.buffer.rewards) == len(self.buffer2.rewards))
+        self.assertFalse(self.buffer.rewards == self.buffer2.rewards)                 
         self.buffer.clear()
         self.assertEqual(len(self.buffer.rewards), 0)
                 
@@ -73,7 +80,9 @@ class Unit_RolloutBuffer(unittest.TestCase):
         self.buffer.is_terminals.append(False)
         self.assertEqual(len(self.buffer.is_terminals), 1)
         self.assertEqual(self.buffer.is_terminals[0], False)    
-        self.buffer.is_terminals.append(True)            
+        self.buffer.is_terminals.append(True)
+        self.assertFalse(len(self.buffer.is_terminals) == len(self.buffer2.is_terminals))
+        self.assertFalse(self.buffer.is_terminals == self.buffer2.is_terminals)                 
         self.buffer.clear()
         self.assertEqual(len(self.buffer.is_terminals), 0)
                 
@@ -82,7 +91,9 @@ class Unit_RolloutBuffer(unittest.TestCase):
         self.buffer.mapstacks.append(sample)
         self.assertEqual(len(self.buffer.mapstacks), 1)
         self.assertEqual(len(self.buffer.mapstacks[0].size()), len(sample.size()))     
-        self.buffer.mapstacks.append(4)           
+        self.buffer.mapstacks.append(4)
+        self.assertFalse(len(self.buffer.mapstacks) == len(self.buffer2.mapstacks))
+        self.assertFalse(self.buffer.mapstacks == self.buffer2.mapstacks)                   
         self.buffer.clear()
         self.assertEqual(len(self.buffer.mapstacks), 0)
 
@@ -91,7 +102,9 @@ class Unit_RolloutBuffer(unittest.TestCase):
         sample = [1446.0]
         self.buffer.readings[key] = sample
         self.assertEqual(len(self.buffer.readings), 1)
-        self.assertEqual(self.buffer.readings[key][0], 1446.0)     
+        self.assertEqual(self.buffer.readings[key][0], 1446.0)
+        self.assertFalse(len(self.buffer.readings.keys()) == len(self.buffer2.readings.keys()))                  
+        self.assertFalse(self.buffer.readings == self.buffer2.readings)
         self.buffer.clear()
         self.assertEqual(len(self.buffer.readings), 0)
                 
