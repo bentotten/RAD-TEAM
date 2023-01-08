@@ -1,12 +1,16 @@
 '''
 Implementation of "Target Localization using Multi-Agent Deep Reinforcement Learning with Proximal Policy Optimization" by Alagha et al.
+Partially adapted from:
+    - towardsdatascience.com/proximal-policy-optimization-tutorial-part-2-2-gae-and-ppo-loss-fe1b3c5549e8
+    - github.com/nikhilbarhate99/PPO-PyTorch
 
 '''
 from os import stat, path, mkdir, getcwd
-from matplotlib.streamplot import Grid
+
 from numpy import dtype
 import numpy as np
 import numpy.typing as npt
+import scipy.signal
 
 import torch
 import torch.nn as nn
@@ -21,6 +25,7 @@ from typing_extensions import TypeAlias
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.streamplot import Grid
 
 # Maps
 Point: TypeAlias = NewType("Point", tuple[float, float])  # Array indicies to access a GridSquare
@@ -39,6 +44,24 @@ else:
     print("Device set to : cpu")
 print("============================================================================================")
 
+################################## Helper Functions ##################################
+
+def discount_cumsum(
+    x: npt.NDArray[np.float64], discount: float
+) -> npt.NDArray[np.float64]:
+    """
+    magic from rllab for computing discounted cumulative sums of vectors.
+    input:
+        vector x,
+        [x0,
+         x1,
+         x2]
+    output:
+        [x0 + discount * x1 + discount^2 * x2,
+         x1 + discount * x2,
+         x2]
+    """
+    return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
 ################################## PPO Policy ##################################
 @dataclass()
@@ -377,7 +400,19 @@ class Actor(nn.Module):
 
 
 class PPO:
-    def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, eps_clip, resolution_accuracy, id, random_seed=None):
+    def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, eps_clip, resolution_accuracy, id, lmbda=0.95, random_seed=None):
+        '''
+        state_dim: The dimensions of the return from the environment
+        action_dim: How many actions the actor chooses from
+        grid_bounds: The grid bounds for the state returned by the environment. For RAD-PPO, this is (1, 1). This value will be scaled by the resolution_accuracy variable
+        lr_actor: learning rate for actor neural network
+        lr_critic: learning rate for critic neural network
+        gamma: discount rate for expected return and Generalize Advantage Estimate (GAE) calculations
+        K_epochs:
+        eps_clip: 
+        resolution_accuracy: How much to scale the convolution maps by (higher rate means more accurate, but more memory usage)
+        lmbda: smoothing parameter for Generalize Advantage Estimate (GAE) calculations
+        '''
         # Testing
         if random_seed:
             torch.manual_seed(random_seed)
@@ -385,6 +420,7 @@ class PPO:
         
         # Hyperparameters
         self.gamma = gamma  # Discount factor
+        self.lmbda = lmbda  # Smoothing parameter for GAE calculation
         self.eps_clip = eps_clip
         self.K_epochs = K_epochs
         self.resolution_accuracy = resolution_accuracy
@@ -445,6 +481,52 @@ class PPO:
         self.maps.buffer.state_values.append(state_value)
 
         return action.item()
+
+    def calculate_advantage(self, rewards):
+        ''' Advantage is roughly "how much better off will the actor be if a particular action is taken over the course of the episode"
+        Generalized Advantage Estimation (GAE)
+        
+        gamma = discount rate
+        lambda = smoothing parameter (0.95 suggested in the paper)
+        
+        1. Loop from last step backwards to step 0 of this batch
+        2. Get delta:
+            Delta = reward_t + (discount_rate * value_{t+1} * terminal_t) - value_t
+            If terminal for any timestep t, then terminal_t = 0, else terminal_t = 1. Because this module is episodic and a terminal value means the episode has reset,
+            we do not want to apply rewards from the reset to the calculations
+        3. Get GAE:
+            GAE = delta + (discount_rate  * smoothing_parameter * terminal_t * GAE_{t+1})
+        4. Get return values:
+            Return_values = GAE_t + value_t
+        5. Reverse return_values to get back in original order
+        '''
+        returns = []
+        gae = 0
+        for i in reversed(range(len(rewards))):
+            mask = 0 if self.maps.buffer.is_terminals[i] else 1 
+            delta = rewards[i] + self.gamma * self.maps.buffer.state_values[i + 1] * mask - self.maps.buffer.state_values[i]
+            gae = delta + self.gamma * self.lmbda * mask * gae
+            returns.insert(0, gae + self.maps.buffer.state_values[i])
+            
+        # TODO Get to work with discount_cumsum() instead
+        # From Philippe
+        # path_slice = slice(self.path_start_idx, self.ptr)
+        # rews = np.append(self.rew_buf[path_slice], last_val)
+        # vals = np.append(self.val_buf[path_slice], last_val)
+        
+        # # the next two lines implement GAE-Lambda advantage calculation
+        # # gamma determines scale of value function, introduces bias regardless of VF accuracy
+        # # lambda introduces bias when VF is inaccurate
+        # deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
+        # self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lam)
+        
+        # # the next line computes rewards-to-go, to be targets for the value function
+        # self.ret_buf[path_slice] = core.discount_cumsum(rews, self.gamma)[:-1]
+        
+        # self.path_start_idx = self.ptr
+
+        adv = np.array(returns) - self.maps.buffer.state_values[:-1]
+        return returns, (adv - np.mean(adv)) / (np.std(adv) + 1e-10)
 
     def update(self):
         # Monte Carlo estimate of returns
