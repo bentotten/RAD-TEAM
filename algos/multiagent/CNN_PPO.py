@@ -31,6 +31,8 @@ from matplotlib.streamplot import Grid
 Point: TypeAlias = NewType("Point", tuple[float, float])  # Array indicies to access a GridSquare
 Map: TypeAlias = NewType("Map", npt.NDArray[np.float32]) # 2D array that holds gridsquare values
 
+DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm for inflating step size to obstruction
+
 # TODO move this somewhere ... else lol
 ################################## set device ##################################
 print("============================================================================================")
@@ -106,13 +108,16 @@ class MapsBuffer:
     y_limit_scaled: int = field(init=False)
     resolution_accuracy: int = field(default=100)
     map_dimensions: Tuple = field(init=False)
+    obstacle_state_offset: int = field(default=3) # Number of initial elements in state return that do not indicate there is an obstacle. 
+    
+    # TODO make work with max_step_count so boundaries dont need to be enforced on grid. Basically take the grid bounds and add the max step count to make the map sizes
     
     # Maps
     location_map: Map = field(init=False)
     others_locations_map: Map = field(init=False)
     readings_map: Map = field(init=False)
     visit_counts_map: Map = field(init=False)
-    # TODO insert obstacles map
+    obstacles_map: Map = field(init=False)
     
     # Buffers
     buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
@@ -132,6 +137,7 @@ class MapsBuffer:
         self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
+        self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.buffer.clear()
         
     def state_to_map(self, observation, id):
@@ -196,112 +202,98 @@ class MapsBuffer:
             y = int(scaled_coordinates[1])
 
             self.visit_counts_map[x][y] += 1
+            
+        # Process state for obstacles_map 
+        # Agent detects obstructions within 110 cm of itself
+        for agent_id in observation:
+            scaled_agent_coordinates = (int(observation[agent_id].state[1] * self.resolution_accuracy), int(observation[agent_id].state[2] * self.resolution_accuracy))            
+            if np.count_nonzero(observation[agent_id].state[self.obstacle_state_offset:]) > 0:
+                # Access the obstacle detection portion of state and see what direction an obstacle is in
+                # These offset indexes correspond to:
+                # 0: left
+                # 1: up and left
+                # 2: up
+                # 3: up and right
+                # 4: right
+                # 5: down and right
+                # 6: down
+                # 7: down and left                
+                indices = np.flatnonzero(observation[agent_id].state[self.obstacle_state_offset::]).astype(int)
+                for index in indices:
+                    real_index = int(index + self.obstacle_state_offset)
+                    
+                    # Inflate to actual distance, then convert and round with resolution_accuracy
+                    inflated_distance = (-(observation[agent_id].state[real_index] * DIST_TH - DIST_TH))
+                    scaled_obstacle_distance = int(inflated_distance / self.resolution_accuracy)
+
+                    step: int = field(init=False)
+                    match index:
+                        # 0: Left
+                        case 0:
+                            step = (-1 ,0)
+                        # 1: up and left
+                        case 1:
+                            step = (-scaled_obstacle_distance, scaled_obstacle_distance)
+                        # 2: up
+                        case 2:
+                            step = (0, scaled_obstacle_distance)
+                        # 3: up and right
+                        case 3:
+                            step = (scaled_obstacle_distance, scaled_obstacle_distance)
+                        # 4: right
+                        case 4:
+                            step = (scaled_obstacle_distance, 0)                        
+                        # 5: down and right
+                        case 5:
+                            step = (scaled_obstacle_distance, -scaled_obstacle_distance)                           
+                        # 6: down
+                        case 6:
+                            step = (0, -scaled_obstacle_distance)                           
+                        # 7: down and left
+                        case 7:
+                            step = (-scaled_obstacle_distance, -scaled_obstacle_distance)                                                     
+                        case _:
+                            raise Exception('Obstacle index is not within valid [0,7] range.')                         
+                    x = int(scaled_agent_coordinates[0] + step[0])
+                    y = int(scaled_agent_coordinates[1] + step[1])
+                    self.obstacles_map[x][y] = 1   
         
-        return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map
+        return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map
 
 
 class Actor(nn.Module):
-    def __init__(self, map_dim, state_dim, batches: int=1, action_dim: int=5, global_critic: bool=False):
+    def __init__(self, map_dim, state_dim, batches: int=1, map_count: int=5, action_dim: int=5, global_critic: bool=False):
         super(Actor, self).__init__()
         
+        # TODO get to work with 5 maps, adding obstacles_map
         ''' Actor Input tensor shape: (batch size, number of channels, height of grid, width of grid)
-                1. batch size: 4 maps
-                2. number of channels: 3 for RGB (red green blue) heatmap 
+                1. batch size: 1
+                2. (map_count) number of channels: 5 input maps
                 3. Height: grid height
                 4. Width: grid width
             
-                4 maps: 
+                5 maps: 
                     1. Location Map: a 2D matrix showing the agents location.
                     2. Map of Other Locations: a 2D matrix showing the number of agents located in each grid element (excluding current agent).
                     3. Readings map: a 2D matrix showing the last reading collected in each grid element. Grid elements that have not been visited are given a reading of 0.
                     4. Visit Counts Map: a 2D matrix showing the number of visits each grid element has received from all agents combined.
+                    5. Obstacle Map: a 2D matrix of obstacles detected by agents
                     
             Critic Input tensor shape: (batch size, number of channels, height of grid, width of grid)
-                1. batch size: 3 maps
-                2. number of channels: 3 for RGB (red green blue) heatmap 
+                1. batch size: 1 maps
+                2. (map_count) number of channels: 5 input maps, same as Actor
                 3. Height: grid height
                 4. Width: grid width
-                
-                4 maps: 
-                    1. Location Map: a 2D matrix showing the agents location.
-                    2. Map of Other Locations: a 2D matrix showing the number of agents located in each grid element (excluding current agent).
-                    3. Readings map: a 2D matrix showing the last reading collected in each grid element. Grid elements that have not been visited are given a reading of 0.
-                    4. Visit Counts Map: a 2D matrix showing the number of visits each grid element has received from all agents combined.
+
         '''
-        def test(): 
-            # Define the activation function
-            #relu = nn.ReLU()
-            
-            # Define the first convolutional layer
-            #conv1 = nn.Conv2d(in_channels=3, out_channels=8, kernel_size=3, stride=1, padding=1)  # output tensor with shape (4, 8, 5, 5)
-            
-            # Define the maxpool layer
-            #maxpool = nn.MaxPool2d(kernel_size=2, stride=2)  # output tensor with shape (4, 8, 2, 2)
-
-            # Define the second convolution layer
-            #conv2 = nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1)  # output tensor with shape (4, 16, 2, 2)
-
-            # Define flattening function
-            #flat = lambda x: x.view(x.size(0), -1)  # output tensor with shape (4, 64)
-            #flat = lambda x: x.flatten(start_dim=0, end_dim= -1)  # output tensor with shape (1, 256)
-
-            # Define the first linear layer
-            #linear1 = nn.Linear(in_features=16*2*2*4, out_features=32) # output tensor with shape (32)
-            
-            # Define the second linear layer
-            # linear2 = nn.Linear(in_features=32, out_features=16) # output tensor with shape (16)
-            
-            # # Define the output layer
-            # output = nn.Linear(in_features=16, out_features=5) # output tensor with shape (5)
-            
-            # # Define the softmax function
-            # softm = nn.Softmax(dim=0)
-            
-            # Apply the convolutional layer to the input tensor
-            # x = relu(conv1(x))  # output tensor with shape (4, 8, 5, 5)
-            # print(x.size())
-            
-            # # Apply maxpool layer
-            # x = maxpool(x)  # output tensor with shape (4, 8, 2, 2)
-            # print(x.size())
-            
-            # # Apply the second convolutional layer
-            # x = relu(conv2(x))  # output tensor with shape (4, 16, 2, 2)
-            # print(x.size())
-
-            # # Flatten the output tensor of the convolutional layer to a 1D tensor
-            # x = flat(x)  # output tensor with shape (1, 256)
-            # print(x.size())
-            
-            # # Apply the linear layer to the flattened output tensor
-            # x = relu(linear1(x))  # output tensor with shape (32)
-            # print(x.size())
-            
-            # # Apply the second linear layer to the flattened output tensor
-            # x = relu(linear2(x))  # output tensor with shape (16)
-            # print(x.size())
-            
-            # # Apply the output layer
-            # x = output(x)  # output tensor with shape (5)
-            # print(x.size())
-            # print(x)
-            
-            # test = torch.softmax(x, dim=0)
-            # print(test.size())
-            # print(test)
-            
-            # x = softm(x)
-            # print(x.size())
-            # print(x)
-            ######################
-            pass
 
         assert map_dim[0] > 0 and map_dim[0] == map_dim[1], 'Map dimensions mismatched. Must have equal x and y bounds.'
         
+        channels = map_count
         pool_output = int(((map_dim[0]-2) / 2) + 1) # Get maxpool output height/width and floor it
 
         # Actor network
-        self.step1 = nn.Conv2d(in_channels=4, out_channels=8, kernel_size=3, stride=1, padding=1)  # output tensor with shape (batchs, 8, Height, Width)
+        self.step1 = nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1)  # output tensor with shape (batchs, 8, Height, Width)
         self.relu = nn.ReLU()
         self.step2 = nn.MaxPool2d(kernel_size=2, stride=2)  # output height and width is floor(((Width - Size)/ Stride) +1)
         self.step3 = nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1) 
@@ -317,7 +309,7 @@ class Actor(nn.Module):
 
         # TODO uncomment after ready to combine
         self.actor = nn.Sequential(
-                        nn.Conv2d(in_channels=4, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (4, 8, Height, Width)
+                        nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (4, 8, Height, Width)
                         nn.ReLU(),
                         nn.MaxPool2d(kernel_size=2, stride=2),  # output tensor with shape (4, 8, 2, 2)
                         nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (4, 16, 2, 2)
@@ -336,7 +328,7 @@ class Actor(nn.Module):
         if not self.global_critic:
             self.local_critic = nn.Sequential(
                         # Starting shape (batch_size, 4, Height, Width)
-                        nn.Conv2d(in_channels=4, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (batch_size, 8, Height, Width)
+                        nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (batch_size, 8, Height, Width)
                         nn.ReLU(),
                         nn.MaxPool2d(kernel_size=2, stride=2),  # output tensor with shape (batch_size, 8, x, x) x is the floor(((Width - Size)/ Stride) +1)
                         nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (batch_size, 16, 2, 2)
@@ -351,33 +343,35 @@ class Actor(nn.Module):
                         #nn.Softmax(dim=0)  #TODO Did the original maker implement softmax here?
                     )
 
+    def test(self, state_map_stack): 
+        print("Starting shape, ", state_map_stack.size())
+        x = self.step1(state_map_stack) # conv1
+        x = self.relu(x)
+        print("shape, ", x.size()) 
+        x = self.step2(x) # Maxpool
+        print("shape, ", x.size()) 
+        x = self.step3(x) # conv2
+        x = self.relu(x)
+        print("shape, ", x.size()) 
+        x = self.step4(x) # Flatten
+        print("shape, ", x.size()) 
+        x = self.step5(x) # linear
+        x = self.relu(x) 
+        print("shape, ", x.size()) 
+        x = self.step6(x) # linear
+        x = self.relu(x)
+        print("shape, ", x.size()) 
+        x = self.step7(x) # Output layer
+        print("shape, ", x.size()) 
+        x = self.softmax(x)
+        
+        print(x)
+        pass
+
     def forward(self):
         raise NotImplementedError
     
     def act(self, state_map_stack):
-        # print("Starting shape, ", state_map_stack.size())
-        # x = self.step1(state_map_stack) # conv1
-        # x = self.relu(x)
-        # print("shape, ", x.size()) 
-        # x = self.step2(x) # Maxpool
-        # print("shape, ", x.size()) 
-        # x = self.step3(x) # conv2
-        # x = self.relu(x)
-        # print("shape, ", x.size()) 
-        # x = self.step4(x) # Flatten
-        # print("shape, ", x.size()) 
-        # x = self.step5(x) # linear
-        # x = self.relu(x) 
-        # print("shape, ", x.size()) 
-        # x = self.step6(x) # linear
-        # x = self.relu(x)
-        # print("shape, ", x.size()) 
-        # x = self.step7(x) # Output layer
-        # print("shape, ", x.size()) 
-        # x = self.softmax(x)
-        
-        # print(x)
-        
         # Select Action from Actor
         action_probs = self.actor(state_map_stack)
         dist = Categorical(action_probs)
@@ -390,12 +384,19 @@ class Actor(nn.Module):
         
         return action.detach(), action_logprob.detach(), state_value.detach()
     
-    def evaluate(self, state, action):
-        action_probs = self.actor(state)
-        dist = Categorical(action_probs)
-        action_logprobs = dist.log_prob(action)
-        dist_entropy = dist.entropy()
-        state_values = self.local_critic(state)
+    def evaluate(self, state_map_stack, action):
+        
+        # TODO Works without unsqueezing, investigate why
+        for map_stack in state_map_stack:
+            single_map_stack = torch.unsqueeze(map_stack, dim=0) 
+            self.test(single_map_stack)
+                
+            action_probs = self.actor(state_map_stack)
+            
+            dist = Categorical(action_probs)
+            action_logprobs = dist.log_prob(action)
+            dist_entropy = dist.entropy()
+            state_values = self.local_critic(state_map_stack)
         
         return action_logprobs, state_values, dist_entropy
 
@@ -461,10 +462,12 @@ class PPO:
                 location_map,
                 others_locations_map,
                 readings_map,
-                visit_counts_map
+                visit_counts_map,
+                obstacles_map
             ) = self.maps.state_to_map(state, id)
             
-            map_stack = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map)]) # Convert to tensor
+            # TODO add obstacles_map
+            map_stack = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
             
             # Add to mapstack buffer to eventually be converted into tensor with minibatches
             self.maps.buffer.mapstacks.append(map_stack)
@@ -483,7 +486,7 @@ class PPO:
 
         return action.item()
 
-    def calculate_advantages(self, rewards=self.maps.buffer.rewards):
+    def calculate_advantages(self, rewards=None):
         ''' Advantage is roughly "how much better off will the actor be if a particular action is taken over the course of the episode"
         Generalized Advantage Estimation (GAE)
         
@@ -501,10 +504,13 @@ class PPO:
             Return_values = GAE_t + value_t
         5. Reverse return_values to get back in original order
         '''
+        if not rewards: rewards = self.maps.buffer.rewards
         returns = [] 
         gae = 0
         # Slow way
-        for i in reversed(range(len(rewards))):
+        # TODO something is wrong here; believe state should always be one ahead
+        #for i in reversed(range(len(rewards))):
+        for i in reversed(range(len(rewards)-1)):
             mask = 0 if self.maps.buffer.is_terminals[i] else 1 
             delta = rewards[i] + (self.gamma * self.maps.buffer.state_values[i + 1] * mask) - self.maps.buffer.state_values[i] # TODO does the discount factor need to be gamma^t?  
             gae = delta + (self.gamma * self.lmbda * mask * gae) 
@@ -527,20 +533,37 @@ class PPO:
         
         # self.path_start_idx = self.ptr
 
-        adv = np.array(returns) - self.maps.buffer.state_values[:-1]
+        adv = np.array(returns) - self.maps.buffer.state_values[:-1] # TODO this throws a warning ...
         normalized_returns = (adv - np.mean(adv)) / (np.std(adv) + 1e-10)
         return returns, normalized_returns
 
-    def calculate_losses():
+    def calculate_loss_critic():
+        '''
+        Calculate Critic loss (Critic loss is nothing but the usual mean squared error loss with the Returns)
+        '''
+        raise Exception('Not implemented yet')
+        
+    def calculate_loss_actor():
         '''
         Calculate how much the policy has changed, as in a ratio of the new policy over the old policy, in log form for easier computation
         Decide update tolerance using the clipping parameter epsilon to ensure only make the maximum of epsilon% change to our policy at a time. 
-        Calculate Actor loss using the policy change ratio and the clipping parameter
-        Calculate Critic loss (Critic loss is nothing but the usual mean squared error loss with the Returns)
+        Calculate Actor loss using the minimum between the policy change ratio * the advantage and the clipping parameter * the advantage
         Calculate total loss (using a discount factor to bring them to the same order of magnitude)
         An entropy term is optional, but it encourages our actor model to explore different policies and the degree to which we want to experiment can be controlled by an entropy beta parameter.
         '''
-        
+        raise Exception('Not implemented yet')
+
+    def calculate_total_clipped_loss():
+        def loss(y_true, y_pred):
+            newpolicy_probs = y_pred
+            ratio = K.exp(K.log(newpolicy_probs + 1e-10) - K.log(oldpolicy_probs + 1e-10))
+            p1 = ratio * advantages
+            p2 = K.clip(ratio, min_value=1 - clipping_val, max_value=1 + clipping_val) * advantages
+            actor_loss = -K.mean(K.minimum(p1, p2))
+            critic_loss = K.mean(K.square(rewards - values))
+            total_loss = critic_discount * critic_loss + actor_loss - entropy_beta * K.mean(
+                -(newpolicy_probs * K.log(newpolicy_probs + 1e-10)))
+            return total_loss
 
     def update(self):
         # TODO I believe this is wrong; see vanilla_PPO.py TODO comment
@@ -561,15 +584,19 @@ class PPO:
 
         # TODO for memory efficiency, could remap state buffers here instead of storing them
         # convert list to tensor
-        old_states = torch.squeeze(torch.stack(self.maps.buffer.states, dim=0)).detach().to(device)
+        old_maps = torch.squeeze(torch.stack(self.maps.buffer.mapstacks, dim=0)).detach().to(device)
+        print(old_maps.shape)
         old_actions = torch.squeeze(torch.stack(self.maps.buffer.actions, dim=0)).detach().to(device)
         old_logprobs = torch.squeeze(torch.stack(self.maps.buffer.logprobs, dim=0)).detach().to(device)
+        # TODO throws error
+        #returns_tensor = torch.squeeze(returns, dim=-1).detach().to(device)
+        #normalized_advantages_tensor = torch.squeeze(normalized_advantages, dim=0).detach().to(device)
         
         # Optimize policy for K epochs
         for _ in range(self.K_epochs):
 
             # Evaluating old actions and values
-            logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions) # Actor-critic
+            logprobs, state_values, dist_entropy = self.policy.evaluate(old_maps, old_actions) # Actor-critic
 
             # match state_values tensor dimensions with rewards tensor
             state_values = torch.squeeze(state_values)
@@ -615,8 +642,9 @@ class PPO:
         other_transposed = self.maps.others_locations_map.T 
         readings_transposed = self.maps.readings_map.T
         visits_transposed = self.maps.visit_counts_map.T
+        obstacles_transposed = self.maps.obstacles_map.T
      
-        fig, (loc_ax, other_ax, intensity_ax, visit_ax) = plt.subplots(nrows=1, ncols=4, figsize=(15, 5))
+        fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax) = plt.subplots(nrows=1, ncols=5, figsize=(15, 5))
         
         loc_ax.imshow(loc_transposed, cmap='viridis', interpolation=interpolation_method)
         loc_ax.set_title('Agent Location')
@@ -634,6 +662,10 @@ class PPO:
         visit_ax.set_title('Visit Counts') 
         visit_ax.invert_yaxis()
         
+        obs_ax.imshow(visits_transposed, cmap='viridis', interpolation=interpolation_method)
+        obs_ax.set_title('Obstacles') 
+        obs_ax.invert_yaxis()
+        
         #divider = make_axes_locatable(loc_ax)
         #cax = divider.append_axes('right', size='5%', pad=0.05)             
         #fig.colorbar(loc_ax, cax=cax, orientation='vertical')
@@ -643,13 +675,15 @@ class PPO:
             for i in range(loc_transposed.shape[0]):
                 for j in range(loc_transposed.shape[1]):
                     if loc_transposed[i, j] > 0: 
-                        loc_ax.text(j, i, loc_transposed[i, j].astype(int), ha="center", va="center", color="w", size=6)
+                        loc_ax.text(j, i, loc_transposed[i, j].astype(int), ha="center", va="center", color="black", size=6)
                     if other_transposed[i, j] > 0: 
-                        other_ax.text(j, i, other_transposed[i, j].astype(int), ha="center", va="center", color="w", size=6)
+                        other_ax.text(j, i, other_transposed[i, j].astype(int), ha="center", va="center", color="black", size=6)
                     if readings_transposed[i, j] > 0:
-                        intensity_ax.text(j, i, readings_transposed[i, j].astype(int), ha="center", va="center", color="w", size=4)
+                        intensity_ax.text(j, i, readings_transposed[i, j].astype(int), ha="center", va="center", color="black", size=4)
                     if visits_transposed[i, j] > 0:
-                        visit_ax.text(j, i, visits_transposed[i, j].astype(int), ha="center", va="center", color="w", size=6)
+                        visit_ax.text(j, i, visits_transposed[i, j].astype(int), ha="center", va="center", color="black", size=6)
+                    if obstacles_transposed[i, j] > 0:
+                        visit_ax.text(j, i, obstacles_transposed[i, j].astype(int), ha="center", va="center", color="black", size=6)                        
         
         fig.savefig(f'{str(savepath)}/heatmaps/agent{self.id}_heatmaps_{self.render_counter}.png')
         
