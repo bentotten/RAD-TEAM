@@ -662,7 +662,7 @@ class PPO:
         visit_ax.set_title('Visit Counts') 
         visit_ax.invert_yaxis()
         
-        obs_ax.imshow(visits_transposed, cmap='viridis', interpolation=interpolation_method)
+        obs_ax.imshow(obstacles_transposed, cmap='viridis', interpolation=interpolation_method)
         obs_ax.set_title('Obstacles') 
         obs_ax.invert_yaxis()
         
@@ -683,7 +683,7 @@ class PPO:
                     if visits_transposed[i, j] > 0:
                         visit_ax.text(j, i, visits_transposed[i, j].astype(int), ha="center", va="center", color="black", size=6)
                     if obstacles_transposed[i, j] > 0:
-                        visit_ax.text(j, i, obstacles_transposed[i, j].astype(int), ha="center", va="center", color="black", size=6)                        
+                        obs_ax.text(j, i, obstacles_transposed[i, j].astype(int), ha="center", va="center", color="black", size=6)                        
         
         fig.savefig(f'{str(savepath)}/heatmaps/agent{self.id}_heatmaps_{self.render_counter}.png')
         

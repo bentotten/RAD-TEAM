@@ -28,6 +28,7 @@ from typing_extensions import TypeAlias
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 DEBUG = True
 CNN = True  # TODO remove after done
+SCOOPERS_IMPLEMENTATION = False
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 # Scaling
@@ -185,12 +186,12 @@ def train():
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     if DEBUG:
         epochs = 2   # Actual epoch will be a maximum of this number + max_ep_len
-        max_ep_len = 20                      # max timesteps in one episode # TODO delete me after fixing
+        max_ep_len = 50                      # max timesteps in one episode # TODO delete me after fixing
         update_timestep = 200
         K_epochs = 4
                      
         obstruction_count = 7
-        number_of_agents = 10
+        number_of_agents = 3
         random_seed = 0
         
         #bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
@@ -199,7 +200,7 @@ def train():
         env: RadSearch = RadSearch(DEBUG=DEBUG, number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)         
         
         # How much unscaling to do. State returnes scaled coordinates for each agent. 
-        # A value of 1 here means no unscaling, so all agents will fit within 1x1 grid
+        # A resolution_accuracy value of 1 here means no unscaling, so all agents will fit within 1x1 grid
         resolution_accuracy = 0.01 * 1/env.scale  
         #resolution_accuracy = 1  
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -329,7 +330,10 @@ def train():
             # Convert actions to include -1 as "idle" option
             # TODO REMOVE convert_nine_to_five_action_space AFTER WORKING WITH DIAGONALS
             if CNN:
-                action_list = {id: convert_nine_to_five_action_space(action) for id, action in raw_action_list.items()}
+                if SCOOPERS_IMPLEMENTATION:
+                    action_list = {id: convert_nine_to_five_action_space(action) for id, action in raw_action_list.items()}
+                else:
+                    action_list = {id: action for id, action in raw_action_list.items()}
             else:
                 action_list = raw_action_list
             
