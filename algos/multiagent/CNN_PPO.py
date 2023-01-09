@@ -256,7 +256,7 @@ class MapsBuffer:
                             raise Exception('Obstacle index is not within valid [0,7] range.')                         
                     x = int(scaled_agent_coordinates[0] + step[0])
                     y = int(scaled_agent_coordinates[1] + step[1])
-                    self.obstacles_map[x][y] = 1   
+                    self.obstacles_map[x][y] = inflated_distance 
         
         return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map
 
@@ -663,7 +663,7 @@ class PPO:
         visit_ax.invert_yaxis()
         
         obs_ax.imshow(obstacles_transposed, cmap='viridis', interpolation=interpolation_method)
-        obs_ax.set_title('Obstacles') 
+        obs_ax.set_title('Obstacles Detected (cm from Agent)') 
         obs_ax.invert_yaxis()
         
         #divider = make_axes_locatable(loc_ax)
