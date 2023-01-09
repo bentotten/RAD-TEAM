@@ -186,17 +186,17 @@ def train():
     if DEBUG:
         epochs = 2   # Actual epoch will be a maximum of this number + max_ep_len
         max_ep_len = 20                      # max timesteps in one episode # TODO delete me after fixing
-        update_timestep = 2
+        update_timestep = 200
         K_epochs = 4
                      
-        obstruction_count = 1
-        number_of_agents = 5
+        obstruction_count = 7
+        number_of_agents = 10
         random_seed = 0
         
-        bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
+        #bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
         
-        #observation_area = tuple((20.0, 50.0))
-        env: RadSearch = RadSearch(DEBUG=DEBUG, number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count, bbox=bbox) 
+        #env: RadSearch = RadSearch(DEBUG=DEBUG, number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count, bbox=bbox) 
+        env: RadSearch = RadSearch(DEBUG=DEBUG, number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)         
         
         # How much unscaling to do. State returnes scaled coordinates for each agent. 
         # A value of 1 here means no unscaling, so all agents will fit within 1x1 grid

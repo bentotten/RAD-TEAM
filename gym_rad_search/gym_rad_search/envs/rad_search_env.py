@@ -57,7 +57,7 @@ FPS = 50
 DET_STEP = 100.0  # detector step size at each timestep in cm/s
 DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
 DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
-DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm
+DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm #TODO unused
 EPSILON = 0.0000001
 COLORS = [
     #Colorcode([148, 0, 211]), # Violet (Removed due to being too similar to indigo)
