@@ -308,7 +308,7 @@ class RadSearch(gym.Env):
     # For debugging
     DEBUG: bool = field(default=False)
     DEBUG_SOURCE_LOCATION: Point = field(default=Point((1.0, 1.0)))
-    DEBUG_DETECTOR_LOCATION: Point = Point((500.0, 500.0))  
+    DEBUG_DETECTOR_LOCATION: Point = Point((1000.0, 1000.0))  
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     def __post_init__(self):
