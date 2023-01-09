@@ -256,7 +256,8 @@ class MapsBuffer:
                             raise Exception('Obstacle index is not within valid [0,7] range.')                         
                     x = int(scaled_agent_coordinates[0] + step[0])
                     y = int(scaled_agent_coordinates[1] + step[1])
-                    self.obstacles_map[x][y] = inflated_distance 
+                    # Semi-arbritrary, but should make the number higher as the agent gets closer to the object, making heatmap look more correct
+                    self.obstacles_map[x][y] = inflated_distance
         
         return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map
 
@@ -630,7 +631,7 @@ class PPO:
         self.policy_old.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage)) # Actor-critic
         self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage)) # Actor-critic
         
-    def render(self, savepath=getcwd(), save_map=True, add_value_text=False, interpolation_method='nearest'):  
+    def render(self, savepath=getcwd(), save_map=True, add_value_text=False, interpolation_method='nearest', epoch_count: int=0):
         # TODO x and y are swapped - investigate if reading that way or a part of  imshow()
         if save_map:
             if not path.isdir(str(savepath) + "/heatmaps/"):
@@ -685,7 +686,7 @@ class PPO:
                     if obstacles_transposed[i, j] > 0:
                         obs_ax.text(j, i, obstacles_transposed[i, j].astype(int), ha="center", va="center", color="black", size=6)                        
         
-        fig.savefig(f'{str(savepath)}/heatmaps/agent{self.id}_heatmaps_{self.render_counter}.png')
+        fig.savefig(f'{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{self.render_counter}.png')
         
         self.render_counter += 1
         plt.close(fig)

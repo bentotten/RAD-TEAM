@@ -185,14 +185,16 @@ def train():
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     if DEBUG:
-        epochs = 2   # Actual epoch will be a maximum of this number + max_ep_len
-        max_ep_len = 50                      # max timesteps in one episode # TODO delete me after fixing
-        update_timestep = 200
+        epochs = 1   # Actual epoch will be a maximum of this number + max_ep_len
+        max_ep_len = 1200                      # max timesteps in one episode # TODO delete me after fixing
+        update_timestep = 2000
         K_epochs = 4
                      
-        obstruction_count = 7
-        number_of_agents = 3
+        obstruction_count = 6 #TODO error with 7 obstacles
+        number_of_agents = 10
         random_seed = 0
+        
+        log_freq = 2000
         
         #bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
         
@@ -202,7 +204,7 @@ def train():
         # How much unscaling to do. State returnes scaled coordinates for each agent. 
         # A resolution_accuracy value of 1 here means no unscaling, so all agents will fit within 1x1 grid
         resolution_accuracy = 0.01 * 1/env.scale  
-        #resolution_accuracy = 1  
+        #resolution_accuracy = 1 * 1/env.scale  
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     
     env.render(
@@ -453,7 +455,11 @@ def train():
         # TODO Delete me
         if DEBUG:
             for agent in ppo_agents.values():
-                agent.render(add_value_text=True, savepath=directory)                   
+                agent.render(
+                    add_value_text=True, 
+                    savepath=directory,
+                    epoch_count=epoch_counter,
+                )                   
             env.render(
                 save_gif=True,
                 path=directory,
