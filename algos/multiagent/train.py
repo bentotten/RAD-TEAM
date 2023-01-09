@@ -17,6 +17,7 @@ from typing_extensions import TypeAlias
 import gym
 # import roboschool
 from gym_rad_search.envs import RadSearch  # type: ignore
+from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
 from vanilla_PPO import PPO as van_PPO # vanilla_PPO
 from CNN_PPO import PPO as PPO
@@ -45,7 +46,7 @@ def convert_nine_to_five_action_space(action):
         -1: idle
         0: left
         1: up and left
-        2: up
+        2: upfrom gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
         3: up and right
         4: right
         5: down and right
@@ -77,7 +78,7 @@ def convert_nine_to_five_action_space(action):
             return 6
         case _:
             raise Exception('Action is not within valid [-1,3] range.')
-
+from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 ################################### Training ###################################
 
 def train():
@@ -95,7 +96,7 @@ def train():
     # print avg reward in the interval (in num timesteps)
     #print_freq = max_ep_len * 3
     print_freq = max_ep_len * 100
-    # log avg reward in the interval (in num timesteps)
+    # log avg rewardfrom gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore in the interval (in num timesteps)
     log_freq = max_ep_len * 2
     # save model frequency (in num timesteps)
     save_model_freq = int(1e5)
@@ -192,7 +193,9 @@ def train():
                      
         obstruction_count = 6 #TODO error with 7 obstacles
         number_of_agents = 10
-        random_seed = 0
+        
+        seed = 0
+        random_seed = _int_list_from_bigint(hash_seed(seed))[0]
         
         log_freq = 2000
         
@@ -268,7 +271,7 @@ def train():
             eps_clip=eps_clip,
             resolution_accuracy=resolution_accuracy,
             id=i,
-            random_seed=random_seed
+            random_seed= _int_list_from_bigint(hash_seed(seed))[0]
             ) 
         for i in range(number_of_agents)
         }
