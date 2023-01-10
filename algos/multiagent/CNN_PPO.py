@@ -33,13 +33,14 @@ from epoch_logger import EpochLogger
 # Maps
 Point: TypeAlias = NewType("Point", tuple[float, float])  # Array indicies to access a GridSquare
 Map: TypeAlias = NewType("Map", npt.NDArray[np.float32]) # 2D array that holds gridsquare values
+CoordinateStorage: TypeAlias = NewType("Storage", list[dict, Point])
 
 # Helpers
 Shape: TypeAlias = int | tuple[int, ...]
 
 DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm for inflating step size to obstruction
 
-################################## Helper Functions ##################################
+################################## Helper Functions and Classes ##################################
 
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     if shape is None:
@@ -70,6 +71,13 @@ def discount_cumsum(
     """
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
+@dataclass()
+class ActionChoice():
+    id: int 
+    action: int 
+    action_logprob: npt.NDArray[np.float32] 
+    state_value: float 
+
 ################################## PPO Buffer ##################################
 @dataclass
 class PPOBuffer:
@@ -97,11 +105,12 @@ class PPOBuffer:
     state_value_buffer: npt.NDArray[np.float32] = field(init=False)
     source_tar: npt.NDArray[np.float32] = field(init=False)
     logprobs_buffer: npt.NDArray[np.float32] = field(init=False)
-    is_terminals: npt.NDArray[np.float32] = field(init=False)
+    is_terminals_buffer: npt.NDArray[np.float32] = field(init=False)
 
     # Additional buffers
     mapstacks: list = field(default_factory=list)  # TODO Change to numpy arrays like above
     readings: Dict[Any, list] = field(default_factory=dict)  # TODO Change to numpy arrays like above
+    coordinate_buffer: list = field(default_factory=list)  # TODO Change to numpy arrays like above
     
     # Used for Location Prediction; 
     # TODO not implemented yet
@@ -146,13 +155,14 @@ class PPOBuffer:
         self.obs_win_std: npt.NDArray[np.float32] = np.zeros(
             self.observation_dimension, dtype=np.float32
         )
-        self.is_terminals: npt.NDArray[np.float32] = np.zeros(
+        self.is_terminals_buffer: npt.NDArray[np.float32] = np.zeros(
             self.max_size, dtype=np.float32
         )
-        
+
         # TODO Update these
         self.mapstacks: List = []  # TODO Change to numpy arrays like above
         self.readings: Dict[Any, list] = {} # For heatmap resampling
+        self.coordinate_buffer: CoordinateStorage = []        
         
         ################################## set device ##################################
         print("============================================================================================")
@@ -299,6 +309,7 @@ class PPOBuffer:
         # Reset readings, mapstacks, and buffer pointers
         self.ptr, self.path_start_idx = 0, 0
         del self.mapstacks[:]
+        del self.coordinate_buffer[:]        
         self.readings.clear()
         
         # Reset numpy arrays
@@ -311,7 +322,7 @@ class PPOBuffer:
         hold_sv = self.state_value_buffer.shape
         hold_src = self.source_tar.shape
         hold_l = self.logprobs_buffer.shape
-        hold_t = self.is_terminals.shape
+        hold_t = self.is_terminals_buffer.shape
         hold_ow = self.obs_win.shape
         hold_owstd = self.obs_win_std.shape
         
@@ -323,7 +334,7 @@ class PPOBuffer:
         self.state_value_buffer[:] = 0.0
         self.source_tar[:] = 0.0
         self.logprobs_buffer[:] = 0.0
-        self.is_terminals[:] = 0.0
+        self.is_terminals_buffer[:] = 0.0
         
         # TODO move to a unit test
         # Add asserts for del self.mapstacks[:] and self.readings.clear()
@@ -335,13 +346,14 @@ class PPOBuffer:
         assert hold_sv == self.state_value_buffer.shape
         assert hold_src == self.source_tar.shape
         assert hold_l == self.logprobs_buffer.shape
+        assert hold_t == self.is_terminals_buffer.shape
         assert hold_ow == self.obs_win.shape
         assert hold_owstd == self.obs_win_std.shape        
     
 
+# TODO Obsolete - remove
 @dataclass()
 class RolloutBuffer():
-    # Outdated - TODO remove
     actions_buffer: List = field(default_factory=list)
     states_buffer: List = field(default_factory=list)
     logprobs_buffer: List = field(default_factory=list)
@@ -448,9 +460,9 @@ class MapsBuffer:
         # Process state for current agent's locations map
         scaled_coordinates = (int(observation[id].state[1] * self.resolution_accuracy), int(observation[id].state[2] * self.resolution_accuracy))        
         # Capture current and reset previous location
-        if self.buffer.states_buffer:
-            last_state = self.buffer.states_buffer[-1][id].state
-            scaled_last_coordinates = (int(last_state[1] * self.resolution_accuracy), int(last_state[2] * self.resolution_accuracy))
+        if self.buffer.coordinate_buffer:
+            last_state = self.buffer.coordinate_buffer[-1][id]
+            scaled_last_coordinates = (int(last_state[0] * self.resolution_accuracy), int(last_state[1] * self.resolution_accuracy))
             x_old = int(scaled_last_coordinates[0])
             y_old = int(scaled_last_coordinates[1])
             self.location_map[x_old][y_old] -= 1 # In case agents are at same location, usually the start-point
@@ -467,9 +479,9 @@ class MapsBuffer:
             if other_agent_id != id:
                 others_scaled_coordinates = (int(observation[other_agent_id].state[1] * self.resolution_accuracy), int(observation[other_agent_id].state[2] * self.resolution_accuracy))
                 # Capture current and reset previous location
-                if self.buffer.states_buffer:
-                    last_state = self.buffer.states_buffer[-1][other_agent_id].state
-                    scaled_last_coordinates = (int(last_state[1] * self.resolution_accuracy), int(last_state[2] * self.resolution_accuracy))
+                if self.buffer.coordinate_buffer:
+                    last_state = self.buffer.coordinate_buffer[-1][other_agent_id]
+                    scaled_last_coordinates = (int(last_state[0] * self.resolution_accuracy), int(last_state[1] * self.resolution_accuracy))
                     x_old = int(scaled_last_coordinates[0])
                     y_old = int(scaled_last_coordinates[1])
                     self.others_locations_map[x_old][y_old] -= 1 # In case agents are at same location, usually the start-point
@@ -733,15 +745,6 @@ class PPO:
         self.steps_per_epoch = steps_per_epoch
         
         # Initialize
-        '''
-            observation_dimension: int  # Shape of state space aka how many elements in the observation returned from the environment
-    max_size: int  # steps_per_epoch   
-        
-    # Hyperparameters
-    gamma: float = 0.99
-    lamda: float = 0.90
-    beta: float = 0.005
-        '''
         self.maps = MapsBuffer(
                 observation_dimension = state_dim,
                 max_size=steps_per_epoch,
@@ -793,7 +796,10 @@ class PPO:
             
             # Add to mapstack buffer to eventually be converted into tensor with minibatches
             self.maps.buffer.mapstacks.append(map_stack)
-            
+            self.maps.buffer.coordinate_buffer.append({})
+            for i, observation in state.items():
+                self.maps.buffer.coordinate_buffer[-1][i] = (observation.state[1], observation.state[2])
+                
             # Add single minibatch for action selection
             map_stack = torch.unsqueeze(map_stack, dim=0) 
             
@@ -801,7 +807,8 @@ class PPO:
             #action, action_logprob = self.policy_old.act(state) # Choose action
             action, action_logprob, state_value = self.policy_old.act(map_stack) # Choose action # TODO why old policy?
 
-        return action.item(), action_logprob.item(), state_value.item()
+        return ActionChoice(id=id, action=action.item(), action_logprob=action_logprob.item(), state_value=state_value.item())
+        #return action.item(), action_logprob.item(), state_value.item()
     
     def store(self, state, action, action_logprob, state_value, reward, is_terminal):
         self.maps.buffer.states_buffer.append(state)
@@ -809,7 +816,7 @@ class PPO:
         self.maps.buffer.logprobs.append(action_logprob)
         self.maps.buffer.state_values.append(state_value)
         self.maps.buffer.rewards.append(reward)
-        self.maps.buffer.is_terminals.append(is_terminal)
+        self.maps.buffer.is_terminals_buffer.append(is_terminal)
 
     def update(self):
         # TODO I believe this is wrong; see vanilla_PPO.py TODO comment
@@ -834,7 +841,7 @@ class PPO:
         print(old_maps.shape)
         old_actions = torch.squeeze(torch.stack(self.maps.buffer.actions, dim=0)).detach().to(device)
         old_logprobs = torch.squeeze(torch.stack(self.maps.buffer.logprobs, dim=0)).detach().to(device)
-        # TODO throws error
+        # TODO throws errorraw_action_list
         #returns_tensor = torch.squeeze(returns, dim=-1).detach().to(device)
         #normalized_advantages_tensor = torch.squeeze(normalized_advantages, dim=0).detach().to(device)
         
