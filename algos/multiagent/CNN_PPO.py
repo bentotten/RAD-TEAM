@@ -178,12 +178,13 @@ class PPOBuffer:
 
     def store(
         self,
-        obs: npt.NDArray[np.float32],
-        act: npt.NDArray[np.float32],
+        obs: npt.NDArray[Any],
+        act: npt.NDArray[np.int32],
         rew: npt.NDArray[np.float32],
         val: npt.NDArray[np.float32],
         logp: npt.NDArray[np.float32],
         src: npt.NDArray[np.float32],
+        terminal: npt.NDArray[np.bool]        
     ) -> None:
         """
         Append one timestep of agent-environment interaction to the buffer.
@@ -811,13 +812,18 @@ class PPO:
         return ActionChoice(id=id, action=action.item(), action_logprob=action_logprob.item(), state_value=state_value.item())
         #return action.item(), action_logprob.item(), state_value.item()
     
-    def store(self, state, action, action_logprob, state_value, reward, is_terminal):
-        self.maps.buffer.states_buffer.append(state)
-        self.maps.buffer.actions.append(action)
-        self.maps.buffer.logprobs.append(action_logprob)
-        self.maps.buffer.state_values.append(state_value)
-        self.maps.buffer.rewards.append(reward)
-        self.maps.buffer.is_terminals_buffer.append(is_terminal)
+    def store(
+            self,
+            obs: npt.NDArray[Any],
+            act: npt.NDArray[np.int32],
+            rew: npt.NDArray[np.float32],
+            val: npt.NDArray[np.float32],
+            logp: npt.NDArray[np.float32],
+            src: npt.NDArray[np.float32],
+            terminal: npt.NDArray[np.bool]
+        ) -> None:
+        ''' Wrapper for inner buffer storage '''
+        self.maps.buffer.store(obs=obs, act=act, rew=rew, val=val, logp=logp, src=src, terminal=terminal)
 
     def update(self):
         # TODO I believe this is wrong; see vanilla_PPO.py TODO comment
