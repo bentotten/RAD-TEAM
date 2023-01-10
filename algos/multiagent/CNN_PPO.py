@@ -27,45 +27,217 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.streamplot import Grid
 
+from epoch_logger import EpochLogger
+
 # Maps
 Point: TypeAlias = NewType("Point", tuple[float, float])  # Array indicies to access a GridSquare
 Map: TypeAlias = NewType("Map", npt.NDArray[np.float32]) # 2D array that holds gridsquare values
 
 DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm for inflating step size to obstruction
 
-# TODO move this somewhere ... else lol
-################################## set device ##################################
-print("============================================================================================")
-# set device to cpu or cuda
-device = torch.device('cpu')
-if(torch.cuda.is_available()): 
-    device = torch.device('cuda:0') 
-    torch.cuda.empty_cache()
-    print("Device set to : " + str(torch.cuda.get_device_name(device)))
-else:
-    print("Device set to : cpu")
-print("============================================================================================")
 
-################################## Helper Functions ##################################
+################################## PPO Buffer ##################################
+@dataclass
+class PPOBuffer:
+    obs_dim: core.Shape
+    max_size: int
 
-def discount_cumsum(
-    x: npt.NDArray[np.float64], discount: float
-) -> npt.NDArray[np.float64]:
+    obs_buf: npt.NDArray[np.float32] = field(init=False)
+    actions_buffer: npt.NDArray[np.float32] = field(init=False)
+    adv_buf: npt.NDArray[np.float32] = field(init=False)
+    rewards_buffer: npt.NDArray[np.float32] = field(init=False)
+    ret_buf: npt.NDArray[np.float32] = field(init=False)
+    state_value_buffer: npt.NDArray[np.float32] = field(init=False)
+    source_tar: npt.NDArray[np.float32] = field(init=False)
+    logprobs_buffer: npt.NDArray[np.float32] = field(init=False)
+    obs_win: npt.NDArray[np.float32] = field(init=False)
+    obs_win_std: npt.NDArray[np.float32] = field(init=False)
+
+    gamma: float = 0.99
+    lam: float = 0.90
+    beta: float = 0.005
+    ptr: int = 0
+    path_start_idx: int = 0
+
     """
-    magic from rllab for computing discounted cumulative sums of vectors.
-    input:
-        vector x,
-        [x0,
-         x1,
-         x2]
-    output:
-        [x0 + discount * x1 + discount^2 * x2,
-         x1 + discount * x2,
-         x2]
+    A buffer for storing histories experienced by a PPO agent interacting
+    with the environment, and using Generalized Advantage Estimation (GAE-Lambda)
+    for calculating the advantages of state-action pairs.
     """
-    return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
-################################## PPO Policy ##################################
+    def __post_init__(self):
+        self.obs_buf: npt.NDArray[np.float32] = np.zeros(
+            core.combined_shape(self.max_size, self.obs_dim), dtype=np.float32
+        )
+        self.actions_buffer: npt.NDArray[np.float32] = np.zeros(
+            core.combined_shape(self.max_size), dtype=np.float32
+        )
+        self.adv_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.rewards_buffer: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.ret_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.state_value_buffer: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.source_tar: npt.NDArray[np.float32] = np.zeros(
+            (self.max_size, 2), dtype=np.float32
+        )
+        self.logprobs_buffer: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.obs_win: npt.NDArray[np.float32] = np.zeros(self.obs_dim, dtype=np.float32)
+        self.obs_win_std: npt.NDArray[np.float32] = np.zeros(
+            self.obs_dim, dtype=np.float32
+        )
+        
+        ################################## set device ##################################
+        print("============================================================================================")
+        # set device to cpu or cuda
+        device = torch.device('cpu')
+        if(torch.cuda.is_available()): 
+            device = torch.device('cuda:0') 
+            torch.cuda.empty_cache()
+            print("Device set to : " + str(torch.cuda.get_device_name(device)))
+        else:
+            print("Device set to : cpu")
+        print("============================================================================================")
+
+    def store(
+        self,
+        obs: npt.NDArray[np.float32],
+        act: npt.NDArray[np.float32],
+        rew: npt.NDArray[np.float32],
+        val: npt.NDArray[np.float32],
+        logp: npt.NDArray[np.float32],
+        src: npt.NDArray[np.float32],
+    ) -> None:
+        """
+        Append one timestep of agent-environment interaction to the buffer.
+        """
+        assert self.ptr < self.max_size
+        self.obs_buf[self.ptr, :] = obs
+        self.actions_buffer[self.ptr] = act
+        self.rewards_buffer[self.ptr] = rew
+        self.state_value_buffer[self.ptr] = val
+        self.source_tar[self.ptr] = src
+        self.logprobs_buffer[self.ptr] = logp
+        self.ptr += 1
+
+    def finish_path(self, last_val: int = 0) -> None:
+        """
+        Call this at the end of a trajectory, or when one gets cut off
+        by an epoch ending. This looks back in the buffer to where the
+        trajectory started, and uses rewards and value estimates from
+        the whole trajectory to compute advantage estimates with GAE-Lambda,
+        as well as compute the rewards-to-go for each state, to use as
+        the targets for the value function.
+
+        The "last_val" argument should be 0 if the trajectory ended
+        because the agent reached a terminal state (died), and otherwise
+        should be V(s_T), the value function estimated for the last state.
+        This allows us to bootstrap the reward-to-go calculation to account
+        for timesteps beyond the arbitrary episode horizon (or epoch cutoff).
+        """
+
+        path_slice = slice(self.path_start_idx, self.ptr)
+        rews = np.append(self.rewards_buffer[path_slice], last_val)
+        vals = np.append(self.state_value_buffer[path_slice], last_val)
+
+        # the next two lines implement GAE-Lambda advantage calculation
+        # gamma determines scale of value function, introduces bias regardless of VF accuracy
+        # lambda introduces bias when VF is inaccurate
+        deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
+        self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lam)
+
+        # the next line computes rewards-to-go, to be targets for the value function
+        self.ret_buf[path_slice] = core.discount_cumsum(rews, self.gamma)[:-1]
+
+        self.path_start_idx = self.ptr
+
+    def get(self, logger: EpochLogger) -> dict[str, Union[torch.Tensor, list]]:
+        """
+        Call this at the end of an epoch to get all of the data from
+        the buffer, with advantages appropriately normalized (shifted to have
+        mean zero and std one). Also, resets some pointers in the buffer.
+        """
+        assert self.ptr == self.max_size  # buffer has to be full before you can get
+        self.ptr, self.path_start_idx = 0, 0
+        # the next two lines implement the advantage normalization trick
+        adv_mean, adv_std = self.adv_buf.mean(), self.adv_buf.std()
+        self.adv_buf: npt.NDArray[np.float32] = (self.adv_buf - adv_mean) / adv_std
+        # ret_mean, ret_std = self.ret_buf.mean(), self.ret_buf.std()
+        # self.ret_buf = (self.ret_buf) / ret_std
+        # obs_mean, obs_std = self.obs_buf.mean(), self.obs_buf.std()
+        # self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
+
+        epLens: list[int] = logger.epoch_dict["EpLen"]
+        numEps = len(epLens)
+        epLenTotal = sum(epLens)
+        data = dict(
+            obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
+            act=torch.as_tensor(self.actions_buffer, dtype=torch.float32),
+            ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
+            adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
+            logp=torch.as_tensor(self.logprobs_buffer, dtype=torch.float32),
+            loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32),
+            ep_len=torch.as_tensor(epLenTotal, dtype=torch.float32),
+            ep_form = []
+        )
+
+        if logger:
+            epLenSize = (
+                # If they're equal then we don't need to do anything
+                # Otherwise we need to add one to make sure that numEps is the correct size
+                numEps
+                + int(epLenTotal != len(self.obs_buf))
+            )
+            obs_buf = np.hstack(
+                (
+                    self.obs_buf,
+                    self.adv_buf[:, None],
+                    self.ret_buf[:, None],
+                    self.logprobs_buffer[:, None],
+                    self.actions_buffer[:, None],
+                    self.source_tar,
+                )
+            )
+            epForm: list[list[torch.Tensor]] = [[] for _ in range(epLenSize)]
+            slice_b: int = 0
+            slice_f: int = 0
+            jj: int = 0
+            # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
+            for ep_i in epLens:
+                slice_f += ep_i
+                epForm[jj].append(
+                    torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)
+                )
+                slice_b += ep_i
+                jj += 1
+            if slice_f != len(self.obs_buf):
+                epForm[jj].append(
+                    torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32)
+                )
+
+            data["ep_form"] = epForm
+
+        return data
+
+    def clear(self):
+        del self.actions_buffer[:]
+        del self.states[:]
+        del self.logprobs_buffer[:]
+        del self.state_value_buffer[:]
+        del self.rewards_buffer[:]
+        del self.is_terminals[:]
+        del self.mapstacks[:]
+        self.readings.clear()
+    
+
 @dataclass()
 class RolloutBuffer():
     # Outdated - TODO remove
@@ -75,9 +247,9 @@ class RolloutBuffer():
     state_values: List = field(default_factory=list)
     rewards: List = field(default_factory=list)
     is_terminals: List = field(default_factory=list)
-    mapstacks: List = field(default_factory=list) #TODO change to tensor?
+    mapstacks: List = field(default_factory=list) #TODO change to tensor? # For heatmap render
 
-    readings: Dict[Any, list] = field(default_factory=dict)
+    readings: Dict[Any, list] = field(default_factory=dict) # For heatmap resampling
     
     def __post_init__(self):
         pass
@@ -425,7 +597,7 @@ class PPO:
             np.random.seed(random_seed)            
         
         # Hyperparameters
-        self.gamma = gamma  # Discount factor
+        self.gamma: float = gamma  # Discount factor
         self.lmbda = lmbda  # Smoothing parameter for GAE calculation
         self.eps_clip = eps_clip
         self.K_epochs = K_epochs
@@ -482,13 +654,17 @@ class PPO:
             #state = torch.FloatTensor(state).to(device) # Convert to tensor TODO already a tensor, is this necessary?
             #action, action_logprob = self.policy_old.act(state) # Choose action
             action, action_logprob, state_value = self.policy_old.act(map_stack) # Choose action # TODO why old policy?
-        
+
+        return action.item(), action_logprob.item(), state_value.item()
+    
+    def store(self, state, action, action_logprob, state_value, reward, is_terminal):
         self.maps.buffer.states.append(state)
         self.maps.buffer.actions.append(action)
         self.maps.buffer.logprobs.append(action_logprob)
         self.maps.buffer.state_values.append(state_value)
-
-        return action.item()
+        self.maps.buffer.rewards.append(reward)
+        self.maps.buffer.is_terminals.append(is_terminal)
+        
 
     def calculate_advantages(self, rewards=None):
         ''' Advantage is roughly "how much better off will the actor be if a particular action is taken over the course of the episode"
@@ -508,12 +684,23 @@ class PPO:
             Return_values = GAE_t + value_t
         5. Reverse return_values to get back in original order
         '''
+        
         if not rewards: rewards = self.maps.buffer.rewards
+        
+        # Set up which section of buffer we're working with
+        path_slice = slice(0, self.ptr)
+        rews = np.append(rewards[path_slice], last_val)
+        vals = np.append(self.val_buf[path_slice], last_val)
+        
         returns = [] 
         gae = 0
         # Slow way
         # TODO something is wrong here; believe state should always be one ahead
         #for i in reversed(range(len(rewards))):
+        
+        # From SpinningUp
+        deltas = rewards[:-1] + self.gamma * self.maps.buffer.state_values[1:] - self.maps.buffer.state_values[:-1]
+        
         for i in reversed(range(len(rewards)-1)):
             mask = 0 if self.maps.buffer.is_terminals[i] else 1 
             delta = rewards[i] + (self.gamma * self.maps.buffer.state_values[i + 1] * mask) - self.maps.buffer.state_values[i] # TODO does the discount factor need to be gamma^t?  
@@ -525,7 +712,7 @@ class PPO:
         # path_slice = slice(self.path_start_idx, self.ptr)
         # rews = np.append(self.rew_buf[path_slice], last_val)
         # vals = np.append(self.val_buf[path_slice], last_val)
-        
+
         # # the next two lines implement GAE-Lambda advantage calculation
         # # gamma determines scale of value function, introduces bias regardless of VF accuracy
         # # lambda introduces bias when VF is inaccurate
@@ -558,6 +745,7 @@ class PPO:
         raise Exception('Not implemented yet')
 
     def calculate_total_clipped_loss():
+        raise Exception('Not implemented yet')        
         def loss(y_true, y_pred):
             newpolicy_probs = y_pred
             ratio = K.exp(K.log(newpolicy_probs + 1e-10) - K.log(oldpolicy_probs + 1e-10))

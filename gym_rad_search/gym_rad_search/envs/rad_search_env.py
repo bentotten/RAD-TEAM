@@ -219,6 +219,7 @@ class Agent():
     out_of_bounds_count: int = field(init=False)
     collision: bool = field(init=False)
     intersect: bool = field(default=False)  # Check if line of sight is blocked by obstacle 
+    obstacle_blocking: bool = field(default=False) # For position assertions and testing
     detector: vis.Point = field(init=False) # Visilibity graph detector coordinates 
     prev_det_dist: float = field(init=False)
     id: int = field(default=0)
@@ -235,6 +236,7 @@ class Agent():
         self.reset()
     
     def reset(self):
+        self.obstacle_blocking = False
         self.out_of_bounds = False  
         self.out_of_bounds_count = 0
         self.det_sto: list[Point] = []  # Coordinate history for episdoe
@@ -481,7 +483,8 @@ class RadSearch(gym.Env):
             agent.meas_sto.append(meas)
             agent.reward_sto.append(reward)
             agent.cum_reward_sto.append(reward + agent.cum_reward_sto[-1] if len(agent.cum_reward_sto) > 0 else reward)
-            return state, round(reward, 2), self.done, {'out_of_bounds': agent.out_of_bounds, 'out_of_bounds_count': agent.out_of_bounds_count, 'scale': 1 / self.search_area[2][1]}
+            info = {'out_of_bounds': agent.out_of_bounds, 'out_of_bounds_count': agent.out_of_bounds_count, 'blocked': agent.obstacle_blocking, 'scale': 1 / self.search_area[2][1]}
+            return state, round(reward, 2), self.done, info
             #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 
         aggregate_step_result: dict[int, StepResult] = {_: StepResult() for _ in self.agents}
@@ -650,6 +653,7 @@ class RadSearch(gym.Env):
 
         if self.in_obstruction(agent=agent):
             roll_back_action = True
+            agent.obstacle_blocking = True
                         
         if roll_back_action:
             # If we're in an obstacle, roll back

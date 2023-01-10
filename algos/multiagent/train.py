@@ -187,12 +187,12 @@ def train():
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     if DEBUG:
         epochs = 1   # Actual epoch will be a maximum of this number + max_ep_len
-        max_ep_len = 1200                      # max timesteps in one episode # TODO delete me after fixing
-        update_timestep = 2000
+        max_ep_len = 120                      # max timesteps in one episode # TODO delete me after fixing
+        update_timestep = 3
         K_epochs = 4
                      
         obstruction_count = 6 #TODO error with 7 obstacles
-        number_of_agents = 10
+        number_of_agents = 2
         
         seed = 0
         random_seed = _int_list_from_bigint(hash_seed(seed))[0]
@@ -352,7 +352,7 @@ def train():
             # Ensure Agent moved in a direction
             for id, result in results.items():
                 # Because of collision avoidance, this assert will not hold true for multiple agents
-                if number_of_agents == 1 and action_list[id] != -1 and not result.error["out_of_bounds"]:
+                if number_of_agents == 1 and action_list[id] != -1 and not result.error["out_of_bounds"] and not result.error['blocked']:
                     assert (result.state[1] != prior_state[id][0] or result.state[2] != prior_state[id][1]), "Agent coodinates did not change when should have"
                 prior_state[id][0] = result.state[1]
                 prior_state[id][1] = result.state[2]
@@ -366,8 +366,8 @@ def train():
             # Vanilla
             if CNN:
                 for id, agent in ppo_agents.items():
-                    agent.maps.buffer.rewards.append(results[id].reward)
-                    agent.maps.buffer.is_terminals.append(results[id].done)
+                    agent.store(state, action, action_logprob, state_value, reward, is_terminal):
+
                     ####
                     # update PPO agent
                     if total_time_step % update_timestep == 0:
