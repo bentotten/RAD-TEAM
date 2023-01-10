@@ -10,6 +10,7 @@ from os import stat, path, mkdir, getcwd
 from numpy import dtype
 import numpy as np
 import numpy.typing as npt
+
 import scipy.signal
 
 import torch
@@ -50,12 +51,44 @@ def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
         shape = cast(tuple[int, ...], shape)
         return (length, *shape)
 
+def discount_cumsum(
+    x: npt.NDArray[np.float64], discount: float
+) -> npt.NDArray[np.float64]:
+    """
+    magic from rllab for computing discounted cumulative sums of vectors.
+
+    input:
+        vector x,
+        [x0,
+         x1,
+         x2]
+
+    output:
+        [x0 + discount * x1 + discount^2 * x2,
+         x1 + discount * x2,
+         x2]
+    """
+    return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
+
 ################################## PPO Buffer ##################################
 @dataclass
 class PPOBuffer:
+    # Required input
     observation_dimension: int  # Shape of state space aka how many elements in the observation returned from the environment
     max_size: int  # steps_per_epoch
+    map_dimensions: tuple
+    
+    # Hyperparameters
+    gamma: float = 0.99
+    lamda: float = 0.90
+    beta: float = 0.005
+    
+    # Path Tracking
+    ptr: int = 0
+    path_start_idx: int = 0
 
+    # TODO should these use default factory?
+    # Buffers
     states_buffer: npt.NDArray[np.float32] = field(init=False)
     actions_buffer: npt.NDArray[np.float32] = field(init=False)
     adv_buf: npt.NDArray[np.float32] = field(init=False)
@@ -64,14 +97,16 @@ class PPOBuffer:
     state_value_buffer: npt.NDArray[np.float32] = field(init=False)
     source_tar: npt.NDArray[np.float32] = field(init=False)
     logprobs_buffer: npt.NDArray[np.float32] = field(init=False)
-    obs_win: npt.NDArray[np.float32] = field(init=False)
-    obs_win_std: npt.NDArray[np.float32] = field(init=False)
 
-    gamma: float = 0.99
-    lamda: float = 0.90
-    beta: float = 0.005
-    ptr: int = 0
-    path_start_idx: int = 0
+    # Additional buffers
+    is_terminals: List = field(init=False)
+    mapstacks: List = field(init=False) #TODO change to tensor? # For heatmap render
+    readings: Dict[Any, list] = field(init=False) # For heatmap resampling    
+    
+    # Used for Location Prediction; 
+    # TODO not implemented yet
+    obs_win: npt.NDArray[np.float32] = field(init=False)
+    obs_win_std: npt.NDArray[np.float32] = field(init=False)    
 
     """
     A buffer for storing histories experienced by a PPO agent interacting
@@ -80,34 +115,45 @@ class PPOBuffer:
     """
 
     def __post_init__(self):
-        self.states_buffer: npt.NDArray[np.float32] = np.zeros(
-            combined_shape(self.max_size, self.observation_dimension), dtype=np.float32
-        )
-        self.actions_buffer: npt.NDArray[np.float32] = np.zeros(
+        self.states_buffer: npt.NDArray[np.float32] = field(default_factory = lambda:
+            np.zeros(combined_shape(self.max_size, self.observation_dimension), dtype=np.float32
+        ))
+        self.actions_buffer: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
             combined_shape(self.max_size), dtype=np.float32
-        )
-        self.adv_buf: npt.NDArray[np.float32] = np.zeros(
+        ))
+        self.adv_buf: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
             self.max_size, dtype=np.float32
-        )
-        self.rewards_buffer: npt.NDArray[np.float32] = np.zeros(
+        ))
+        self.rewards_buffer: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
             self.max_size, dtype=np.float32
-        )
-        self.ret_buf: npt.NDArray[np.float32] = np.zeros(
+        ))
+        self.ret_buf: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
             self.max_size, dtype=np.float32
-        )
-        self.state_value_buffer: npt.NDArray[np.float32] = np.zeros(
+        ))
+        self.state_value_buffer: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
             self.max_size, dtype=np.float32
-        )
-        self.source_tar: npt.NDArray[np.float32] = np.zeros(
+        ))
+        self.source_tar: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
             (self.max_size, 2), dtype=np.float32
-        )
-        self.logprobs_buffer: npt.NDArray[np.float32] = np.zeros(
+        ))
+        self.logprobs_buffer: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
             self.max_size, dtype=np.float32
-        )
-        self.obs_win: npt.NDArray[np.float32] = np.zeros(self.observation_dimension, dtype=np.float32)
-        self.obs_win_std: npt.NDArray[np.float32] = np.zeros(
+        ))
+        self.obs_win: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
             self.observation_dimension, dtype=np.float32
-        )
+        ))
+        
+        self.obs_win_std: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
+            self.observation_dimension, dtype=np.float32
+        ))
+        
+        self.is_terminals: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
+            self.max_size, dtype=np.float32
+        ))
+        
+        # TODO Update these
+        self.mapstacks: List = field(default_factory=list)  # TODO Change to numpy arrays like above
+        self.readings: Dict[Any, list] = field(default_factory=dict) # For heatmap resampling
         
         ################################## set device ##################################
         print("============================================================================================")
@@ -142,7 +188,7 @@ class PPOBuffer:
         self.logprobs_buffer[self.ptr] = logp
         self.ptr += 1
 
-    def finish_path(self, last_val: int = 0) -> None:
+    def finish_path_and_compute_advantages(self, last_val: int = 0) -> None:
         """
         Call this at the end of a trajectory, or when one gets cut off
         by an epoch ending. This looks back in the buffer to where the
@@ -166,24 +212,32 @@ class PPOBuffer:
         # gamma determines scale of value function, introduces bias regardless of VF accuracy
         # lambda introduces bias when VF is inaccurate
         deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
-        self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lamda)
+        self.adv_buf[path_slice] = discount_cumsum(deltas, self.gamma * self.lamda)
 
         # the next line computes rewards-to-go, to be targets for the value function
-        self.ret_buf[path_slice] = core.discount_cumsum(rews, self.gamma)[:-1]
+        self.ret_buf[path_slice] = discount_cumsum(rews, self.gamma)[:-1]
 
         self.path_start_idx = self.ptr
 
-    def get(self, logger: EpochLogger) -> dict[str, Union[torch.Tensor, list]]:
+    def get_end_epoch(self, logger: EpochLogger) -> dict[str, Union[torch.Tensor, list]]:
         """
         Call this at the end of an epoch to get all of the data from
         the buffer, with advantages appropriately normalized (shifted to have
-        mean zero and std one). Also, resets some pointers in the buffer.
+        mean zero and std one). Also, resets some pointers in the buffer and clears the 
+        map and reading buffers
         """
         assert self.ptr == self.max_size  # buffer has to be full before you can get
+        
+        # Reset readings, mapstacks, and buffer pointers
         self.ptr, self.path_start_idx = 0, 0
+        del self.mapstacks[:]
+        self.readings.clear()
+        
         # the next two lines implement the advantage normalization trick
         adv_mean, adv_std = self.adv_buf.mean(), self.adv_buf.std()
         self.adv_buf: npt.NDArray[np.float32] = (self.adv_buf - adv_mean) / adv_std
+        
+        # TODO what is this and why is it commented out?
         # ret_mean, ret_std = self.ret_buf.mean(), self.ret_buf.std()
         # self.ret_buf = (self.ret_buf) / ret_std
         # obs_mean, obs_std = self.states_buffer.mean(), self.states_buffer.std()
@@ -192,6 +246,7 @@ class PPOBuffer:
         epLens: list[int] = logger.epoch_dict["EpLen"]
         numEps = len(epLens)
         epLenTotal = sum(epLens)
+        
         data = dict(
             obs=torch.as_tensor(self.states_buffer, dtype=torch.float32),
             act=torch.as_tensor(self.actions_buffer, dtype=torch.float32),
@@ -207,8 +262,7 @@ class PPOBuffer:
             epLenSize = (
                 # If they're equal then we don't need to do anything
                 # Otherwise we need to add one to make sure that numEps is the correct size
-                numEps
-                + int(epLenTotal != len(self.states_buffer))
+                numEps + int(epLenTotal != len(self.states_buffer))
             )
             states_buffer = np.hstack(
                 (
@@ -224,6 +278,7 @@ class PPOBuffer:
             slice_b: int = 0
             slice_f: int = 0
             jj: int = 0
+            
             # TODO: This is essentially just a sliding window over states_buffer; use a built-in function to do this
             for ep_i in epLens:
                 slice_f += ep_i
@@ -242,14 +297,7 @@ class PPOBuffer:
         return data
 
     def clear(self):
-        del self.actions_buffer[:]
-        del self.states_buffer[:]
-        del self.logprobs_buffer[:]
-        del self.state_value_buffer[:]
-        del self.rewards_buffer[:]
-        del self.is_terminals[:]
-        del self.mapstacks[:]
-        self.readings.clear()
+        raise Exception("NEED TO IMPLEMENT")
     
 
 @dataclass()
@@ -260,6 +308,7 @@ class RolloutBuffer():
     logprobs: List = field(default_factory=list)
     state_values: List = field(default_factory=list)
     rewards: List = field(default_factory=list)
+    
     is_terminals: List = field(default_factory=list)
     mapstacks: List = field(default_factory=list) #TODO change to tensor? # For heatmap render
 
@@ -288,6 +337,15 @@ class MapsBuffer:
         3. Readings map: a grid of the last reading collected in each grid square - unvisited squares are given a reading of 0.
         4. Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
     '''
+    # Inputs
+    observation_dimension: int  # Shape of state space aka how many elements in the observation returned from the environment
+    max_size: int  # steps_per_epoch   
+        
+    # Hyperparameters
+    gamma: float = 0.99
+    lamda: float = 0.90
+    beta: float = 0.005
+            
     # Parameters
     grid_bounds: tuple = field(default_factory= lambda: (1,1))
     x_limit_scaled: int = field(init=False)
@@ -304,12 +362,19 @@ class MapsBuffer:
     readings_map: Map = field(init=False)
     visit_counts_map: Map = field(init=False)
     obstacles_map: Map = field(init=False)
-    
-    # Buffers
-    buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
-    buffer: PPOBuffer = field(default_factory=lambda: PPOBuffer(obs_dim=obs_dim, max_size=steps_per_epoch, gamma=gamma, lamda=lamda))
 
     def __post_init__(self):
+        
+        self.buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
+        self.buffer: PPOBuffer = field(default_factory=lambda: PPOBuffer(
+                observation_dimension=self.observation_dimension, 
+                max_size=self.max_size, 
+                gamma = self.gamma, 
+                lamda = self.lamda, 
+                beta = self.beta,
+                map_dimensions=self.map_dimensions
+            ))
+        
         '''
         Scaled maps
         '''
@@ -593,7 +658,8 @@ class Actor(nn.Module):
 
 
 class PPO:
-    def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, eps_clip, resolution_accuracy, id, lamda=0.95, random_seed=None):
+    def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, 
+                 eps_clip, resolution_accuracy, steps_per_epoch, id, lamda=0.95, beta: float = 0.005, random_seed=None):
         '''
         state_dim: The dimensions of the return from the environment
         action_dim: How many actions the actor chooses from
@@ -609,18 +675,21 @@ class PPO:
         # Testing
         if random_seed:
             torch.manual_seed(random_seed)
-            np.random.seed(random_seed)            
+            np.random.seed(random_seed)                 
         
         # Hyperparameters
         self.gamma: float = gamma  # Discount factor
         self.lamda = lamda  # Smoothing parameter for GAE calculation
+        self.beta = beta
         self.eps_clip = eps_clip
         self.K_epochs = K_epochs
         self.resolution_accuracy = resolution_accuracy
         self.id = id
+        self.steps_per_epoch = steps_per_epoch
         
         # Initialize
-        self.maps = MapsBuffer(grid_bounds, resolution_accuracy)
+        self.maps = MapsBuffer(grid_bounds=grid_bounds, resolution_accuracy=resolution_accuracy, 
+                               gamma=gamma, beta=beta, lamda=lamda, state_dim=state_dim, max_size=steps_per_epoch, observation_dimension = state_dim, )
 
         self.policy = Actor(map_dim=self.maps.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(device) 
         self.optimizer = torch.optim.Adam([
@@ -679,98 +748,6 @@ class PPO:
         self.maps.buffer.state_values.append(state_value)
         self.maps.buffer.rewards.append(reward)
         self.maps.buffer.is_terminals.append(is_terminal)
-        
-
-    def calculate_advantages(self, rewards=None):
-        ''' Advantage is roughly "how much better off will the actor be if a particular action is taken over the course of the episode"
-        Generalized Advantage Estimation (GAE)
-        
-        gamma = discount rate
-        lambda = smoothing parameter (0.95 suggested in the paper)
-        
-        1. Loop from last step backwards to step 0 of this batch
-        2. Get delta:
-            Delta = reward_t + (discount_rate * value_{t+1} * terminal_t) - value_t
-            If terminal for any timestep t, then terminal_t = 0, else terminal_t = 1. Because this module is episodic and a terminal value means the episode has reset,
-            we do not want to apply rewards from the reset to the calculations
-        3. Get GAE:
-            GAE = delta + (discount_rate  * smoothing_parameter * terminal_t * GAE_{t+1})
-        4. Get return values:
-            Return_values = GAE_t + value_t
-        5. Reverse return_values to get back in original order
-        '''
-        
-        if not rewards: rewards = self.maps.buffer.rewards
-        
-        # Set up which section of buffer we're working with
-        path_slice = slice(0, self.ptr)
-        rews = np.append(rewards[path_slice], last_val)
-        vals = np.append(self.val_buf[path_slice], last_val)
-        
-        returns = [] 
-        gae = 0
-        # Slow way
-        # TODO something is wrong here; believe state should always be one ahead
-        #for i in reversed(range(len(rewards))):
-        
-        # From SpinningUp
-        deltas = rewards[:-1] + self.gamma * self.maps.buffer.state_values[1:] - self.maps.buffer.state_values[:-1]
-        
-        for i in reversed(range(len(rewards)-1)):
-            mask = 0 if self.maps.buffer.is_terminals[i] else 1 
-            delta = rewards[i] + (self.gamma * self.maps.buffer.state_values[i + 1] * mask) - self.maps.buffer.state_values[i] # TODO does the discount factor need to be gamma^t?  
-            gae = delta + (self.gamma * self.lamda * mask * gae) 
-            returns.insert(0, gae + self.maps.buffer.state_values[i]) # Puts back in correct order
-            
-        # TODO Get to work with discount_cumsum() instead
-        # From OpenAI
-        # path_slice = slice(self.path_start_idx, self.ptr)
-        # rews = np.append(self.rew_buf[path_slice], last_val)
-        # vals = np.append(self.val_buf[path_slice], last_val)
-
-        # # the next two lines implement GAE-Lambda advantage calculation
-        # # gamma determines scale of value function, introduces bias regardless of VF accuracy
-        # # lambda introduces bias when VF is inaccurate
-        # deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
-        # self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lam)
-        
-        # # the next line computes rewards-to-go, to be targets for the value function
-        # self.ret_buf[path_slice] = core.discount_cumsum(rews, self.gamma)[:-1]
-        
-        # self.path_start_idx = self.ptr
-
-        adv = np.array(returns) - self.maps.buffer.state_values[:-1] # TODO this throws a warning ...
-        normalized_returns = (adv - np.mean(adv)) / (np.std(adv) + 1e-10)
-        return returns, normalized_returns
-
-    def calculate_loss_critic():
-        '''
-        Calculate Critic loss (Critic loss is nothing but the usual mean squared error loss with the Returns)
-        '''
-        raise Exception('Not implemented yet')
-        
-    def calculate_loss_actor():
-        '''
-        Calculate how much the policy has changed, as in a ratio of the new policy over the old policy, in log form for easier computation
-        Decide update tolerance using the clipping parameter epsilon to ensure only make the maximum of epsilon% change to our policy at a time. 
-        Calculate Actor loss using the minimum between the policy change ratio * the advantage and the clipping parameter * the advantage
-        Calculate total loss (using a discount factor to bring them to the same order of magnitude)
-        An entropy term is optional, but it encourages our actor model to explore different policies and the degree to which we want to experiment can be controlled by an entropy beta parameter.
-        '''
-        raise Exception('Not implemented yet')
-
-    def calculate_total_clipped_loss():
-        raise Exception('Not implemented yet')        
-        def loss(y_true, y_pred):
-            newpolicy_probs = y_pred
-            ratio = K.exp(K.log(newpolicy_probs + 1e-10) - K.log(oldpolicy_probs + 1e-10))
-            p1 = ratio * advantages
-            p2 = K.clip(ratio, min_value=1 - clipping_val, max_value=1 + clipping_val) * advantages
-            actor_loss = -K.mean(K.minimum(p1, p2))
-            critic_loss = K.mean(K.square(rewards - values))
-            total_loss = critic_discount * critic_loss + actor_loss - entropy_beta * K.mean(
-                -(newpolicy_probs * K.log(newpolicy_probs + 1e-10)))
-            return total_loss
 
     def update(self):
         # TODO I believe this is wrong; see vanilla_PPO.py TODO comment

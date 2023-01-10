@@ -123,6 +123,7 @@ def train():
     eps_clip = 0.2          # clip parameter for PPO
     gamma = 0.99            # discount factor
     lamda = 0.95            # smoothing parameter for Generalize Advantage Estimate (GAE) calculations
+    beta: float = 0.005     # TODO look up what this is doing
 
     lr_actor = 0.0003       # learning rate for actor network
     lr_critic = 0.001       # learning rate for critic network
@@ -263,8 +264,7 @@ def train():
 
     ################# training procedure ################
 
-    # initialize a PPO agent
-    
+    # initialize PPO agents
     ppo_agents = {i:
         PPO(
             state_dim=state_dim, 
@@ -272,13 +272,14 @@ def train():
             grid_bounds=scaled_grid_bounds, 
             lr_actor=lr_actor, 
             lr_critic=lr_critic,
-            lamda=lamda,
             gamma=gamma, 
             K_epochs=K_epochs, 
             eps_clip=eps_clip,
             resolution_accuracy=resolution_accuracy,
             steps_per_epoch=steps_per_epoch,
             id=i,
+            lamda=lamda,
+            beta = beta,
             random_seed= _int_list_from_bigint(hash_seed(seed))[0]
             ) 
         for i in range(number_of_agents)
@@ -375,7 +376,9 @@ def train():
             # Vanilla
             if CNN:
                 for id, agent in ppo_agents.items():
-                    agent.store(state, action, action_logprob, state_value, reward, is_terminal):
+                    pass
+                    # self.buf.store(obs_std, a, r, v, logp, source_coordinates) # TODO make multi-agent?                    
+                    # agent.store(state, action, action_logprob, state_value, reward, is_terminal)
 
                     ####
                     # update PPO agent

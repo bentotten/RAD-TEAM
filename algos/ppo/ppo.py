@@ -47,8 +47,8 @@ class PPOBuffer:
     val_buf: npt.NDArray[np.float32] = field(init=False)
     source_tar: npt.NDArray[np.float32] = field(init=False)
     logp_buf: npt.NDArray[np.float32] = field(init=False)
-    obs_win: npt.NDArray[np.float32] = field(init=False)
-    obs_win_std: npt.NDArray[np.float32] = field(init=False)
+    obs_win: npt.NDArray[np.float32] = field(init=False) # TODO where is this used?
+    obs_win_std: npt.NDArray[np.float32] = field(init=False) # TODO where is this used?
 
     gamma: float = 0.99
     lam: float = 0.90
