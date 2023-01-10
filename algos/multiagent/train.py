@@ -384,28 +384,29 @@ def train():
             # TODO move out of episode
             # Vanilla
             if CNN:
-                # for id, agent in ppo_agents.items():
-                #         obs: npt.NDArray[np.float32] = results[id].state
-                #         act: npt.NDArray[np.float32] = action_list[id]
-                #         rew: npt.NDArray[np.float32] = results[id].reward
-                #         val: npt.NDArray[np.float32] 
-                #         logp: npt.NDArray[np.float32],
-                #         src: npt.NDArray[np.float32],                    
-                #     agent.store(
-                #         obs: npt.NDArray[np.float32],
-                #         act: npt.NDArray[np.float32],
-                #         rew: npt.NDArray[np.float32],
-                #         val: npt.NDArray[np.float32],
-                #         logp: npt.NDArray[np.float32],
-                #         src: npt.NDArray[np.float32],
-                #     ) -> None:                    # self.buf.store(obs_std, a, r, v, logp, source_coordinates) # TODO make multi-agent?                    
-                #     # agent.store(state, action, action_logprob, state_value, reward, is_terminal)
-
-                    ####
-                    # update PPO agent
-                    if total_time_step % update_timestep == 0:
-                        agent.update()
-                        epoch_counter += 1
+                for id, agent in ppo_agents.items():
+                    obs: npt.NDArray[np.float32] = results[id].state
+                    rew: npt.NDArray[np.float32] = results[id].reward
+                    act: npt.NDArray[np.float32] = action_list[id]                    
+                    val: npt.NDArray[np.float32] = action_list[id].state_value      
+                    logp: npt.NDArray[np.float32] = action_list[id].action_logprob
+                    src: npt.NDArray[np.float32] = source_coordinates
+                
+                agent.store(
+                    obs = obs,
+                    act = act,
+                    rew = rew,
+                    val = val,
+                    logp = logp,
+                    src = src
+                )
+                
+                # update PPO agent
+                if total_time_step % update_timestep == 0:
+                    agent.update()
+                    epoch_counter += 1
+            
+            # Vanilla FFN
             else:
                 for id, agent in ppo_agents.items():
                     agent.buffer.rewards.append(results[id].reward)

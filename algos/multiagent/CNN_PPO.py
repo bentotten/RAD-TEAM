@@ -195,6 +195,7 @@ class PPOBuffer:
         self.state_value_buffer[self.ptr] = val
         self.source_tar[self.ptr] = src
         self.logprobs_buffer[self.ptr] = logp
+        # TODO do we need to store terminals?
         self.ptr += 1
 
     def finish_path_and_compute_advantages(self, last_val: int = 0) -> None:
