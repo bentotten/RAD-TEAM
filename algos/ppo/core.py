@@ -82,7 +82,7 @@ def discount_cumsum(
     """
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
-
+# TODO is this necessary for our environment?
 @dataclass
 class StatBuff:
     mu: float = 0.0

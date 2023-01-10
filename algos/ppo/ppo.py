@@ -36,7 +36,7 @@ class BpArgs(NamedTuple):
 
 @dataclass
 class PPOBuffer:
-    obs_dim: core.Shape
+    obs_dim: core.Shape  # Observation space dimensions
     max_size: int
 
     obs_buf: npt.NDArray[np.float32] = field(init=False)
@@ -436,15 +436,22 @@ class PPO:
         reduce_v_iters = True
         self.ac.model.eval() # TODO make multi-agent
         # Main loop: collect experience in env and update/log each epoch
+        
         print(f"Starting main training loop!", flush=True)
         for epoch in range(epochs):
             # Reset hidden state
             hidden = self.ac.reset_hidden() # TODO make multi-agent
             self.ac.pi.logits_net.v_net.eval() # Pylance note - this seems to call just fine # TODO make multi-agent
             for t in range(steps_per_epoch):
+                
                 # Standardize input using running statistics per episode
+                # TODO I do not think this is needed for our environment
                 obs_std = o
                 obs_std[0] = np.clip((o[0] - stat_buff.mu) / stat_buff.sig_obs, -8, 8)
+                
+                for i in range(len(o)):
+                    assert obs_std[i] == o[i]
+                    
                 # compute action and logp (Actor), compute value (Critic)
                 a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent
                 result = env.step(action=int(a)) # TODO make multi-agent # TODO figure out how to cast a to Action()
