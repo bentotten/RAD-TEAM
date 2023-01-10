@@ -198,7 +198,7 @@ def train():
         K_epochs = 4
                      
         obstruction_count = 6 #TODO error with 7 obstacles
-        number_of_agents = 2
+        number_of_agents = 3
         
         seed = 0
         random_seed = _int_list_from_bigint(hash_seed(seed))[0]
@@ -340,8 +340,9 @@ def train():
                 #print("Training [state]: ", results[0].state)
                 pass
             if CNN:
-                raw_action_list = {id: agent.select_action(results, id) -1 for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
+                raw_action_list = {id: agent.select_action(results, id) for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?                
             else:
+                # Vanilla FFN
                 raw_action_list = {id: agent.select_action(results[id].state) -1 for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
             
             if number_of_agents == 1:
@@ -352,10 +353,12 @@ def train():
             # TODO REMOVE convert_nine_to_five_action_space AFTER WORKING WITH DIAGONALS
             if CNN:
                 if SCOOPERS_IMPLEMENTATION:
-                    action_list = {id: convert_nine_to_five_action_space(action) for id, action in raw_action_list.items()}
+                    include_idle_action_list = {id: action.action - 1 for id, action in raw_action_list.items()}                    
+                    action_list = {id: convert_nine_to_five_action_space(action) for id, action in include_idle_action_list.items()}
                 else:
-                    action_list = {id: action for id, action in raw_action_list.items()}
+                    action_list = {id: action.action - 1 for id, action in raw_action_list.items()}      
             else:
+                # Vanilla FFN
                 action_list = raw_action_list
             
             # Ensure no item is above 7 or below -1
@@ -381,10 +384,22 @@ def train():
             # TODO move out of episode
             # Vanilla
             if CNN:
-                for id, agent in ppo_agents.items():
-                    pass
-                    # self.buf.store(obs_std, a, r, v, logp, source_coordinates) # TODO make multi-agent?                    
-                    # agent.store(state, action, action_logprob, state_value, reward, is_terminal)
+                # for id, agent in ppo_agents.items():
+                #         obs: npt.NDArray[np.float32] = results[id].state
+                #         act: npt.NDArray[np.float32] = action_list[id]
+                #         rew: npt.NDArray[np.float32] = results[id].reward
+                #         val: npt.NDArray[np.float32] 
+                #         logp: npt.NDArray[np.float32],
+                #         src: npt.NDArray[np.float32],                    
+                #     agent.store(
+                #         obs: npt.NDArray[np.float32],
+                #         act: npt.NDArray[np.float32],
+                #         rew: npt.NDArray[np.float32],
+                #         val: npt.NDArray[np.float32],
+                #         logp: npt.NDArray[np.float32],
+                #         src: npt.NDArray[np.float32],
+                #     ) -> None:                    # self.buf.store(obs_std, a, r, v, logp, source_coordinates) # TODO make multi-agent?                    
+                #     # agent.store(state, action, action_logprob, state_value, reward, is_terminal)
 
                     ####
                     # update PPO agent

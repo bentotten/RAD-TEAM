@@ -37,7 +37,7 @@ class BpArgs(NamedTuple):
 @dataclass
 class PPOBuffer:
     obs_dim: core.Shape  # Observation space dimensions
-    max_size: int
+    max_size: int  # Max steps per epoch
 
     obs_buf: npt.NDArray[np.float32] = field(init=False)
     act_buf: npt.NDArray[np.float32] = field(init=False)
