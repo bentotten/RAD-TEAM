@@ -340,10 +340,10 @@ def train():
                 #print("Training [state]: ", results[0].state)
                 pass
             if CNN:
-                raw_action_list = {id: agent.select_action(results, id) for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?                
+                agent_action_returns = {id: agent.select_action(results, id) for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?                
             else:
                 # Vanilla FFN
-                raw_action_list = {id: agent.select_action(results[id].state) -1 for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
+                agent_action_returns = {id: agent.select_action(results[id].state) -1 for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
             
             if number_of_agents == 1:
                 assert ppo_agents[0].maps.others_locations_map.max() == 0.0
@@ -353,13 +353,13 @@ def train():
             # TODO REMOVE convert_nine_to_five_action_space AFTER WORKING WITH DIAGONALS
             if CNN:
                 if SCOOPERS_IMPLEMENTATION:
-                    include_idle_action_list = {id: action.action - 1 for id, action in raw_action_list.items()}                    
+                    include_idle_action_list = {id: action.action - 1 for id, action in agent_action_returns.items()}                    
                     action_list = {id: convert_nine_to_five_action_space(action) for id, action in include_idle_action_list.items()}
                 else:
-                    action_list = {id: action.action - 1 for id, action in raw_action_list.items()}      
+                    action_list = {id: action.action - 1 for id, action in agent_action_returns.items()}      
             else:
                 # Vanilla FFN
-                action_list = raw_action_list
+                action_list = agent_action_returns
             
             # Ensure no item is above 7 or below -1
             for action in action_list.values():
@@ -385,21 +385,22 @@ def train():
             # Vanilla
             if CNN:
                 for id, agent in ppo_agents.items():
-                    obs: npt.NDArray[np.float32] = results[id].state
+                    obs: npt.NDArray[Any] = results[id].state
                     rew: npt.NDArray[np.float32] = results[id].reward
-                    act: npt.NDArray[np.float32] = action_list[id]                    
-                    val: npt.NDArray[np.float32] = action_list[id].state_value      
-                    logp: npt.NDArray[np.float32] = action_list[id].action_logprob
+                    act: npt.NDArray[np.int32] = agent_action_returns[id].action           
+                    val: npt.NDArray[np.float32] = agent_action_returns[id].state_value      
+                    logp: npt.NDArray[np.float32] = agent_action_returns[id].action_logprob
                     src: npt.NDArray[np.float32] = source_coordinates
+                    terminal: npt.NDArray[np.bool] = results[id].is_terminal                                        
                 
-                agent.store(
-                    obs = obs,
-                    act = act,
-                    rew = rew,
-                    val = val,
-                    logp = logp,
-                    src = src
-                )
+                    agent.store(
+                        state = obs,
+                        act = act,
+                        rew = rew,
+                        val = val,
+                        logp = logp,
+                        src = src
+                    )
                 
                 # update PPO agent
                 if total_time_step % update_timestep == 0:
