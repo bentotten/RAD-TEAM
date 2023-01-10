@@ -33,16 +33,30 @@ from epoch_logger import EpochLogger
 Point: TypeAlias = NewType("Point", tuple[float, float])  # Array indicies to access a GridSquare
 Map: TypeAlias = NewType("Map", npt.NDArray[np.float32]) # 2D array that holds gridsquare values
 
+# Helpers
+Shape: TypeAlias = int | tuple[int, ...]
+
 DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm for inflating step size to obstruction
 
+################################## Helper Functions ##################################
+
+def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
+    if shape is None:
+        return (length,)
+    elif np.isscalar(shape):
+        shape = cast(int, shape)
+        return (length, shape)
+    else:
+        shape = cast(tuple[int, ...], shape)
+        return (length, *shape)
 
 ################################## PPO Buffer ##################################
 @dataclass
 class PPOBuffer:
-    obs_dim: core.Shape
-    max_size: int
+    observation_dimension: int  # Shape of state space aka how many elements in the observation returned from the environment
+    max_size: int  # steps_per_epoch
 
-    obs_buf: npt.NDArray[np.float32] = field(init=False)
+    states_buffer: npt.NDArray[np.float32] = field(init=False)
     actions_buffer: npt.NDArray[np.float32] = field(init=False)
     adv_buf: npt.NDArray[np.float32] = field(init=False)
     rewards_buffer: npt.NDArray[np.float32] = field(init=False)
@@ -54,7 +68,7 @@ class PPOBuffer:
     obs_win_std: npt.NDArray[np.float32] = field(init=False)
 
     gamma: float = 0.99
-    lam: float = 0.90
+    lamda: float = 0.90
     beta: float = 0.005
     ptr: int = 0
     path_start_idx: int = 0
@@ -66,11 +80,11 @@ class PPOBuffer:
     """
 
     def __post_init__(self):
-        self.obs_buf: npt.NDArray[np.float32] = np.zeros(
-            core.combined_shape(self.max_size, self.obs_dim), dtype=np.float32
+        self.states_buffer: npt.NDArray[np.float32] = np.zeros(
+            combined_shape(self.max_size, self.observation_dimension), dtype=np.float32
         )
         self.actions_buffer: npt.NDArray[np.float32] = np.zeros(
-            core.combined_shape(self.max_size), dtype=np.float32
+            combined_shape(self.max_size), dtype=np.float32
         )
         self.adv_buf: npt.NDArray[np.float32] = np.zeros(
             self.max_size, dtype=np.float32
@@ -90,9 +104,9 @@ class PPOBuffer:
         self.logprobs_buffer: npt.NDArray[np.float32] = np.zeros(
             self.max_size, dtype=np.float32
         )
-        self.obs_win: npt.NDArray[np.float32] = np.zeros(self.obs_dim, dtype=np.float32)
+        self.obs_win: npt.NDArray[np.float32] = np.zeros(self.observation_dimension, dtype=np.float32)
         self.obs_win_std: npt.NDArray[np.float32] = np.zeros(
-            self.obs_dim, dtype=np.float32
+            self.observation_dimension, dtype=np.float32
         )
         
         ################################## set device ##################################
@@ -120,7 +134,7 @@ class PPOBuffer:
         Append one timestep of agent-environment interaction to the buffer.
         """
         assert self.ptr < self.max_size
-        self.obs_buf[self.ptr, :] = obs
+        self.states_buffer[self.ptr, :] = obs
         self.actions_buffer[self.ptr] = act
         self.rewards_buffer[self.ptr] = rew
         self.state_value_buffer[self.ptr] = val
@@ -152,7 +166,7 @@ class PPOBuffer:
         # gamma determines scale of value function, introduces bias regardless of VF accuracy
         # lambda introduces bias when VF is inaccurate
         deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
-        self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lam)
+        self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lamda)
 
         # the next line computes rewards-to-go, to be targets for the value function
         self.ret_buf[path_slice] = core.discount_cumsum(rews, self.gamma)[:-1]
@@ -172,14 +186,14 @@ class PPOBuffer:
         self.adv_buf: npt.NDArray[np.float32] = (self.adv_buf - adv_mean) / adv_std
         # ret_mean, ret_std = self.ret_buf.mean(), self.ret_buf.std()
         # self.ret_buf = (self.ret_buf) / ret_std
-        # obs_mean, obs_std = self.obs_buf.mean(), self.obs_buf.std()
-        # self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
+        # obs_mean, obs_std = self.states_buffer.mean(), self.states_buffer.std()
+        # self.states_buffer_std_ind[:,1:] = (self.states_buffer[:,1:] - obs_mean[1:]) / (obs_std[1:])
 
         epLens: list[int] = logger.epoch_dict["EpLen"]
         numEps = len(epLens)
         epLenTotal = sum(epLens)
         data = dict(
-            obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
+            obs=torch.as_tensor(self.states_buffer, dtype=torch.float32),
             act=torch.as_tensor(self.actions_buffer, dtype=torch.float32),
             ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
             adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
@@ -194,11 +208,11 @@ class PPOBuffer:
                 # If they're equal then we don't need to do anything
                 # Otherwise we need to add one to make sure that numEps is the correct size
                 numEps
-                + int(epLenTotal != len(self.obs_buf))
+                + int(epLenTotal != len(self.states_buffer))
             )
-            obs_buf = np.hstack(
+            states_buffer = np.hstack(
                 (
-                    self.obs_buf,
+                    self.states_buffer,
                     self.adv_buf[:, None],
                     self.ret_buf[:, None],
                     self.logprobs_buffer[:, None],
@@ -210,17 +224,17 @@ class PPOBuffer:
             slice_b: int = 0
             slice_f: int = 0
             jj: int = 0
-            # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
+            # TODO: This is essentially just a sliding window over states_buffer; use a built-in function to do this
             for ep_i in epLens:
                 slice_f += ep_i
                 epForm[jj].append(
-                    torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)
+                    torch.as_tensor(states_buffer[slice_b:slice_f], dtype=torch.float32)
                 )
                 slice_b += ep_i
                 jj += 1
-            if slice_f != len(self.obs_buf):
+            if slice_f != len(self.states_buffer):
                 epForm[jj].append(
-                    torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32)
+                    torch.as_tensor(states_buffer[slice_f:], dtype=torch.float32)
                 )
 
             data["ep_form"] = epForm
@@ -229,7 +243,7 @@ class PPOBuffer:
 
     def clear(self):
         del self.actions_buffer[:]
-        del self.states[:]
+        del self.states_buffer[:]
         del self.logprobs_buffer[:]
         del self.state_value_buffer[:]
         del self.rewards_buffer[:]
@@ -293,6 +307,7 @@ class MapsBuffer:
     
     # Buffers
     buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
+    buffer: PPOBuffer = field(default_factory=lambda: PPOBuffer(obs_dim=obs_dim, max_size=steps_per_epoch, gamma=gamma, lamda=lamda))
 
     def __post_init__(self):
         '''
@@ -578,7 +593,7 @@ class Actor(nn.Module):
 
 
 class PPO:
-    def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, eps_clip, resolution_accuracy, id, lmbda=0.95, random_seed=None):
+    def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, eps_clip, resolution_accuracy, id, lamda=0.95, random_seed=None):
         '''
         state_dim: The dimensions of the return from the environment
         action_dim: How many actions the actor chooses from
@@ -589,7 +604,7 @@ class PPO:
         K_epochs:
         eps_clip: 
         resolution_accuracy: How much to scale the convolution maps by (higher rate means more accurate, but more memory usage)
-        lmbda: smoothing parameter for Generalize Advantage Estimate (GAE) calculations
+        lamda: smoothing parameter for Generalize Advantage Estimate (GAE) calculations
         '''
         # Testing
         if random_seed:
@@ -598,7 +613,7 @@ class PPO:
         
         # Hyperparameters
         self.gamma: float = gamma  # Discount factor
-        self.lmbda = lmbda  # Smoothing parameter for GAE calculation
+        self.lamda = lamda  # Smoothing parameter for GAE calculation
         self.eps_clip = eps_clip
         self.K_epochs = K_epochs
         self.resolution_accuracy = resolution_accuracy
@@ -704,7 +719,7 @@ class PPO:
         for i in reversed(range(len(rewards)-1)):
             mask = 0 if self.maps.buffer.is_terminals[i] else 1 
             delta = rewards[i] + (self.gamma * self.maps.buffer.state_values[i + 1] * mask) - self.maps.buffer.state_values[i] # TODO does the discount factor need to be gamma^t?  
-            gae = delta + (self.gamma * self.lmbda * mask * gae) 
+            gae = delta + (self.gamma * self.lamda * mask * gae) 
             returns.insert(0, gae + self.maps.buffer.state_values[i]) # Puts back in correct order
             
         # TODO Get to work with discount_cumsum() instead

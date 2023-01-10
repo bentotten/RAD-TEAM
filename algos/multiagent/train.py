@@ -79,6 +79,8 @@ def convert_nine_to_five_action_space(action):
         case _:
             raise Exception('Action is not within valid [-1,3] range.')
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
+
+
 ################################### Training ###################################
 
 def train():
@@ -115,10 +117,12 @@ def train():
 
     ################ PPO hyperparameters ################
     #update_timestep = max_ep_len * 4      # update policy every n timesteps # TODO Change to epochs
-    update_timestep = 480     # update policy every n timesteps # TODO Change to epochs
+    steps_per_epoch = 480
+    update_timestep = steps_per_epoch     # update policy every n timesteps # TODO Change to epochs
     K_epochs = 80               # update policy for K epochs in one PPO update
     eps_clip = 0.2          # clip parameter for PPO
     gamma = 0.99            # discount factor
+    lamda = 0.95            # smoothing parameter for Generalize Advantage Estimate (GAE) calculations
 
     lr_actor = 0.0003       # learning rate for actor network
     lr_critic = 0.001       # learning rate for critic network
@@ -188,7 +192,8 @@ def train():
     if DEBUG:
         epochs = 1   # Actual epoch will be a maximum of this number + max_ep_len
         max_ep_len = 120                      # max timesteps in one episode # TODO delete me after fixing
-        update_timestep = 3
+        steps_per_epoch = 2
+        update_timestep = steps_per_epoch # TODO transition to steps_per_epoch
         K_epochs = 4
                      
         obstruction_count = 6 #TODO error with 7 obstacles
@@ -259,17 +264,20 @@ def train():
     ################# training procedure ################
 
     # initialize a PPO agent
+    
     ppo_agents = {i:
         PPO(
             state_dim=state_dim, 
             action_dim=action_dim, 
             grid_bounds=scaled_grid_bounds, 
             lr_actor=lr_actor, 
-            lr_critic=lr_critic, 
+            lr_critic=lr_critic,
+            lamda=lamda,
             gamma=gamma, 
             K_epochs=K_epochs, 
             eps_clip=eps_clip,
             resolution_accuracy=resolution_accuracy,
+            steps_per_epoch=steps_per_epoch,
             id=i,
             random_seed= _int_list_from_bigint(hash_seed(seed))[0]
             ) 
@@ -306,6 +314,7 @@ def train():
         # TODO why is state 11 long?
         # state = env.reset()['state'] # All agents begin in same location
         results = env.reset() # All agents begin in same location, only need one state
+        source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
         
         #print("Source location: ", env.src_coords)
         #print("Agent location: ", env.agents[0].det_coords)
