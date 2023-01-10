@@ -97,11 +97,11 @@ class PPOBuffer:
     state_value_buffer: npt.NDArray[np.float32] = field(init=False)
     source_tar: npt.NDArray[np.float32] = field(init=False)
     logprobs_buffer: npt.NDArray[np.float32] = field(init=False)
+    is_terminals: npt.NDArray[np.float32] = field(init=False)
 
     # Additional buffers
-    is_terminals: List = field(init=False)
-    mapstacks: List = field(init=False) #TODO change to tensor? # For heatmap render
-    readings: Dict[Any, list] = field(init=False) # For heatmap resampling    
+    mapstacks: list = field(default_factory=list)  # TODO Change to numpy arrays like above
+    readings: Dict[Any, list] = field(default_factory=dict)  # TODO Change to numpy arrays like above
     
     # Used for Location Prediction; 
     # TODO not implemented yet
@@ -115,54 +115,53 @@ class PPOBuffer:
     """
 
     def __post_init__(self):
-        self.states_buffer: npt.NDArray[np.float32] = field(default_factory = lambda:
-            np.zeros(combined_shape(self.max_size, self.observation_dimension), dtype=np.float32
-        ))
-        self.actions_buffer: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
+        # TODO do these need to be made with default factory?
+        self.states_buffer: npt.NDArray[np.float32] = np.zeros(
+            combined_shape(self.max_size, self.observation_dimension), dtype=np.float32
+        )
+        self.actions_buffer: npt.NDArray[np.float32] = np.zeros(
             combined_shape(self.max_size), dtype=np.float32
-        ))
-        self.adv_buf: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
+        )
+        self.adv_buf: npt.NDArray[np.float32] = np.zeros(
             self.max_size, dtype=np.float32
-        ))
-        self.rewards_buffer: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
+        )
+        self.rewards_buffer: npt.NDArray[np.float32] = np.zeros(
             self.max_size, dtype=np.float32
-        ))
-        self.ret_buf: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
+        )
+        self.ret_buf: npt.NDArray[np.float32] = np.zeros(
             self.max_size, dtype=np.float32
-        ))
-        self.state_value_buffer: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
+        )
+        self.state_value_buffer: npt.NDArray[np.float32] = np.zeros(
             self.max_size, dtype=np.float32
-        ))
-        self.source_tar: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
+        )
+        self.source_tar: npt.NDArray[np.float32] = np.zeros(
             (self.max_size, 2), dtype=np.float32
-        ))
-        self.logprobs_buffer: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
+        )
+        self.logprobs_buffer: npt.NDArray[np.float32] = np.zeros(
             self.max_size, dtype=np.float32
-        ))
-        self.obs_win: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
+        )
+        self.obs_win: npt.NDArray[np.float32] = np.zeros(
             self.observation_dimension, dtype=np.float32
-        ))
-        
-        self.obs_win_std: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
+        )
+        self.obs_win_std: npt.NDArray[np.float32] = np.zeros(
             self.observation_dimension, dtype=np.float32
-        ))
-        
-        self.is_terminals: npt.NDArray[np.float32] = field(default_factory = lambda:np.zeros(
+        )
+        self.is_terminals: npt.NDArray[np.float32] = np.zeros(
             self.max_size, dtype=np.float32
-        ))
+        )
         
         # TODO Update these
-        self.mapstacks: List = field(default_factory=list)  # TODO Change to numpy arrays like above
-        self.readings: Dict[Any, list] = field(default_factory=dict) # For heatmap resampling
+        self.mapstacks: List = []  # TODO Change to numpy arrays like above
+        self.readings: Dict[Any, list] = {} # For heatmap resampling
         
         ################################## set device ##################################
         print("============================================================================================")
         # set device to cpu or cuda
-        device = torch.device('cpu')
+        self.device = torch.device('cpu')
         if(torch.cuda.is_available()): 
-            device = torch.device('cuda:0') 
+            self.device = torch.device('cuda:0') 
             torch.cuda.empty_cache()
-            print("Device set to : " + str(torch.cuda.get_device_name(device)))
+            print("Device set to : " + str(torch.cuda.get_device_name(self.device)))
         else:
             print("Device set to : cpu")
         print("============================================================================================")
@@ -297,17 +296,57 @@ class PPOBuffer:
         return data
 
     def clear(self):
-        raise Exception("NEED TO IMPLEMENT")
+        # Reset readings, mapstacks, and buffer pointers
+        self.ptr, self.path_start_idx = 0, 0
+        del self.mapstacks[:]
+        self.readings.clear()
+        
+        # Reset numpy arrays
+        # sanity_check
+        hold_s = self.states_buffer.shape
+        hold_a = self.actions_buffer.shape
+        hold_adv = self.adv_buf.shape
+        hold_r = self.rewards_buffer.shape
+        hold_ret = self.ret_buf.shape
+        hold_sv = self.state_value_buffer.shape
+        hold_src = self.source_tar.shape
+        hold_l = self.logprobs_buffer.shape
+        hold_t = self.is_terminals.shape
+        hold_ow = self.obs_win.shape
+        hold_owstd = self.obs_win_std.shape
+        
+        self.states_buffer[:] = 0.0
+        self.actions_buffer[:] = 0.0
+        self.adv_buf[:] = 0.0
+        self.rewards_buffer[:] = 0.0
+        self.ret_buf[:] = 0.0
+        self.state_value_buffer[:] = 0.0
+        self.source_tar[:] = 0.0
+        self.logprobs_buffer[:] = 0.0
+        self.is_terminals[:] = 0.0
+        
+        # TODO move to a unit test
+        # Add asserts for del self.mapstacks[:] and self.readings.clear()
+        assert hold_s == self.states_buffer.shape
+        assert hold_a ==self.actions_buffer.shape
+        assert hold_adv == self.adv_buf.shape
+        assert hold_r == self.rewards_buffer.shape
+        assert hold_ret == self.ret_buf.shape
+        assert hold_sv == self.state_value_buffer.shape
+        assert hold_src == self.source_tar.shape
+        assert hold_l == self.logprobs_buffer.shape
+        assert hold_ow == self.obs_win.shape
+        assert hold_owstd == self.obs_win_std.shape        
     
 
 @dataclass()
 class RolloutBuffer():
     # Outdated - TODO remove
-    actions: List = field(default_factory=list)
-    states: List = field(default_factory=list)
-    logprobs: List = field(default_factory=list)
-    state_values: List = field(default_factory=list)
-    rewards: List = field(default_factory=list)
+    actions_buffer: List = field(default_factory=list)
+    states_buffer: List = field(default_factory=list)
+    logprobs_buffer: List = field(default_factory=list)
+    state_value_buffer: List = field(default_factory=list)
+    rewards_buffer: List = field(default_factory=list)
     
     is_terminals: List = field(default_factory=list)
     mapstacks: List = field(default_factory=list) #TODO change to tensor? # For heatmap render
@@ -318,11 +357,11 @@ class RolloutBuffer():
         pass
     
     def clear(self):
-        del self.actions[:]
-        del self.states[:]
-        del self.logprobs[:]
+        del self.actions_buffer[:]
+        del self.states_buffer[:]
+        del self.logprobs_buffer[:]
         del self.state_values[:]
-        del self.rewards[:]
+        del self.state_value_buffer[:]
         del self.is_terminals[:]
         del self.mapstacks[:]
         self.readings.clear()
@@ -331,11 +370,12 @@ class RolloutBuffer():
 @dataclass()
 class MapsBuffer:        
     '''
-    4 maps: 
+    5 maps: 
         1. Location Map: a 2D matrix showing the individual agent's location.
         2. Map of Other Locations: a grid showing the number of agents located in each grid element (excluding current agent).
         3. Readings map: a grid of the last reading collected in each grid square - unvisited squares are given a reading of 0.
         4. Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
+        5. Obstacles Map: a grid of how far from an obstacle each agent was when they detected it
     '''
     # Inputs
     observation_dimension: int  # Shape of state space aka how many elements in the observation returned from the environment
@@ -347,40 +387,45 @@ class MapsBuffer:
     beta: float = 0.005
             
     # Parameters
-    grid_bounds: tuple = field(default_factory= lambda: (1,1))
-    x_limit_scaled: int = field(init=False)
-    y_limit_scaled: int = field(init=False)
-    resolution_accuracy: int = field(default=100)
-    map_dimensions: Tuple = field(init=False)
-    obstacle_state_offset: int = field(default=3) # Number of initial elements in state return that do not indicate there is an obstacle. 
+    grid_bounds: tuple = field(default_factory= lambda: (1,1))  # Initial grid bounds for state x and y coordinates. For RADPPO, these are scaled to be below 0, so bounds are 1x1
+    resolution_accuracy: int = field(default=100) # How much to multiply grid bounds and state coordinates by. 100 will return to full accuracy for RADPPO
+    obstacle_state_offset: int = field(default=3) # Number of initial elements in state return that do not indicate there is an obstacle. First element is intensity, second two are x and y coords
+    
+    # Initialized elsewhere
+    x_limit_scaled: int = field(init=False)  # maximum x value in maps
+    y_limit_scaled: int = field(init=False)  # maximum y value in maps
+    map_dimensions: Tuple = field(init=False)  # Scaled dimensions of each map - used to create the CNNs
     
     # TODO make work with max_step_count so boundaries dont need to be enforced on grid. Basically take the grid bounds and add the max step count to make the map sizes
     
     # Maps
-    location_map: Map = field(init=False)
-    others_locations_map: Map = field(init=False)
-    readings_map: Map = field(init=False)
-    visit_counts_map: Map = field(init=False)
-    obstacles_map: Map = field(init=False)
+    location_map: Map = field(init=False)  # Location Map: a 2D matrix showing the individual agent's location.
+    others_locations_map: Map = field(init=False)  # Map of Other Locations: a grid showing the number of agents located in each grid element (excluding current agent).
+    readings_map: Map = field(init=False)  # Readings map: a grid of the last reading collected in each grid square - unvisited squares are given a reading of 0.
+    visit_counts_map: Map = field(init=False) # Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
+    obstacles_map: Map = field(init=False) # bstacles Map: a grid of how far from an obstacle each agent was when they detected it
+    
+    # Buffers for PPO update to neural networks at end of epoch
+    buffer: PPOBuffer = field(init=False)
 
-    def __post_init__(self):
+    def __post_init__(self):      
+        # Scaled maps
+
+        self.map_dimensions = (int(self.grid_bounds[0] * self.resolution_accuracy), int(self.grid_bounds[1] * self.resolution_accuracy))
+        self.x_limit_scaled: int = self.map_dimensions[0]
+        self.y_limit_scaled: int = self.map_dimensions[1] 
         
-        self.buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
-        self.buffer: PPOBuffer = field(default_factory=lambda: PPOBuffer(
+        #self.buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
+        # TODO does this need to be made with default factory?
+        self.buffer: PPOBuffer = PPOBuffer(
                 observation_dimension=self.observation_dimension, 
                 max_size=self.max_size, 
                 gamma = self.gamma, 
                 lamda = self.lamda, 
                 beta = self.beta,
                 map_dimensions=self.map_dimensions
-            ))
+            )        
         
-        '''
-        Scaled maps
-        '''
-        self.map_dimensions = (int(self.grid_bounds[0] * self.resolution_accuracy), int(self.grid_bounds[1] * self.resolution_accuracy))
-        self.x_limit_scaled: int = self.map_dimensions[0]
-        self.y_limit_scaled: int = self.map_dimensions[1] 
         self.clear()
 
     
@@ -403,8 +448,8 @@ class MapsBuffer:
         # Process state for current agent's locations map
         scaled_coordinates = (int(observation[id].state[1] * self.resolution_accuracy), int(observation[id].state[2] * self.resolution_accuracy))        
         # Capture current and reset previous location
-        if self.buffer.states:
-            last_state = self.buffer.states[-1][id].state
+        if self.buffer.states_buffer:
+            last_state = self.buffer.states_buffer[-1][id].state
             scaled_last_coordinates = (int(last_state[1] * self.resolution_accuracy), int(last_state[2] * self.resolution_accuracy))
             x_old = int(scaled_last_coordinates[0])
             y_old = int(scaled_last_coordinates[1])
@@ -422,8 +467,8 @@ class MapsBuffer:
             if other_agent_id != id:
                 others_scaled_coordinates = (int(observation[other_agent_id].state[1] * self.resolution_accuracy), int(observation[other_agent_id].state[2] * self.resolution_accuracy))
                 # Capture current and reset previous location
-                if self.buffer.states:
-                    last_state = self.buffer.states[-1][other_agent_id].state
+                if self.buffer.states_buffer:
+                    last_state = self.buffer.states_buffer[-1][other_agent_id].state
                     scaled_last_coordinates = (int(last_state[1] * self.resolution_accuracy), int(last_state[2] * self.resolution_accuracy))
                     x_old = int(scaled_last_coordinates[0])
                     y_old = int(scaled_last_coordinates[1])
@@ -688,16 +733,33 @@ class PPO:
         self.steps_per_epoch = steps_per_epoch
         
         # Initialize
-        self.maps = MapsBuffer(grid_bounds=grid_bounds, resolution_accuracy=resolution_accuracy, 
-                               gamma=gamma, beta=beta, lamda=lamda, state_dim=state_dim, max_size=steps_per_epoch, observation_dimension = state_dim, )
+        '''
+            observation_dimension: int  # Shape of state space aka how many elements in the observation returned from the environment
+    max_size: int  # steps_per_epoch   
+        
+    # Hyperparameters
+    gamma: float = 0.99
+    lamda: float = 0.90
+    beta: float = 0.005
+        '''
+        self.maps = MapsBuffer(
+                observation_dimension = state_dim,
+                max_size=steps_per_epoch,
+                gamma=gamma,
+                lamda=lamda,      
+                beta=beta,                    
+                grid_bounds=grid_bounds, 
+                resolution_accuracy=resolution_accuracy
+            )
 
-        self.policy = Actor(map_dim=self.maps.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(device) 
+        self.policy = Actor(map_dim=self.maps.buffer.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(self.maps.buffer.device) 
+
         self.optimizer = torch.optim.Adam([
                         {'params': self.policy.actor.parameters(), 'lr': lr_actor},
                         {'params': self.policy.local_critic.parameters(), 'lr': lr_critic}
                     ])
 
-        self.policy_old = Actor(map_dim=self.maps.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(device)  # TODO Really slow
+        self.policy_old = Actor(map_dim=self.maps.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(self.maps.buffer.device)  # TODO Really slow
         self.policy_old.load_state_dict(self.policy.state_dict()) # TODO Really slow
         
         self.MseLoss = nn.MSELoss()
@@ -742,7 +804,7 @@ class PPO:
         return action.item(), action_logprob.item(), state_value.item()
     
     def store(self, state, action, action_logprob, state_value, reward, is_terminal):
-        self.maps.buffer.states.append(state)
+        self.maps.buffer.states_buffer.append(state)
         self.maps.buffer.actions.append(action)
         self.maps.buffer.logprobs.append(action_logprob)
         self.maps.buffer.state_values.append(state_value)

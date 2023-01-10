@@ -284,6 +284,12 @@ def train():
             ) 
         for i in range(number_of_agents)
         }
+    
+    # TODO move to a unit test
+    ppo_agents[0].maps.buffer.adv_buf[0] = 1
+    assert ppo_agents[1].maps.buffer.adv_buf[0] != 1, "Singleton pattern in buffer class"
+    ppo_agents[0].maps.buffer.adv_buf[0] = 0.0
+
 
     # track total training time
     start_time = datetime.now().replace(microsecond=0)
