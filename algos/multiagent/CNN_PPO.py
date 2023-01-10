@@ -105,7 +105,7 @@ class PPOBuffer:
     state_value_buffer: npt.NDArray[np.float32] = field(init=False)
     source_tar: npt.NDArray[np.float32] = field(init=False)
     logprobs_buffer: npt.NDArray[np.float32] = field(init=False)
-    is_terminals_buffer: npt.NDArray[np.float32] = field(init=False)
+    terminal_mask_buffer: npt.NDArray[np.bool] = field(init=False)
 
     # Additional buffers
     mapstacks: list = field(default_factory=list)  # TODO Change to numpy arrays like above
@@ -155,8 +155,9 @@ class PPOBuffer:
         self.obs_win_std: npt.NDArray[np.float32] = np.zeros(
             self.observation_dimension, dtype=np.float32
         )
-        self.is_terminals_buffer: npt.NDArray[np.float32] = np.zeros(
-            self.max_size, dtype=np.float32
+        # TODO do we want to initialize these to 1?
+        self.terminal_mask_buffer: npt.NDArray[np.int32] = np.full(
+            self.max_size, 1, dtype=np.int32
         )
 
         # TODO Update these
@@ -196,7 +197,7 @@ class PPOBuffer:
         self.state_value_buffer[self.ptr] = val
         self.source_tar[self.ptr] = src
         self.logprobs_buffer[self.ptr] = logp
-        # TODO do we need to store terminals?
+        self.terminal_mask_buffer = 0 if terminal else 1  # If terminal, multiple remaining values by 0 to mask out of calculation, as they are for future episodes.
         self.ptr += 1
 
     def finish_path_and_compute_advantages(self, last_val: int = 0) -> None:
@@ -324,7 +325,7 @@ class PPOBuffer:
         hold_sv = self.state_value_buffer.shape
         hold_src = self.source_tar.shape
         hold_l = self.logprobs_buffer.shape
-        hold_t = self.is_terminals_buffer.shape
+        hold_t = self.terminal_mask_buffer.shape
         hold_ow = self.obs_win.shape
         hold_owstd = self.obs_win_std.shape
         
@@ -336,7 +337,7 @@ class PPOBuffer:
         self.state_value_buffer[:] = 0.0
         self.source_tar[:] = 0.0
         self.logprobs_buffer[:] = 0.0
-        self.is_terminals_buffer[:] = 0.0
+        self.terminal_mask_buffer[:] = 0.0
         
         # TODO move to a unit test
         # Add asserts for del self.mapstacks[:] and self.readings.clear()
@@ -348,7 +349,7 @@ class PPOBuffer:
         assert hold_sv == self.state_value_buffer.shape
         assert hold_src == self.source_tar.shape
         assert hold_l == self.logprobs_buffer.shape
-        assert hold_t == self.is_terminals_buffer.shape
+        assert hold_t == self.terminal_mask_buffer.shape
         assert hold_ow == self.obs_win.shape
         assert hold_owstd == self.obs_win_std.shape        
     
