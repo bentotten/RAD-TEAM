@@ -391,15 +391,16 @@ def train():
                     val: npt.NDArray[np.float32] = agent_action_returns[id].state_value      
                     logp: npt.NDArray[np.float32] = agent_action_returns[id].action_logprob
                     src: npt.NDArray[np.float32] = source_coordinates
-                    terminal: npt.NDArray[np.bool] = results[id].is_terminal                                        
+                    terminal: npt.NDArray[np.bool] = results[id].done                                        
                 
                     agent.store(
-                        state = obs,
+                        obs = obs,
                         act = act,
                         rew = rew,
                         val = val,
                         logp = logp,
-                        src = src
+                        src = src,
+                        terminal= terminal
                     )
                 
                 # update PPO agent
