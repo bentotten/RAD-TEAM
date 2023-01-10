@@ -424,7 +424,10 @@ class PPO:
 
         # Prepare for interaction with environment
         start_time = time.time()
-        o, ep_ret, ep_len, done_count, a = env.reset()[0].state, 0, 0, 0, -1 # TODO make multi-agent
+             
+        # Obsertvation aka State: 11 dimensions, [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
+        o = env.reset()[0].state  # TODO make multi-agent
+        ep_ret, ep_len, done_count, a = 0, 0, 0, -1 # TODO make multi-agent
         source_coordinates = np.array(env.src_coords, dtype="float32")
         stat_buff = core.StatBuff()
         stat_buff.update(o[0])
