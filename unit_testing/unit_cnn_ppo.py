@@ -12,6 +12,8 @@ class UnitTestModule(unittest.TestCase):
     def test_always_passes(self):
         self.assertEqual(2+2, 4)
 
+# New tests for new buffer - be sure to check changing an element in one array doesnt change it in the others
+
 class Unit_RolloutBuffer(unittest.TestCase):
     def setUp(self):
         self.buffer = RolloutBuffer()
