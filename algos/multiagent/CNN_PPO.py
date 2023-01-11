@@ -467,9 +467,6 @@ class MapsBuffer:
         id: ID of agent to reference in state object 
         '''
         
-        # DELETE
-        print(observation)
-        
         # TODO Remove redundant calculations
         
         # Process state for current agent's locations map
