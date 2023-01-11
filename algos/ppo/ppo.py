@@ -433,7 +433,7 @@ class PPO:
         stat_buff.update(o[0])
         ep_ret_ls = []
         oob = 0
-        reduce_v_iters = True  # TODO what is this?    
+        reduce_v_iters = True  # Reduces training iteration when further along to speed up training, looks like just for PFGRU
         self.ac.model.eval() # TODO make multi-agent # Sets PFGRU model into "eval" mode
         
         # Main loop: collect experience in env and update/log each epoch
@@ -447,7 +447,7 @@ class PPO:
                 
                 # Standardize input using running statistics per episode
                 # TODO I do not think this is needed for our environment
-                obs_std = o
+                obs_std = o # NOTE this will be the prior state that is stored in the buffer # TODO make multi-agent
                 obs_std[0] = np.clip((o[0] - stat_buff.mu) / stat_buff.sig_obs, -8, 8)
                 
                 for i in range(len(o)):
@@ -469,7 +469,7 @@ class PPO:
                 ep_len += 1
                 ep_ret_ls.append(ep_ret)
 
-                self.buf.store(obs_std, a, r, v, logp, source_coordinates) # TODO make multi-agent?
+                self.buf.store(obs_std, a, r, v, logp, source_coordinates) # Feed prior observation to buffer # TODO make multi-agent?
                 logger.store(VVals=v)
 
                 # Update obs (critical!)
