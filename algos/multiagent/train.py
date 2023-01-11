@@ -462,6 +462,10 @@ def train():
                 # finish_path_and_compute_advantages
                 for id, agent in ppo_agents.items():
                     agent.maps.buffer.finish_path_and_compute_advantages(agent_state_values[id])
+                    
+                if terminal:
+                    # only save EpRet / EpLen if trajectory finished
+                    agent.maps.buffer.store_episode_length(steps_in_episode)
 
                 if (epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1) == epochs))):
                     # Render agent progress during training
