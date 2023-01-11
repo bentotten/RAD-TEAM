@@ -106,6 +106,7 @@ class PPOBuffer:
     source_tar: npt.NDArray[np.float32] = field(init=False)
     logprobs_buffer: npt.NDArray[np.float32] = field(init=False)
     terminal_mask_buffer: npt.NDArray[np.bool] = field(init=False)
+    episode_length_buffer: npt.NDArray[np.int32] = field(init=False)  
 
     # Additional buffers
     mapstacks: list = field(default_factory=list)  # TODO Change to numpy arrays like above
@@ -159,11 +160,14 @@ class PPOBuffer:
         self.terminal_mask_buffer: npt.NDArray[np.int32] = np.full(
             self.max_size, 1, dtype=np.int32
         )
+        self.episode_length_buffer: npt.NDArray[np.int32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
 
         # TODO Update these
         self.mapstacks: List = []  # TODO Change to numpy arrays like above
         self.readings: Dict[Any, list] = {} # For heatmap resampling
-        self.coordinate_buffer: CoordinateStorage = []        
+        self.coordinate_buffer: CoordinateStorage = []    
         
         ################################## set device ##################################
         print("============================================================================================")
@@ -185,7 +189,8 @@ class PPOBuffer:
         val: npt.NDArray[np.float32],
         logp: npt.NDArray[np.float32],
         src: npt.NDArray[np.float32],
-        terminal: npt.NDArray[np.bool]        
+        terminal: npt.NDArray[np.bool],
+        episode_length: npt.NDArray[np.int32]              
     ) -> None:
         """
         Append one timestep of agent-environment interaction to the buffer.
@@ -198,6 +203,7 @@ class PPOBuffer:
         self.source_tar[self.ptr] = src
         self.logprobs_buffer[self.ptr] = logp
         self.terminal_mask_buffer = 0 if terminal else 1  # If terminal, multiple remaining values by 0 to mask out of calculation, as they are for future episodes.
+        self.episode_length_buffer[self.ptr] = episode_length
         self.ptr += 1
 
     def finish_path_and_compute_advantages(self, last_val: int = 0) -> None:
@@ -231,7 +237,7 @@ class PPOBuffer:
 
         self.path_start_idx = self.ptr
 
-    def get_end_epoch(self, logger: EpochLogger) -> dict[str, Union[torch.Tensor, list]]:
+    def get_end_epoch(self, logger: EpochLogger = None) -> dict[str, Union[torch.Tensor, list]]:
         """
         Call this at the end of an epoch to get all of the data from
         the buffer, with advantages appropriately normalized (shifted to have
@@ -338,6 +344,7 @@ class PPOBuffer:
         self.source_tar[:] = 0.0
         self.logprobs_buffer[:] = 0.0
         self.terminal_mask_buffer[:] = 0.0
+        self.episode_length_buffer[:] = 0
         
         # TODO move to a unit test
         # Add asserts for del self.mapstacks[:] and self.readings.clear()
@@ -351,35 +358,36 @@ class PPOBuffer:
         assert hold_l == self.logprobs_buffer.shape
         assert hold_t == self.terminal_mask_buffer.shape
         assert hold_ow == self.obs_win.shape
-        assert hold_owstd == self.obs_win_std.shape        
+        assert hold_owstd == self.obs_win_std.shape   
+        # TODO add episode length buffer check     
     
 
 # TODO Obsolete - remove
-@dataclass()
-class RolloutBuffer():
-    actions_buffer: List = field(default_factory=list)
-    states_buffer: List = field(default_factory=list)
-    logprobs_buffer: List = field(default_factory=list)
-    state_value_buffer: List = field(default_factory=list)
-    rewards_buffer: List = field(default_factory=list)
+# @dataclass()
+# class RolloutBuffer():
+#     actions_buffer: List = field(default_factory=list)
+#     states_buffer: List = field(default_factory=list)
+#     logprobs_buffer: List = field(default_factory=list)
+#     state_value_buffer: List = field(default_factory=list)
+#     rewards_buffer: List = field(default_factory=list)
     
-    is_terminals: List = field(default_factory=list)
-    mapstacks: List = field(default_factory=list) #TODO change to tensor? # For heatmap render
+#     is_terminals: List = field(default_factory=list)
+#     mapstacks: List = field(default_factory=list) #TODO change to tensor? # For heatmap render
 
-    readings: Dict[Any, list] = field(default_factory=dict) # For heatmap resampling
+#     readings: Dict[Any, list] = field(default_factory=dict) # For heatmap resampling
     
-    def __post_init__(self):
-        pass
+#     def __post_init__(self):
+#         pass
     
-    def clear(self):
-        del self.actions_buffer[:]
-        del self.states_buffer[:]
-        del self.logprobs_buffer[:]
-        del self.state_values[:]
-        del self.state_value_buffer[:]
-        del self.is_terminals[:]
-        del self.mapstacks[:]
-        self.readings.clear()
+#     def clear(self):
+#         del self.actions_buffer[:]
+#         del self.states_buffer[:]
+#         del self.logprobs_buffer[:]
+#         del self.state_values[:]
+#         del self.state_value_buffer[:]
+#         del self.is_terminals[:]
+#         del self.mapstacks[:]
+#         self.readings.clear()
 
 
 @dataclass()
@@ -682,8 +690,18 @@ class Actor(nn.Module):
         print(x)
         pass
 
-    def forward(self):
-        raise NotImplementedError
+    def gradient_step(
+        #self, obs: npt.NDArray[np.float32], act, hidden: tuple[Tensor, Tensor]
+        self, obs: torch.Tensor, act: torch.Tensor, hidden: tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]
+    #) -> tuple[Any, Any, Any, Tensor]:
+    ) -> tuple[Any, torch.Tensor, torch.Tensor, torch.Tensor]:
+        ''' Update A2C '''
+        obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(1) # TODO this is already a tensor, is this necessary?
+        loc_pred = torch.empty((obs_t.shape[0], 2))
+        hidden_part = hidden[0]  # TODO his contains two tensors, is that accounted for?
+        obs_t = torch.cat((obs_t, loc_pred.unsqueeze(1)), dim=2)
+        pi, logp_a, hidden2, val = self.actor(obs_t, act=act, hidden=hidden[1])  # Actor
+        return pi, val, logp_a, loc_pred
     
     def act(self, state_map_stack):
         # Select Action from Actor
@@ -819,34 +837,34 @@ class PPO:
             val: npt.NDArray[np.float32],
             logp: npt.NDArray[np.float32],
             src: npt.NDArray[np.float32],
-            terminal: npt.NDArray[np.bool]
+            terminal: npt.NDArray[np.bool],
+            episode_length: int
         ) -> None:
         ''' Wrapper for inner buffer storage '''
-        self.maps.buffer.store(obs=obs, act=act, rew=rew, val=val, logp=logp, src=src, terminal=terminal)
+        self.maps.buffer.store(obs=obs, act=act, rew=rew, val=val, logp=logp, src=src, terminal=terminal, episode_length=episode_length)
 
-    def update(self):
+    # TODO obsolete
+    def update_old(self):
         # TODO I believe this is wrong; see vanilla_PPO.py TODO comment
         # Monte Carlo estimate of returns
-        # rewards = []
-        # discounted_reward = 0
-        # for reward, is_terminal in zip(reversed(self.maps.buffer.rewards), reversed(self.maps.buffer.is_terminals)):
-        #     if is_terminal:
-        #         discounted_reward = 0
-        #     discounted_reward = reward + (self.gamma * discounted_reward)
-        #     rewards.insert(0, discounted_reward)
+        rewards = []
+        discounted_reward = 0
+        for reward, is_terminal in zip(reversed(self.maps.buffer.rewards), reversed(self.maps.buffer.is_terminals)):
+            if is_terminal:
+                discounted_reward = 0
+            discounted_reward = reward + (self.gamma * discounted_reward)
+            rewards.insert(0, discounted_reward)
             
         # Normalizing the rewards
-        # rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
-        # rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
+        rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
+        rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
         
-        returns, normalized_advantages = self.calculate_advantages()
-
         # TODO for memory efficiency, could remap state buffers here instead of storing them
         # convert list to tensor
-        old_maps = torch.squeeze(torch.stack(self.maps.buffer.mapstacks, dim=0)).detach().to(device)
+        old_maps = torch.squeeze(torch.stack(self.maps.buffer.mapstacks, dim=0)).detach().to(self.device)
         print(old_maps.shape)
-        old_actions = torch.squeeze(torch.stack(self.maps.buffer.actions, dim=0)).detach().to(device)
-        old_logprobs = torch.squeeze(torch.stack(self.maps.buffer.logprobs, dim=0)).detach().to(device)
+        old_actions = torch.squeeze(torch.stack(self.maps.buffer.actions, dim=0)).detach().to(self.device)
+        old_logprobs = torch.squeeze(torch.stack(self.maps.buffer.logprobs, dim=0)).detach().to(self.device)
         # TODO throws errorraw_action_list
         #returns_tensor = torch.squeeze(returns, dim=-1).detach().to(device)
         #normalized_advantages_tensor = torch.squeeze(normalized_advantages, dim=0).detach().to(device)
@@ -881,6 +899,127 @@ class PPO:
 
         # clear buffer
         self.maps.clear() # TODO clear buffer or maps buffer?
+        
+    def update(self, search_area):
+    #def update(self, env: RadSearch, args: BpArgs) -> None:
+        """Update wrapper for the A2C module"""
+        data: dict[str, torch.Tensor] = self.maps.buffer.get_end_epoch()
+
+        min_iterations = len(data["ep_form"])
+        kk = 0
+        term = False
+        train_policy_iterations = self.K_epochs
+
+        # Train Actor-Critic policy with multiple steps of gradient descent (mini batch)
+        while not term and kk < train_policy_iterations:
+            # Early stop training if KL-div above certain threshold
+            pi_l, pi_info, term, loc_loss = self.update_a2c(data, search_area, min_iterations, kk)
+            kk += 1
+
+        # Reduce learning rate
+        self.pi_scheduler.step()   
+
+    def update_a2c(
+        self, data: dict[str, torch.Tensor], search_area, minibatch: int, iter: int
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor], bool, torch.Tensor]:
+        observation_idx = 11
+        action_idx = 14
+        logp_old_idx = 13
+        advantage_idx = 11
+        return_idx = 12
+        source_loc_idx = 15
+
+        ep_form = data["ep_form"]
+        pi_info = dict(kl=[], ent=[], cf=[], val=np.array([]), val_loss=[])
+        ep_select = np.random.choice(
+            np.arange(0, len(ep_form)), size=int(minibatch), replace=False
+        )
+        ep_form = [ep_form[idx] for idx in ep_select]
+        loss_sto: torch.Tensor = torch.tensor([], dtype=torch.float32)
+        loss_arr: torch.Tensor = torch.autograd.Variable(
+            torch.tensor([], dtype=torch.float32)
+        )
+
+        for ep in ep_form:
+            # For each set of episodes per process from an epoch, compute loss
+            trajectories = ep[0]
+            #hidden = self.ac.reset_hidden() # TODO make multi-agent TODO do we need to reset the hidden layers with CNNs?
+            obs, act, logp_old, adv, ret, src_tar = (
+                trajectories[:, :observation_idx],
+                trajectories[:, action_idx],
+                trajectories[:, logp_old_idx],
+                trajectories[:, advantage_idx],
+                trajectories[:, return_idx, None],
+                trajectories[:, source_loc_idx:].clone(),
+            )
+            # Calculate new log prob.
+            pi, val, logp, loc = self.ac.gradient_step(obs, act, hidden=hidden) # Both PFGRU and A2C? # TODO make multi-agent
+            logp_diff: torch.Tensor = logp_old - logp
+            ratio = torch.exp(logp - logp_old)
+
+            clip_adv = (
+                torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * adv
+            )
+            clipped = ratio.gt(1 + self.clip_ratio) | ratio.lt(1 - self.clip_ratio)
+
+            # Useful extra info
+            clipfrac = (
+                torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
+            )
+            approx_kl = logp_diff.detach().mean().item()
+            ent = pi.entropy().detach().mean().item()
+            val_loss = self.loss(val, ret)
+
+            # TODO: More descriptive name
+            new_loss: torch.Tensor = -(
+                torch.min(ratio * adv, clip_adv).mean()
+                - 0.01 * val_loss
+                + self.alpha * ent
+            )
+            loss_arr = torch.hstack((loss_arr, new_loss.unsqueeze(0)))
+
+            new_loss_sto: torch.Tensor = torch.tensor(
+                [approx_kl, ent, clipfrac, val_loss.detach()]
+            )
+            loss_sto = torch.hstack((loss_sto, new_loss_sto.unsqueeze(0)))
+
+        mean_loss = loss_arr.mean()
+        means = loss_sto.mean(axis=0)
+        loss_pi, approx_kl, ent, clipfrac, loss_val = (
+            mean_loss,
+            means[0].detach(),
+            means[1].detach(),
+            means[2].detach(),
+            means[3].detach(),
+        )
+        pi_info["kl"].append(approx_kl)
+        pi_info["ent"].append(ent)
+        pi_info["cf"].append(clipfrac)
+        pi_info["val_loss"].append(loss_val)
+
+        kl = pi_info["kl"][-1].mean()
+        if kl.item() < 1.5 * self.target_kl:
+            self.pi_optimizer.zero_grad()
+            loss_pi.backward()
+            self.pi_optimizer.step()
+            term = False
+        else:
+            term = True
+
+        pi_info["kl"], pi_info["ent"], pi_info["cf"], pi_info["val_loss"] = (
+            pi_info["kl"][0].numpy(),
+            pi_info["ent"][0].numpy(),
+            pi_info["cf"][0].numpy(),
+            pi_info["val_loss"][0].numpy(),
+        )
+        loss_sum_new = loss_pi
+        return (
+            loss_sum_new,
+            pi_info,
+            term,
+            (search_area * loc - (src_tar)).square().mean().sqrt(),
+        )
+
     
     def save(self, checkpoint_path):
         torch.save(self.policy_old.state_dict(), checkpoint_path) # Actor-critic

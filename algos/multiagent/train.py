@@ -197,8 +197,8 @@ def train():
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     if DEBUG:
         epochs = 1   # Actual epoch will be a maximum of this number + max_ep_len
-        max_ep_len = 120                      # max timesteps in one episode # TODO delete me after fixing
-        steps_per_epoch = 120
+        max_ep_len = 20                      # max timesteps in one episode # TODO delete me after fixing
+        steps_per_epoch = 20
         K_epochs = 4
                      
         obstruction_count = 0 #TODO error with 7 obstacles
@@ -208,6 +208,8 @@ def train():
         random_seed = _int_list_from_bigint(hash_seed(seed))[0]
         
         log_freq = 2000
+        
+        render = False
         
         #bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
         
@@ -230,6 +232,9 @@ def train():
 
     # action space dimension
     action_dim = env.action_space.n
+    
+    # Search area
+    search_area = env.search_area[2][1]
     
     # Scaled grid dimensions
     scaled_grid_bounds = (1, 1)  # Scaled to match return from env.step(). Can be reinflated with resolution_accuracy
@@ -414,7 +419,8 @@ def train():
                         val = val,
                         logp = logp,
                         src = src,
-                        terminal= terminal
+                        terminal = terminal,
+                        episode_length = steps_in_episode
                     )
 
             # TODO implement this how RADPPO has it
@@ -471,7 +477,7 @@ def train():
                             path=directory,
                             epoch_count=epoch,
                             )
-                if DEBUG:
+                if DEBUG and render:
                     for agent in ppo_agents.values():
                         agent.render(
                             add_value_text=True, 
@@ -511,7 +517,7 @@ def train():
 
         # update PPO agent
         if CNN:
-            agent.update()
+            agent.update(search_area)
             epoch_counter += 1
         
         # Vanilla FFN
