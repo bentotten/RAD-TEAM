@@ -30,6 +30,8 @@ from matplotlib.streamplot import Grid
 
 from epoch_logger import EpochLogger
 
+from gym_rad_search.envs import StepResult
+
 # Maps
 Point: TypeAlias = NewType("Point", tuple[float, float])  # Array indicies to access a GridSquare
 Map: TypeAlias = NewType("Map", npt.NDArray[np.float32]) # 2D array that holds gridsquare values
@@ -74,9 +76,9 @@ def discount_cumsum(
 @dataclass()
 class ActionChoice():
     id: int 
-    action: int 
-    action_logprob: npt.NDArray[np.float32] 
-    state_value: float 
+    action: torch.int # size (1)
+    action_logprob: torch.float # size (1)
+    state_value: torch.float # size(1)
 
 ################################## PPO Buffer ##################################
 @dataclass
@@ -458,11 +460,15 @@ class MapsBuffer:
         self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.buffer.clear()
         
-    def state_to_map(self, observation, id):
+    def state_to_map(self, observation: dict[int, StepResult], id: int
+                     ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:  # The return map tuple is 2d np arrays
         '''
         state: observations from environment for all agents
         id: ID of agent to reference in state object 
         '''
+        
+        # DELETE
+        print(observation)
         
         # TODO Remove redundant calculations
         
@@ -688,21 +694,9 @@ class Actor(nn.Module):
         
         print(x)
         pass
+   
+    def act(self, state_map_stack: torch.float) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:  # Tesnor Shape [batch_size, map_size, scaled_grid_x_bound, scaled_grid_y_bound] ([1, 5, 22, 22])
 
-    def gradient_step(
-        #self, obs: npt.NDArray[np.float32], act, hidden: tuple[Tensor, Tensor]
-        self, obs: torch.Tensor, act: torch.Tensor, hidden: tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]
-    #) -> tuple[Any, Any, Any, Tensor]:
-    ) -> tuple[Any, torch.Tensor, torch.Tensor, torch.Tensor]:
-        ''' Update A2C '''
-        obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(1) # TODO this is already a tensor, is this necessary?
-        loc_pred = torch.empty((obs_t.shape[0], 2))
-        hidden_part = hidden[0]  # TODO his contains two tensors, is that accounted for?
-        obs_t = torch.cat((obs_t, loc_pred.unsqueeze(1)), dim=2)
-        pi, logp_a, hidden2, val = self.actor(obs_t, act=act, hidden=hidden[1])  # Actor
-        return pi, val, logp_a, loc_pred
-    
-    def act(self, state_map_stack):
         # Select Action from Actor
         action_probs = self.actor(state_map_stack)
         dist = Categorical(action_probs)
@@ -730,7 +724,20 @@ class Actor(nn.Module):
             state_values = self.local_critic(state_map_stack)
         
         return action_logprobs, state_values, dist_entropy
-
+    
+    def gradient_step(
+        #self, obs: npt.NDArray[np.float32], act, hidden: tuple[Tensor, Tensor]
+        self, obs: torch.Tensor, act: torch.Tensor, hidden: tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]
+    #) -> tuple[Any, Any, Any, Tensor]:
+    ) -> tuple[Any, torch.Tensor, torch.Tensor, torch.Tensor]:
+        ''' Update A2C '''
+        obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(1) # TODO this is already a tensor, is this necessary?
+        loc_pred = torch.empty((obs_t.shape[0], 2))
+        hidden_part = hidden[0]  # TODO his contains two tensors, is that accounted for?
+        obs_t = torch.cat((obs_t, loc_pred.unsqueeze(1)), dim=2)
+        pi, logp_a, hidden2, val = self.actor(obs_t, act=act, hidden=hidden[1])  # Actor
+        return pi, val, logp_a, loc_pred
+     
 
 class PPO:
     def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, 
@@ -788,7 +795,7 @@ class PPO:
         # Rendering
         self.render_counter = 0        
 
-    def select_action(self, state, id):    
+    def select_action(self, state: dict[int, StepResult], id: int) -> ActionChoice: 
         
         # Add intensity readings to a list if reading has not been seen before at that location. 
         for observation in state.values():
@@ -809,7 +816,6 @@ class PPO:
                 obstacles_map
             ) = self.maps.state_to_map(state, id)
             
-            # TODO add obstacles_map
             map_stack = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
             
             # Add to mapstack buffer to eventually be converted into tensor with minibatches
@@ -920,6 +926,7 @@ class PPO:
     def update_a2c(
         self, data: dict[str, torch.Tensor], search_area, minibatch: int, iter: int
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor], bool, torch.Tensor]:
+        # TODO what are these?
         observation_idx = 11
         action_idx = 14
         logp_old_idx = 13

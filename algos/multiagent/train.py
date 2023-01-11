@@ -202,7 +202,7 @@ def train():
         K_epochs = 4
                      
         obstruction_count = 0 #TODO error with 7 obstacles
-        number_of_agents = 3
+        number_of_agents = 2
         
         seed = 0
         random_seed = _int_list_from_bigint(hash_seed(seed))[0]
