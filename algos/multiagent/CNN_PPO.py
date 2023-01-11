@@ -443,7 +443,6 @@ class MapsBuffer:
         
         self.clear()
 
-    
     def clear(self):
         self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow - potentially change to torch?
         self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
@@ -577,6 +576,7 @@ class MapsBuffer:
         return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map
 
 
+#TODO make a reset function, similar to self.ac.reset_hidden() in RADPPO
 class Actor(nn.Module):
     def __init__(self, map_dim, state_dim, batches: int=1, map_count: int=5, action_dim: int=5, global_critic: bool=False):
         super(Actor, self).__init__()
