@@ -129,8 +129,8 @@ class ActorCritic(unittest.TestCase):
         state[0].error={'out_of_bounds': False, 'out_of_bounds_count': 0, 'blocked': False, 'scale': 0.00045454545454545455}
         
         self.state = state
-        self.map_buffer = MapsBuffer(id=state[0].id, observation_dimension = state_dim, max_size = max_size)
-        self.map_stack = map_buffer.state_to_map(state)
+        self.map_buffer = MapsBuffer(observation_dimension = state_dim, max_size = max_size)
+        self.map_stack = self.map_buffer.state_to_map(id=state[0].id, observation=state)
         
         self.buffer = Actor(map_dim=map_dim, state_dim=state_dim)
         
