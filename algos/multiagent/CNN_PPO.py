@@ -106,12 +106,12 @@ class PPOBuffer:
     source_tar: npt.NDArray[np.float32] = field(init=False)
     logprobs_buffer: npt.NDArray[np.float32] = field(init=False)
     terminal_mask_buffer: npt.NDArray[np.bool] = field(init=False)
-    episode_length_buffer: npt.NDArray[np.int32] = field(init=False)  
 
     # Additional buffers
     mapstacks: list = field(default_factory=list)  # TODO Change to numpy arrays like above
     readings: Dict[Any, list] = field(default_factory=dict)  # TODO Change to numpy arrays like above
     coordinate_buffer: list = field(default_factory=list)  # TODO Change to numpy arrays like above
+    episode_length_buffer: list = field(default_factory=list)      
     
     # Used for Location Prediction; 
     # TODO not implemented yet
@@ -160,14 +160,12 @@ class PPOBuffer:
         self.terminal_mask_buffer: npt.NDArray[np.int32] = np.full(
             self.max_size, 1, dtype=np.int32
         )
-        self.episode_length_buffer: npt.NDArray[np.int32] = np.zeros(
-            self.max_size, dtype=np.float32
-        )
 
         # TODO Update these
         self.mapstacks: List = []  # TODO Change to numpy arrays like above
         self.readings: Dict[Any, list] = {} # For heatmap resampling
         self.coordinate_buffer: CoordinateStorage = []    
+        self.episode_length_buffer = []
         
         ################################## set device ##################################
         print("============================================================================================")
@@ -190,7 +188,6 @@ class PPOBuffer:
         logp: npt.NDArray[np.float32],
         src: npt.NDArray[np.float32],
         terminal: npt.NDArray[np.bool],
-        episode_length: npt.NDArray[np.int32]              
     ) -> None:
         """
         Append one timestep of agent-environment interaction to the buffer.
@@ -203,8 +200,11 @@ class PPOBuffer:
         self.source_tar[self.ptr] = src
         self.logprobs_buffer[self.ptr] = logp
         self.terminal_mask_buffer = 0 if terminal else 1  # If terminal, multiple remaining values by 0 to mask out of calculation, as they are for future episodes.
-        self.episode_length_buffer[self.ptr] = episode_length
         self.ptr += 1
+
+    def store_episode_length( self, episode_length: npt.NDArray[np.int32]) -> None:
+        ''' Only stores if episode has ended '''
+        self.maps.buffer.episode_length_buffer = episode_length
 
     def finish_path_and_compute_advantages(self, last_val: int = 0) -> None:
         """
@@ -261,7 +261,7 @@ class PPOBuffer:
         # obs_mean, obs_std = self.states_buffer.mean(), self.states_buffer.std()
         # self.states_buffer_std_ind[:,1:] = (self.states_buffer[:,1:] - obs_mean[1:]) / (obs_std[1:])
 
-        epLens: list[int] = logger.epoch_dict["EpLen"]
+        epLens: list[int] = self.episode_length_buffer
         numEps = len(epLens)
         epLenTotal = sum(epLens)
         
@@ -318,7 +318,8 @@ class PPOBuffer:
         # Reset readings, mapstacks, and buffer pointers
         self.ptr, self.path_start_idx = 0, 0
         del self.mapstacks[:]
-        del self.coordinate_buffer[:]        
+        del self.coordinate_buffer[:]     
+        del self.episode_length_buffer[:]
         self.readings.clear()
         
         # Reset numpy arrays
@@ -344,7 +345,6 @@ class PPOBuffer:
         self.source_tar[:] = 0.0
         self.logprobs_buffer[:] = 0.0
         self.terminal_mask_buffer[:] = 0.0
-        self.episode_length_buffer[:] = 0
         
         # TODO move to a unit test
         # Add asserts for del self.mapstacks[:] and self.readings.clear()
@@ -838,10 +838,9 @@ class PPO:
             logp: npt.NDArray[np.float32],
             src: npt.NDArray[np.float32],
             terminal: npt.NDArray[np.bool],
-            episode_length: int
         ) -> None:
         ''' Wrapper for inner buffer storage '''
-        self.maps.buffer.store(obs=obs, act=act, rew=rew, val=val, logp=logp, src=src, terminal=terminal, episode_length=episode_length)
+        self.maps.buffer.store(obs=obs, act=act, rew=rew, val=val, logp=logp, src=src, terminal=terminal)
 
     # TODO obsolete
     def update_old(self):
