@@ -25,6 +25,8 @@ from CNN_PPO import PPO as PPO
 from dataclasses import dataclass, field
 from typing_extensions import TypeAlias
 
+import copy
+
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 DEBUG = True
@@ -133,6 +135,10 @@ def train():
     #####################################################
 
     ###################### logging ######################
+    
+    # For render
+    render = True
+    save_gif_freq = 1
 
     # log files for multiple runs are NOT overwritten
     log_dir = "PPO_logs"
@@ -316,20 +322,18 @@ def train():
     results = env.reset() # All agents begin in same location, only need one state
     
     source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
-    episode_length = 0
-    terminal_count = 0,
     episode_return = {id: 0 for id in ppo_agents}
-
     episode_return_buffer = []
     out_of_bounds_count = 0
-    reduce_v_iters = True   # TODO what is this?     
+    done_count = 0
+    steps_in_episode = 0
     
     # TODO turn into array for each agent ID (maybe a dict or tuple)
     current_ep_reward_sample = 0    
 
     # training loop
     #while total_time_step < training_timestep_bound:
-    #while epoch_counter < epochs:
+    #while steps_in_epoch < epochs:
     for epoch in range(epochs):
         # Reset hidden state and put actor into evaluation mode
         #hidden = test_agent.policy._get_init_states()  # TODO look up how to reset hidden layers for CNN     
@@ -337,11 +341,14 @@ def train():
         test_agent.policy.eval()
 
         # Sanity check
-        prior_state = []
+        prior_coordinates = []
         for result in results.values():
-            prior_state.append([result.state[1], result.state[2]])  
+            prior_coordinates.append([result.state[1], result.state[2]])
 
-        for timestep in range(max_ep_len):
+        for steps_in_epoch in range(steps_per_epoch):
+            # Mark prior state to match up with proper spot in the buffers
+            prior_state = copy.deepcopy(results)  # TODO make this less shitty
+            
             # Get actions
             if CNN:
                 agent_action_returns = {id: agent.select_action(results, id) for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?                
@@ -377,9 +384,9 @@ def train():
             for id, result in results.items():
                 # Because of collision avoidance, this assert will not hold true for multiple agents
                 if number_of_agents == 1 and action_list[id] != -1 and not result.error["out_of_bounds"] and not result.error['blocked']:
-                    assert (result.state[1] != prior_state[id][0] or result.state[2] != prior_state[id][1]), "Agent coodinates did not change when should have"
-                prior_state[id][0] = result.state[1]
-                prior_state[id][1] = result.state[2]
+                    assert (result.state[1] != prior_coordinates[id][0] or result.state[2] != prior_coordinates[id][1]), "Agent coodinates did not change when should have"
+                prior_coordinates[id][0] = result.state[1]
+                prior_coordinates[id][1] = result.state[2]
 
             # Save returns for tracking purposes
             for id, result in results.items():
@@ -390,12 +397,10 @@ def train():
             # Incremement Counters
             total_time_step += 1
 
-            # saving reward and is_terminals
-            # TODO move out of episode
-            # Vanilla
+            # saving prior state, and current reward/is_terminals etc
             if CNN:
                 for id, agent in ppo_agents.items():
-                    obs: npt.NDArray[Any] = results[id].state
+                    obs: npt.NDArray[Any] = prior_state[id].state
                     rew: npt.NDArray[np.float32] = results[id].reward
                     act: npt.NDArray[np.int32] = agent_action_returns[id].action           
                     val: npt.NDArray[np.float32] = agent_action_returns[id].state_value      
@@ -412,11 +417,93 @@ def train():
                         src = src,
                         terminal= terminal
                     )
+
+            # TODO implement this how RADPPO has it
+            # Update obs (critical!)
+            #o = next_o
+            
+            # Check if terminal
+            terminal_counter = 0
+            for id, value in results.items():
+                if results[id].done == True:
+                    terminal_counter += 1
+            
+            # Stopping conditions for episode
+            timeout = steps_in_episode == max_ep_len
+            terminal = timeout or terminal_counter > 0
+            epoch_ended = steps_in_epoch == steps_per_epoch - 1
+            
+            if terminal or epoch_ended:
+                if terminal and not timeout:
+                    done_count += 1
+                for id, value in results.items():
+                    msg = results[id].error
+                    if 'out_of_bounds' in msg and msg['out_of_bounds'] == True:
+                        out_of_bounds_count += 1
+                if epoch_ended and not (terminal):
+                    print(f"Warning: trajectory cut off by epoch at {steps_in_episode} steps at epoch count {steps_in_epoch}.", flush=True)
+
+                if timeout or epoch_ended:
+                    # if trajectory didn't reach terminal state, bootstrap value target
+                    agent_state_values = {id: agent.select_action(results, id).state_value for id, agent in ppo_agents.items()}             
+                                        
+                    if epoch_ended:
+                        # Set flag to sample new environment parameters
+                        env.epoch_end = True # TODO make multi-agent?
+                else:
+                    agent_state_values = {id: 0 for id in ppo_agents}        
                 
-                # update PPO agent
-                if total_time_step % update_timestep == 0:
-                    agent.update()
-                    epoch_counter += 1
+                # finish_path_and_compute_advantages
+                for id, agent in ppo_agents.items():
+                    agent.maps.buffer.finish_path_and_compute_advantages(agent_state_values[id])
+                    
+                if terminal:
+                    print("SOURCE FOUND \o/")
+
+                if (epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1) == epochs))):
+                    # Render agent progress during training
+                    if epoch != 0:
+                        for agent in ppo_agents.values():
+                            agent.render(
+                                add_value_text=True, 
+                                savepath=directory,
+                                epoch_count=epoch,
+                            )                   
+                        env.render(
+                            save_gif=True,
+                            path=directory,
+                            epoch_count=epoch,
+                            ) 
+
+                episode_return_buffer = []
+                # Reset the environment
+                if not env.epoch_end: # TODO make multi-agent
+                    # Reset detector position and episode tracking
+                    # hidden = self.ac.reset_hidden() # TODO make multi-agent; do we need to do this for CNN?
+                    results = env.reset()
+                    source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
+                    episode_return = {id: 0 for id in ppo_agents}
+                else:
+                    # Sample new environment parameters, log epoch results
+                    done_count = 0
+                    out_of_bounds_count = 0
+                    results = env.reset()
+                    source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
+                    episode_return = {id: 0 for id in ppo_agents}
+
+            # TODO implement this
+            # # Reduce localization module training iterations after 100 epochs to speed up training
+            # if reduce_v_iters and epoch_counter > 99:
+            #     train_v_iters = 5
+            #     reduce_v_iters = False
+
+            # Perform PPO update!
+            #self.update(env, bp_args) # TODO make multi-agent
+   
+            # update PPO agent
+            if total_time_step % update_timestep == 0:
+                agent.update()
+                epoch_counter += 1
             
             # Vanilla FFN
             else:
@@ -427,12 +514,31 @@ def train():
                     # update PPO agent
                     if total_time_step % update_timestep == 0:
                         agent.update()
-                        epoch_counter += 1
+                        epoch_counter += 1       
                                     
             # printing average reward
             if total_time_step % print_freq == 0:
-                print("Epoch : {} \t\t  Total Timestep: {} \t\t Cumulative Returns : {}".format(
-                    epoch, total_time_step, episode_return_buffer))
+                print("Epoch : {} \t\t  Total Timestep: {} \t\t Cumulative Returns: {} \t\t Out of bounds count: {}".format(
+                    epoch, total_time_step, episode_return_buffer, out_of_bounds_count))
+                
+            # Logging goes here
+            # self.logger.log_tabular("Epoch", epoch)
+            # self.logger.log_tabular("EpRet", with_min_and_max=True)
+            # self.logger.log_tabular("EpLen", average_only=True)
+            # self.logger.log_tabular("VVals", with_min_and_max=True)
+            # self.logger.log_tabular("TotalEnvInteracts", (epoch + 1) * steps_per_epoch)
+            # self.logger.log_tabular("LossPi", average_only=True)
+            # self.logger.log_tabular("LossV", average_only=True)
+            # self.logger.log_tabular("LossModel", average_only=True)
+            # self.logger.log_tabular("LocLoss", average_only=True)
+            # self.logger.log_tabular("Entropy", average_only=True)
+            # self.logger.log_tabular("KL", average_only=True)
+            # self.logger.log_tabular("ClipFrac", average_only=True)
+            # self.logger.log_tabular("DoneCount", sum_only=True)
+            # self.logger.log_tabular("OutOfBound", average_only=True)
+            # self.logger.log_tabular("StopIter", average_only=True)
+            # self.logger.log_tabular("Time", time.time() - start_time)
+            # self.logger.dump_tabular()                     
 
             # save model weights
             # TODO Save each agent model instead of one?
@@ -440,8 +546,6 @@ def train():
             #     print(
             #         "--------------------------------------------------------------------------------------------")
             #     print("saving model at : " + checkpoint_path)
-            #     # TODO make multi-agent
-            #     print("TODO SAVE EACH AGENT HERE")
             #     # Render last episode
             #     print("TEST RENDER - Delete Me Later")
             #     episode_rewards = {id: render_buffer_rewards[-max_ep_len:] for id, agent in ppo_agents.items()}
@@ -467,29 +571,12 @@ def train():
             # break; if the episode is over
             if done:
                 break
-        
-        if DEBUG:
-            for agent in ppo_agents.values():
-                agent.render(
-                    add_value_text=True, 
-                    savepath=directory,
-                    epoch_count=epoch_counter,
-                )                   
-            env.render(
-                save_gif=True,
-                path=directory,
-                epoch_count=epoch_counter,
-                #episode_rewards=episode_rewards
-            ) 
-            pass  
 
     # Render last episode
-    # episode_rewards = {id: render_buffer_rewards[-max_ep_len:] for id, agent in ppo_agents.items()}
     env.render(
         save_gif=True,
         path=directory,
         epoch_count=epoch_counter,
-        #episode_rewards=episode_rewards
     )
     for agent in ppo_agents.values():
         agent.render(add_value_text=True, savepath=directory)   
