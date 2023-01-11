@@ -433,15 +433,16 @@ class PPO:
         stat_buff.update(o[0])
         ep_ret_ls = []
         oob = 0
-        reduce_v_iters = True
-        self.ac.model.eval() # TODO make multi-agent
-        # Main loop: collect experience in env and update/log each epoch
+        reduce_v_iters = True  # TODO what is this?    
+        self.ac.model.eval() # TODO make multi-agent # Sets PFGRU model into "eval" mode
         
+        # Main loop: collect experience in env and update/log each epoch
         print(f"Starting main training loop!", flush=True)
         for epoch in range(epochs):
             # Reset hidden state
             hidden = self.ac.reset_hidden() # TODO make multi-agent
-            self.ac.pi.logits_net.v_net.eval() # Pylance note - this seems to call just fine # TODO make multi-agent
+            self.ac.pi.logits_net.v_net.eval() # Sets Actor into "eval" mode # TODO make multi-agent
+            
             for t in range(steps_per_epoch):
                 
                 # Standardize input using running statistics per episode
@@ -450,15 +451,20 @@ class PPO:
                 obs_std[0] = np.clip((o[0] - stat_buff.mu) / stat_buff.sig_obs, -8, 8)
                 
                 for i in range(len(o)):
-                    assert obs_std[i] == o[i]
+                    assert obs_std[i] == o[i], "If this triggers, the above standardization was needed and should be left."
                     
                 # compute action and logp (Actor), compute value (Critic)
-                a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent
+                a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent # TODO what is the hidden variable doing?
+                
+                # Take step in environment
                 result = env.step(action=int(a)) # TODO make multi-agent # TODO figure out how to cast a to Action()
+                
+                # Parse step result, since not currently multiagent
                 next_o = result[0].state
                 r = np.array(result[0].reward, dtype="float32")
                 d = result[0].done
                 msg = result[0].error
+                
                 ep_ret += r
                 ep_len += 1
                 ep_ret_ls.append(ep_ret)

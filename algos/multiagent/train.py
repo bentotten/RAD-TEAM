@@ -311,34 +311,38 @@ def train():
 
     total_time_step = 0
     i_episode = 0
+    
+    # state = env.reset()['state'] # All agents begin in same location
+    results = env.reset() # All agents begin in same location, only need one state
+    
+    source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
+    episode_length = 0
+    terminal_count = 0,
+    episode_return = {id: 0 for id in ppo_agents}
 
-    epoch_counter = 0
+    episode_return_buffer = []
+    out_of_bounds_count = 0
+    reduce_v_iters = True   # TODO what is this?     
+    
+    # TODO turn into array for each agent ID (maybe a dict or tuple)
+    current_ep_reward_sample = 0    
 
     # training loop
     #while total_time_step < training_timestep_bound:
-    while epoch_counter < epochs:
-    
-        # TODO why is state 11 long?
-        # state = env.reset()['state'] # All agents begin in same location
-        results = env.reset() # All agents begin in same location, only need one state
-        source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
-        
-        #print("Source location: ", env.src_coords)
-        #print("Agent location: ", env.agents[0].det_coords)
-        
-        # TODO turn into array for each agent ID (maybe a dict or tuple)
-        current_ep_reward_sample = 0
-        epoch_counter += 1
+    #while epoch_counter < epochs:
+    for epoch in range(epochs):
+        # Reset hidden state and put actor into evaluation mode
+        #hidden = test_agent.policy._get_init_states()  # TODO look up how to reset hidden layers for CNN     
+        test_agent = ppo_agents[0]
+        test_agent.policy.eval()
 
         # Sanity check
         prior_state = []
         for result in results.values():
             prior_state.append([result.state[1], result.state[2]])  
 
-        for _ in range(max_ep_len):
-            if DEBUG:
-                #print("Training [state]: ", results[0].state)
-                pass
+        for timestep in range(max_ep_len):
+            # Get actions
             if CNN:
                 agent_action_returns = {id: agent.select_action(results, id) for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?                
             else:
@@ -361,13 +365,14 @@ def train():
                 # Vanilla FFN
                 action_list = agent_action_returns
             
+            # Sanity check
             # Ensure no item is above 7 or below -1
             for action in action_list.values():
                 assert action < 8 and action >= -1
 
-            #state, reward, done, _
-            results = env.step(action_list=action_list, action=None) # TODO agents seem to not be stepping in location map for first step
+            results = env.step(action_list=action_list, action=None)
                 
+            # Sanity Check
             # Ensure Agent moved in a direction
             for id, result in results.items():
                 # Because of collision avoidance, this assert will not hold true for multiple agents
@@ -376,9 +381,14 @@ def train():
                 prior_state[id][0] = result.state[1]
                 prior_state[id][1] = result.state[2]
 
+            # Save returns for tracking purposes
+            for id, result in results.items():
+                episode_return[id] += result.reward
+
+            episode_return_buffer.append(episode_return)
+            
+            # Incremement Counters
             total_time_step += 1
-            # TODO make work with averaged rewards from all agent, not just first agent
-            current_ep_reward_sample += results[0].reward # Just take first agents rewards for now
 
             # saving reward and is_terminals
             # TODO move out of episode
@@ -419,34 +429,10 @@ def train():
                         agent.update()
                         epoch_counter += 1
                                     
-            # log in logging file
-            # TODO Log each agent instead of one
-            if total_time_step % log_freq == 0:
-
-                # log average reward till last episode
-                log_avg_reward = log_running_reward / log_running_episodes
-                log_avg_reward = round(log_avg_reward, 4)
-
-                log_f.write('{},{},{}\n'.format(
-                    i_episode, total_time_step, log_avg_reward))
-                log_f.flush()
-
-                log_running_reward = 0
-                log_running_episodes = 0
-
             # printing average reward
-            # TODO print each agent instead of one
             if total_time_step % print_freq == 0:
-
-                # print average reward till last episode
-                print_avg_reward = print_running_reward / print_running_episodes
-                print_avg_reward = round(print_avg_reward, 2)
-
-                print("Episode : {} \t\t Timestep : {} \t\t (Agent 0) Average Reward : {}".format(
-                    i_episode, total_time_step, print_avg_reward))
-
-                print_running_reward = 0
-                print_running_episodes = 0
+                print("Epoch : {} \t\t  Total Timestep: {} \t\t Cumulative Returns : {}".format(
+                    epoch, total_time_step, episode_return_buffer))
 
             # save model weights
             # TODO Save each agent model instead of one?
@@ -481,17 +467,7 @@ def train():
             # break; if the episode is over
             if done:
                 break
-
-        # TODO Print array instead
-        print_running_reward += current_ep_reward_sample
-        print_running_episodes += 1
-
-        log_running_reward += current_ep_reward_sample
-        log_running_episodes += 1
-
-        i_episode += 1
         
-        # TODO Delete me
         if DEBUG:
             for agent in ppo_agents.values():
                 agent.render(
