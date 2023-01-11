@@ -3,6 +3,8 @@ Implementation of "Target Localization using Multi-Agent Deep Reinforcement Lear
 Partially adapted from:
     - towardsdatascience.com/proximal-policy-optimization-tutorial-part-2-2-gae-and-ppo-loss-fe1b3c5549e8
     - github.com/nikhilbarhate99/PPO-PyTorch
+    - https://towardsdatascience.com/a-graphic-guide-to-implementing-ppo-for-atari-games-5740ccbe3fbc
+    - https://www.youtube.com/watch?v=KHZVXao4qXs 
 
 '''
 from os import stat, path, mkdir, getcwd

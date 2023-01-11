@@ -203,11 +203,11 @@ def create_color(id: int) -> Color:
 
 @dataclass()
 class StepResult():
-    id: int = field(init=False)
-    state: npt.NDArray[np.float32] = field(init=False)
-    reward: float = field(init=False)
-    done: bool = field(default=False)
-    error: dict[Any, Any] = field(default_factory=dict)
+    state: npt.NDArray[np.float32] #= field(init=False)
+    reward: float #= field(init=False)
+    done: bool #= field(default=False)
+    error: dict[Any, Any] #= field(default_factory=dict)
+    id: int = field(default=0)    
 
 
 @dataclass

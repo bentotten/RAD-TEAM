@@ -1,0 +1,7 @@
+@article{SpinningUp2018,
+    author = {Achiam, Joshua},
+    title = {{Spinning Up in Deep Reinforcement Learning}},
+    year = {2018}
+}
+
+https://github.com/mahyaret/spinningup
