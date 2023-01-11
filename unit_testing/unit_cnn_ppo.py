@@ -119,19 +119,23 @@ class ActorCritic(unittest.TestCase):
     def setUp(self):
         map_dim, state_dim, max_size = (10,10), 11, 10  
         input_map_stack = torch.zeros(1, 5, 22, 22)
-        state = {0: StepResult(
-            id=0, 
-            state= np.array([7.10000000e+02, 4.54545455e-01, 4.54545455e-01, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00]), 
-            reward=-0.35, 
-            done=False, 
-            error={'out_of_bounds': False, 'out_of_bounds_count': 0, 'blocked': False, 'scale': 0.00045454545454545455}
-        )}
+        state = {0: StepResult()}
+        state[0].id=0
+        state[0].state= np.array(
+            [7.10000000e+02, 4.54545455e-01, 4.54545455e-01, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00]
+        )
+        state[0].reward=-0.35
+        state[0].done=False
+        state[0].error={'out_of_bounds': False, 'out_of_bounds_count': 0, 'blocked': False, 'scale': 0.00045454545454545455}
         
-        map_buffer = MapsBuffer(observation_dimension = state_dim, max_size = max_size)
-        map_stack = map_buffer.state_to_map(state)
+        self.state = state
+        self.map_buffer = MapsBuffer(id=state[0].id, observation_dimension = state_dim, max_size = max_size)
+        self.map_stack = map_buffer.state_to_map(state)
         
         self.buffer = Actor(map_dim=map_dim, state_dim=state_dim)
         
+    def testConvolution(self):
+        pass
         # First convolution
         # self.step1 = nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1)  # output tensor with shape (batchs, 8, Height, Width)
         # self.relu = nn.ReLU()
