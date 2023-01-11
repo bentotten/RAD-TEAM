@@ -581,7 +581,6 @@ class Actor(nn.Module):
     def __init__(self, map_dim, state_dim, batches: int=1, map_count: int=5, action_dim: int=5, global_critic: bool=False):
         super(Actor, self).__init__()
         
-        # TODO get to work with 5 maps, adding obstacles_map
         ''' Actor Input tensor shape: (batch size, number of channels, height of grid, width of grid)
                 1. batch size: 1
                 2. (map_count) number of channels: 5 input maps
@@ -655,8 +654,7 @@ class Actor(nn.Module):
                         nn.Linear(in_features=32, out_features=16), # output tensor with shape (16)
                         nn.ReLU(),
                         nn.Linear(in_features=16, out_features=1), # output tensor with shape (1)
-                        nn.Tanh(), #TODO Did the original maker implement softmax here?
-                        #nn.Softmax(dim=0)  #TODO Did the original maker implement softmax here?
+                        nn.ReLU(),
                     )
 
     def test(self, state_map_stack): 
