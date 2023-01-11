@@ -94,6 +94,7 @@ def train():
     # max_ep_len = 1000                   # max timesteps in one episode
     #training_timestep_bound = int(3e6)   # break training loop if timeteps > training_timestep_bound TODO DELETE
     epochs = int(3e6)  # Actual epoch will be a maximum of this number + max_ep_len
+    steps_per_epoch = 3000
     max_ep_len = 120                      # max timesteps in one episode
     #training_timestep_bound = 100  # Change to epoch count DELETE ME
 
@@ -118,9 +119,7 @@ def train():
     # Note : print/log frequencies should be > than max_ep_len
 
     ################ PPO hyperparameters ################
-    #update_timestep = max_ep_len * 4      # update policy every n timesteps # TODO Change to epochs
     steps_per_epoch = 480
-    update_timestep = steps_per_epoch     # update policy every n timesteps # TODO Change to epochs
     K_epochs = 80               # update policy for K epochs in one PPO update
     eps_clip = 0.2          # clip parameter for PPO
     gamma = 0.99            # discount factor
@@ -199,11 +198,10 @@ def train():
     if DEBUG:
         epochs = 1   # Actual epoch will be a maximum of this number + max_ep_len
         max_ep_len = 120                      # max timesteps in one episode # TODO delete me after fixing
-        steps_per_epoch = 2
-        update_timestep = steps_per_epoch # TODO transition to steps_per_epoch
+        steps_per_epoch = 120
         K_epochs = 4
                      
-        obstruction_count = 6 #TODO error with 7 obstacles
+        obstruction_count = 0 #TODO error with 7 obstacles
         number_of_agents = 3
         
         seed = 0
@@ -252,7 +250,7 @@ def train():
     print("--------------------------------------------------------------------------------------------")
     print("Initializing a discrete action space policy")
     print("--------------------------------------------------------------------------------------------")
-    print("PPO update frequency : " + str(update_timestep) + " timesteps")
+    print("PPO update frequency : " + str(steps_per_epoch) + " timesteps")
     print("PPO K epochs : ", K_epochs)
     print("PPO epsilon clip : ", eps_clip)
     print("discount factor (gamma) : ", gamma)
@@ -396,7 +394,8 @@ def train():
             
             # Incremement Counters
             total_time_step += 1
-
+            steps_in_episode += 1
+            
             # saving prior state, and current reward/is_terminals etc
             if CNN:
                 for id, agent in ppo_agents.items():
@@ -445,6 +444,7 @@ def train():
 
                 if timeout or epoch_ended:
                     # if trajectory didn't reach terminal state, bootstrap value target
+                    # TODO Investigate why all state_values are identical
                     agent_state_values = {id: agent.select_action(results, id).state_value for id, agent in ppo_agents.items()}             
                                         
                     if epoch_ended:
@@ -456,9 +456,6 @@ def train():
                 # finish_path_and_compute_advantages
                 for id, agent in ppo_agents.items():
                     agent.maps.buffer.finish_path_and_compute_advantages(agent_state_values[id])
-                    
-                if terminal:
-                    print("SOURCE FOUND \o/")
 
                 if (epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1) == epochs))):
                     # Render agent progress during training
@@ -473,7 +470,19 @@ def train():
                             save_gif=True,
                             path=directory,
                             epoch_count=epoch,
-                            ) 
+                            )
+                if DEBUG:
+                    for agent in ppo_agents.values():
+                        agent.render(
+                            add_value_text=True, 
+                            savepath=directory,
+                            epoch_count=epoch,
+                        )                   
+                    env.render(
+                        save_gif=True,
+                        path=directory,
+                        epoch_count=epoch,
+                        )                     
 
                 episode_return_buffer = []
                 # Reset the environment
@@ -491,30 +500,29 @@ def train():
                     source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
                     episode_return = {id: 0 for id in ppo_agents}
 
-            # TODO implement this
-            # # Reduce localization module training iterations after 100 epochs to speed up training
-            # if reduce_v_iters and epoch_counter > 99:
-            #     train_v_iters = 5
-            #     reduce_v_iters = False
+        # TODO implement this
+        # # Reduce localization module training iterations after 100 epochs to speed up training
+        # if reduce_v_iters and epoch_counter > 99:
+        #     train_v_iters = 5
+        #     reduce_v_iters = False
 
-            # Perform PPO update!
-            #self.update(env, bp_args) # TODO make multi-agent
-   
-            # update PPO agent
-            if total_time_step % update_timestep == 0:
+        # Perform PPO update!
+        #self.update(env, bp_args) # TODO make multi-agent
+
+        # update PPO agent
+        if CNN:
+            agent.update()
+            epoch_counter += 1
+        
+        # Vanilla FFN
+        else:
+            for id, agent in ppo_agents.items():
+                agent.buffer.rewards.append(results[id].reward)
+                agent.buffer.is_terminals.append(results[id].done)
+                ####
+                # update PPO agent
                 agent.update()
-                epoch_counter += 1
-            
-            # Vanilla FFN
-            else:
-                for id, agent in ppo_agents.items():
-                    agent.buffer.rewards.append(results[id].reward)
-                    agent.buffer.is_terminals.append(results[id].done)
-                    ####
-                    # update PPO agent
-                    if total_time_step % update_timestep == 0:
-                        agent.update()
-                        epoch_counter += 1       
+                epoch_counter += 1       
                                     
             # printing average reward
             if total_time_step % print_freq == 0:
