@@ -204,7 +204,7 @@ class PPOBuffer:
 
     def store_episode_length( self, episode_length: npt.NDArray[np.int32]) -> None:
         ''' Only stores if episode has ended '''
-        self.maps.buffer.episode_length_buffer = episode_length
+        self.episode_length_buffer.append(episode_length)
 
     def finish_path_and_compute_advantages(self, last_val: int = 0) -> None:
         """
@@ -276,41 +276,40 @@ class PPOBuffer:
             ep_form = []
         )
 
-        if logger:
-            epLenSize = (
-                # If they're equal then we don't need to do anything
-                # Otherwise we need to add one to make sure that numEps is the correct size
-                numEps + int(epLenTotal != len(self.states_buffer))
+        epLenSize = (
+            # If they're equal then we don't need to do anything
+            # Otherwise we need to add one to make sure that numEps is the correct size
+            numEps + int(epLenTotal != len(self.states_buffer))
+        )
+        states_buffer = np.hstack(
+            (
+                self.states_buffer,
+                self.adv_buf[:, None],
+                self.ret_buf[:, None],
+                self.logprobs_buffer[:, None],
+                self.actions_buffer[:, None],
+                self.source_tar,
             )
-            states_buffer = np.hstack(
-                (
-                    self.states_buffer,
-                    self.adv_buf[:, None],
-                    self.ret_buf[:, None],
-                    self.logprobs_buffer[:, None],
-                    self.actions_buffer[:, None],
-                    self.source_tar,
-                )
+        )
+        epForm: list[list[torch.Tensor]] = [[] for _ in range(epLenSize)]
+        slice_b: int = 0
+        slice_f: int = 0
+        jj: int = 0
+        
+        # TODO: This is essentially just a sliding window over states_buffer; use a built-in function to do this
+        for ep_i in epLens:
+            slice_f += ep_i
+            epForm[jj].append(
+                torch.as_tensor(states_buffer[slice_b:slice_f], dtype=torch.float32)
             )
-            epForm: list[list[torch.Tensor]] = [[] for _ in range(epLenSize)]
-            slice_b: int = 0
-            slice_f: int = 0
-            jj: int = 0
-            
-            # TODO: This is essentially just a sliding window over states_buffer; use a built-in function to do this
-            for ep_i in epLens:
-                slice_f += ep_i
-                epForm[jj].append(
-                    torch.as_tensor(states_buffer[slice_b:slice_f], dtype=torch.float32)
-                )
-                slice_b += ep_i
-                jj += 1
-            if slice_f != len(self.states_buffer):
-                epForm[jj].append(
-                    torch.as_tensor(states_buffer[slice_f:], dtype=torch.float32)
-                )
+            slice_b += ep_i
+            jj += 1
+        if slice_f != len(self.states_buffer):
+            epForm[jj].append(
+                torch.as_tensor(states_buffer[slice_f:], dtype=torch.float32)
+            )
 
-            data["ep_form"] = epForm
+        data["ep_form"] = epForm
 
         return data
 
