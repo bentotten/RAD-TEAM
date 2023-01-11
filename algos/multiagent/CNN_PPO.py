@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.streamplot import Grid
 
-from epoch_logger import EpochLogger
+# from epoch_logger import EpochLogger TODO not importing correctly
 
 from gym_rad_search.envs import StepResult
 
@@ -239,7 +239,7 @@ class PPOBuffer:
 
         self.path_start_idx = self.ptr
 
-    def get_end_epoch(self, logger: EpochLogger = None) -> dict[str, Union[torch.Tensor, list]]:
+    def get_end_epoch(self, logger = None) -> dict[str, Union[torch.Tensor, list]]:  # logger will eventually be EpochLogger from epoch_logger
         """
         Call this at the end of an epoch to get all of the data from
         the buffer, with advantages appropriately normalized (shifted to have
