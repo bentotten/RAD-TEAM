@@ -420,7 +420,6 @@ def train():
                         logp = logp,
                         src = src,
                         terminal = terminal,
-                        episode_length = steps_in_episode
                     )
 
             # TODO implement this how RADPPO has it
