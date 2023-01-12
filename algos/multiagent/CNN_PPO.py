@@ -210,6 +210,17 @@ class PPOBuffer:
         ''' Only stores if episode has ended '''
         self.episode_length_buffer.append(episode_length)
 
+    def compute_advantages(self, vals, rews, path_slice):
+        ''' 
+            uses rewards and value estimates from
+            the whole trajectory to compute advantage estimates with GAE-Lambda 
+        '''
+        # the next two lines implement GAE-Lambda advantage calculation
+        # gamma determines scale of value function, introduces bias regardless of VF accuracy
+        # lambda introduces bias when VF is inaccurate
+        deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
+        return discount_cumsum(deltas, self.gamma * self.lamda)      
+
     def finish_path_and_compute_advantages(self, last_val: int = 0) -> None:
         """
         Call this at the end of a trajectory, or when one gets cut off
@@ -230,13 +241,10 @@ class PPOBuffer:
         rews = np.append(self.rewards_buffer[path_slice], last_val)
         vals = np.append(self.state_value_buffer[path_slice], last_val)
 
-        # the next two lines implement GAE-Lambda advantage calculation
-        # gamma determines scale of value function, introduces bias regardless of VF accuracy
-        # lambda introduces bias when VF is inaccurate
-        deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
-        self.adv_buf[path_slice] = discount_cumsum(deltas, self.gamma * self.lamda)
+        self.adv_buf[path_slice] = self.compute_advantages(rews, vals. path_slice)
 
         # the next line computes rewards-to-go, to be targets for the value function
+        # TODO discounted returns?
         self.ret_buf[path_slice] = discount_cumsum(rews, self.gamma)[:-1]
 
         self.path_start_idx = self.ptr
@@ -846,7 +854,6 @@ class PPO:
         ''' Wrapper for inner buffer storage '''
         self.maps.buffer.store(obs=obs, act=act, rew=rew, val=val, logp=logp, src=src, terminal=terminal)
 
-    # TODO obsolete
     def update_old(self):
         # TODO I believe this is wrong; see vanilla_PPO.py TODO comment
         # Monte Carlo estimate of returns
@@ -902,129 +909,7 @@ class PPO:
 
         # clear buffer
         self.maps.clear() # TODO clear buffer or maps buffer?
-        
-    def update(self, search_area):
-    #def update(self, env: RadSearch, args: BpArgs) -> None:
-        """Update wrapper for the A2C module"""
-        data: dict[str, torch.Tensor] = self.maps.buffer.get_end_epoch()
-
-        min_iterations = len(data["ep_form"])
-        kk = 0
-        term = False
-        train_policy_iterations = self.K_epochs
-
-        # Train Actor-Critic policy with multiple steps of gradient descent (mini batch)
-        while not term and kk < train_policy_iterations:
-            # Early stop training if KL-div above certain threshold
-            pi_l, pi_info, term, loc_loss = self.update_a2c(data, search_area, min_iterations, kk)
-            kk += 1
-
-        # Reduce learning rate
-        self.pi_scheduler.step()   
-
-    def update_a2c(
-        self, data: dict[str, torch.Tensor], search_area, minibatch: int, iter: int
-    ) -> tuple[torch.Tensor, dict[str, torch.Tensor], bool, torch.Tensor]:
-        # TODO what are these?
-        observation_idx = 11
-        action_idx = 14
-        logp_old_idx = 13
-        advantage_idx = 11
-        return_idx = 12
-        source_loc_idx = 15
-
-        ep_form = data["ep_form"]
-        pi_info = dict(kl=[], ent=[], cf=[], val=np.array([]), val_loss=[])
-        ep_select = np.random.choice(
-            np.arange(0, len(ep_form)), size=int(minibatch), replace=False
-        )
-        ep_form = [ep_form[idx] for idx in ep_select]
-        loss_sto: torch.Tensor = torch.tensor([], dtype=torch.float32)
-        loss_arr: torch.Tensor = torch.autograd.Variable(
-            torch.tensor([], dtype=torch.float32)
-        )
-
-        for ep in ep_form:
-            # For each set of episodes per process from an epoch, compute loss
-            trajectories = ep[0]
-            #hidden = self.ac.reset_hidden() # TODO make multi-agent TODO do we need to reset the hidden layers with CNNs?
-            obs, act, logp_old, adv, ret, src_tar = (
-                trajectories[:, :observation_idx],
-                trajectories[:, action_idx],
-                trajectories[:, logp_old_idx],
-                trajectories[:, advantage_idx],
-                trajectories[:, return_idx, None],
-                trajectories[:, source_loc_idx:].clone(),
-            )
-            # Calculate new log prob.
-            pi, val, logp, loc = self.ac.gradient_step(obs, act, hidden=hidden) # Both PFGRU and A2C? # TODO make multi-agent
-            logp_diff: torch.Tensor = logp_old - logp
-            ratio = torch.exp(logp - logp_old)
-
-            clip_adv = (
-                torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * adv
-            )
-            clipped = ratio.gt(1 + self.clip_ratio) | ratio.lt(1 - self.clip_ratio)
-
-            # Useful extra info
-            clipfrac = (
-                torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
-            )
-            approx_kl = logp_diff.detach().mean().item()
-            ent = pi.entropy().detach().mean().item()
-            val_loss = self.loss(val, ret)
-
-            # TODO: More descriptive name
-            new_loss: torch.Tensor = -(
-                torch.min(ratio * adv, clip_adv).mean()
-                - 0.01 * val_loss
-                + self.alpha * ent
-            )
-            loss_arr = torch.hstack((loss_arr, new_loss.unsqueeze(0)))
-
-            new_loss_sto: torch.Tensor = torch.tensor(
-                [approx_kl, ent, clipfrac, val_loss.detach()]
-            )
-            loss_sto = torch.hstack((loss_sto, new_loss_sto.unsqueeze(0)))
-
-        mean_loss = loss_arr.mean()
-        means = loss_sto.mean(axis=0)
-        loss_pi, approx_kl, ent, clipfrac, loss_val = (
-            mean_loss,
-            means[0].detach(),
-            means[1].detach(),
-            means[2].detach(),
-            means[3].detach(),
-        )
-        pi_info["kl"].append(approx_kl)
-        pi_info["ent"].append(ent)
-        pi_info["cf"].append(clipfrac)
-        pi_info["val_loss"].append(loss_val)
-
-        kl = pi_info["kl"][-1].mean()
-        if kl.item() < 1.5 * self.target_kl:
-            self.pi_optimizer.zero_grad()
-            loss_pi.backward()
-            self.pi_optimizer.step()
-            term = False
-        else:
-            term = True
-
-        pi_info["kl"], pi_info["ent"], pi_info["cf"], pi_info["val_loss"] = (
-            pi_info["kl"][0].numpy(),
-            pi_info["ent"][0].numpy(),
-            pi_info["cf"][0].numpy(),
-            pi_info["val_loss"][0].numpy(),
-        )
-        loss_sum_new = loss_pi
-        return (
-            loss_sum_new,
-            pi_info,
-            term,
-            (search_area * loc - (src_tar)).square().mean().sqrt(),
-        )
-
-    
+   
     def save(self, checkpoint_path):
         torch.save(self.policy_old.state_dict(), checkpoint_path) # Actor-critic
    
