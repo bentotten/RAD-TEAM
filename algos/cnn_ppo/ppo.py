@@ -16,6 +16,10 @@ from utilities.run_utils import setup_logger_kwargs
 
 import argparse
 
+###
+DEBUG = True
+###
+
 
 class PPOBuffer:
     """
@@ -306,14 +310,28 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
 
     # Prepare for interaction with environment
     start_time = time.time()
-    o, ep_ret, ep_len = env.reset(), 0, 0
+    
+    ### TODO Changed #####################
+    #o, ep_ret, ep_len = env.reset(), 0, 0
+    o = env.reset()[0].state
+    ep_ret, ep_len = 0, 0
+    #######################################
 
     # Main loop: collect experience in env and update/log each epoch
     for epoch in range(epochs):
         for t in range(local_steps_per_epoch):
             a, v, logp = ac.step(torch.as_tensor(o, dtype=torch.float32).to(device))
 
-            next_o, r, d, _ = env.step(a)
+            ### TODO Changed #####################
+            #next_o, r, d, _ = env.step(a)
+            result = env.step(action=int(a))  
+            # Parse step result, since not currently multiagent
+            next_o = result[0].state
+            r = np.array(result[0].reward, dtype="float32")
+            d = result[0].done
+            msg = result[0].error                      
+            #######################################
+            
             ep_ret += r
             ep_len += 1
 
@@ -372,7 +390,7 @@ if __name__ == '__main__':
     parser.add_argument('--hid', type=int, default=64)
     parser.add_argument('--l', type=int, default=2)
     parser.add_argument('--gamma', type=float, default=0.99)
-    parser.add_argument('--seed', '-s', type=int, default=0)
+    parser.add_argument('--seed', '-s', type=int, default=2)
     parser.add_argument('--cpu', type=int, default=4)
     parser.add_argument('--steps', type=int, default=4000)
     parser.add_argument('--epochs', type=int, default=50)
@@ -380,16 +398,14 @@ if __name__ == '__main__':
     
     # Changes ###
     parser.add_argument('--env', type=str, default='gym_rad_search:RadSearch-v1')
-    parser.add_argument('--dims', type=list, default=[[0.0,0.0],[2700.0,0.0],[2700.0,2700.0],[0.0,2700.0]],
-                        help='Dimensions of radiation source search area in cm, decreased by area_obs param. to ensure visilibity graph setup is valid.')   
-    parser.add_argument('--area_obs', type=list, default=[200.0,500.0], help='Interval for each obstruction area in cm')     
-    parser.add_argument('--obstruct', type=int, default=-1, 
+    parser.add_argument('--obstruction_count', type=int, default=-1, 
                         help='Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions')
     ###        
     
     args = parser.parse_args()
 
-    mpi_fork(args.cpu)  # run parallel code with mpi
+    if not DEBUG:
+        mpi_fork(args.cpu)  # run parallel code with mpi
 
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed)
     
@@ -398,7 +414,7 @@ if __name__ == '__main__':
     #Generate a large random seed and random generator object for reproducibility
     robust_seed = _int_list_from_bigint(hash_seed((1+proc_id())*args.seed))[0]
     rng = np.random.default_rng(robust_seed)
-    env_parameters = {'bbox':args.dims,'area_obs':args.area_obs, 'obstruct':args.obstruct, 'seed': rng}    
+    env_parameters = {'obstruction_count': args.obstruction_count, 'np_random': rng}    
     ###        
 
 
