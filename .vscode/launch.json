@@ -46,5 +46,16 @@
       "args": [],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }
+    {
+      "name": "CNN_PPO",
+      "type": "python",
+      //"python": "${command:python.interpreterPath}/../multi_ppo_torch", # Specify which interpreter
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/cnn_ppo/ppo.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": [],
+      "cwd": "${workspaceFolder}/algos/cnn_ppo/"
+    }    
   ]
 }

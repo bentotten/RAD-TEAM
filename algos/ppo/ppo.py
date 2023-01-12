@@ -2,7 +2,7 @@ from cgitb import reset
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple, Type, Union
 from gym_rad_search.envs import rad_search_env  # type: ignore
-from gym_rad_search.envs.rad_search_env import RadSearch, Action  # type: ignore
+from gym_rad_search.envs.rad_search_env import RadSearch, StepResult  # type: ignore
 import numpy as np
 import numpy.typing as npt
 import torch
