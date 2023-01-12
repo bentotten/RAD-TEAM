@@ -4,9 +4,15 @@ from torch.optim import Adam
 import gym
 import time
 import core as core
-from algos.cnn_ppo.utils.logx import EpochLogger
-from .utils.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads
-from .utils.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs
+
+from gym_rad_search.envs import rad_search_env  # type: ignore
+
+from utilities.logx import EpochLogger
+from utilities.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads
+from utilities.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs
+from utilities.run_utils import setup_logger_kwargs
+
+import argparse
 
 
 class PPOBuffer:
@@ -360,7 +366,6 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
         logger.dump_tabular()
 
 if __name__ == '__main__':
-    import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='HalfCheetah-v2')
     parser.add_argument('--hid', type=int, default=64)
@@ -375,7 +380,6 @@ if __name__ == '__main__':
 
     mpi_fork(args.cpu)  # run parallel code with mpi
 
-    from spinup.utils.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed)
 
     ppo(lambda : gym.make(args.env), actor_critic=core.MLPActorCritic,
