@@ -1,10 +1,12 @@
 import numpy as np
 import torch
 from torch.optim import Adam
-import gym
 import time
-import core as core
 
+import gym
+from gym.utils.seeding import _int_list_from_bigint, hash_seed
+
+import core as core
 from gym_rad_search.envs import rad_search_env  # type: ignore
 
 from utilities.logx import EpochLogger
@@ -367,7 +369,6 @@ def ppo(env_fn, actor_critic=core.MLPActorCritic, ac_kwargs=dict(), seed=0,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='HalfCheetah-v2')
     parser.add_argument('--hid', type=int, default=64)
     parser.add_argument('--l', type=int, default=2)
     parser.add_argument('--gamma', type=float, default=0.99)
@@ -376,13 +377,32 @@ if __name__ == '__main__':
     parser.add_argument('--steps', type=int, default=4000)
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--exp_name', type=str, default='ppo')
+    
+    # Changes ###
+    parser.add_argument('--env', type=str, default='gym_rad_search:RadSearch-v1')
+    parser.add_argument('--dims', type=list, default=[[0.0,0.0],[2700.0,0.0],[2700.0,2700.0],[0.0,2700.0]],
+                        help='Dimensions of radiation source search area in cm, decreased by area_obs param. to ensure visilibity graph setup is valid.')   
+    parser.add_argument('--area_obs', type=list, default=[200.0,500.0], help='Interval for each obstruction area in cm')     
+    parser.add_argument('--obstruct', type=int, default=-1, 
+                        help='Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions')
+    ###        
+    
     args = parser.parse_args()
 
     mpi_fork(args.cpu)  # run parallel code with mpi
 
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed)
+    
+    # Changes ###    
+    # Environment arguments
+    #Generate a large random seed and random generator object for reproducibility
+    robust_seed = _int_list_from_bigint(hash_seed((1+proc_id())*args.seed))[0]
+    rng = np.random.default_rng(robust_seed)
+    env_parameters = {'bbox':args.dims,'area_obs':args.area_obs, 'obstruct':args.obstruct, 'seed': rng}    
+    ###        
 
-    ppo(lambda : gym.make(args.env), actor_critic=core.MLPActorCritic,
+
+    ppo(lambda : gym.make(args.env,**env_parameters), actor_critic=core.MLPActorCritic,
         ac_kwargs=dict(hidden_sizes=[args.hid]*args.l), gamma=args.gamma, 
         seed=args.seed, steps_per_epoch=args.steps, epochs=args.epochs,
         logger_kwargs=logger_kwargs)
