@@ -692,6 +692,15 @@ class Actor(nn.Module):
         
         return action.detach(), action_logprob.detach(), state_value.detach()
     
+    def evaluate(self, state_map_stack, action):
+        action_probs = self.actor(state_map_stack)
+        dist = Categorical(action_probs)
+        action_logprobs = dist.log_prob(action)
+        dist_entropy = dist.entropy()
+        state_values = self.critic(state_map_stack)
+            
+        return action_logprobs, state_values, dist_entropy        
+
 
 class PPO:
     def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, 
@@ -735,23 +744,18 @@ class PPO:
                 resolution_accuracy=resolution_accuracy
             )
 
-        self.policy = Actor(map_dim=self.maps.buffer.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(self.maps.buffer.device) 
+        self.policy = Actor(map_dim=self.maps.buffer.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(self.maps.buffer.device) # TODO these are really slow
 
         self.optimizer = torch.optim.Adam([
                         {'params': self.policy.actor.parameters(), 'lr': lr_actor},
                         {'params': self.policy.local_critic.parameters(), 'lr': lr_critic}
                     ])
 
-        self.policy_old = Actor(map_dim=self.maps.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(self.maps.buffer.device)  # TODO Really slow
-        self.policy_old.load_state_dict(self.policy.state_dict()) # TODO Really slow
+        self.policy_old = Actor(map_dim=self.maps.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(self.maps.buffer.device)  # TODO why is this here
+        self.policy_old.load_state_dict(self.policy.state_dict()) # TODO why is this here 
         
         self.MseLoss = nn.MSELoss()
-        
-        # Rendering
-        self.render_counter = 0        
-
-    def select_action(self, state_observation: dict[int, StepResult], id: int) -> ActionChoice: 
-        
+        evaluate
         #TODO update to work with new observation
         # Add intensity readings to a list if reading has not been seen before at that location. 
         for observation in state_observation.values():
@@ -821,15 +825,12 @@ class PPO:
             Update the network's parameters
                 actor_optimizer.step()            
         '''
-        # actor       
-        data = self.maps.buffer.get_buffers_for_epoch_and_reset()  # Advantages already calculated with finish_path() function
+        # Rewards have already been normalized and advantages already calculated with finish_path() function
         
-        # TODO for memory efficiency, could remap state buffers here instead of storing them
-        # convert list to tensor
-        old_maps = torch.squeeze(torch.stack(self.maps.buffer.mapstacks, dim=0)).detach().to(self.device)
-        print(old_maps.shape)
-        old_actions = torch.squeeze(torch.stack(self.maps.buffer.actions, dim=0)).detach().to(self.device)
-        old_logprobs = torch.squeeze(torch.stack(self.maps.buffer.logprobs, dim=0)).detach().to(self.device)        
+        # Get data from buffers for old policy    
+        data = self.maps.buffer.get_buffers_for_epoch_and_reset()  
+        
+        # TODO write evaluation function      
         
         calculate_policy_loss(self, data)
         pass
@@ -895,21 +896,22 @@ class PPO:
             if is_terminal:
                 discounted_reward = 0
             discounted_reward = reward + (self.gamma * discounted_reward)
-            rewards.insert(0, discounted_reward)
+            rewards.insert(0, discounted_reward)  # Puts back in correct order
             
         # Normalizing the rewards
-        rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
+        rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
-        
-        # TODO throws errorraw_action_list
-        #returns_tensor = torch.squeeze(returns, dim=-1).detach().to(device)
-        #normalized_advantages_tensor = torch.squeeze(normalized_advantages, dim=0).detach().to(device)
-        
+
+        # convert list to tensor
+        old_states = torch.squeeze(torch.stack(self.buffer.states, dim=0)).detach().to(device)
+        old_actions = torch.squeeze(torch.stack(self.buffer.actions, dim=0)).detach().to(device)
+        old_logprobs = torch.squeeze(torch.stack(self.buffer.logprobs, dim=0)).detach().to(device)
+
         # Optimize policy for K epochs
         for _ in range(self.K_epochs):
 
             # Evaluating old actions and values
-            logprobs, state_values, dist_entropy = self.policy.evaluate(old_maps, old_actions) # Actor-critic
+            logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions) # Actor-critic
 
             # match state_values tensor dimensions with rewards tensor
             state_values = torch.squeeze(state_values)
@@ -934,7 +936,7 @@ class PPO:
         self.policy_old.load_state_dict(self.policy.state_dict()) # Actor-critic
 
         # clear buffer
-        self.maps.clear() # TODO clear buffer or maps buffer?
+        self.buffer.clear()
    
     def save(self, checkpoint_path):
         torch.save(self.policy_old.state_dict(), checkpoint_path) # Actor-critic
