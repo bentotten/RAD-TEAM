@@ -266,7 +266,8 @@ class PPOBuffer:
         self.readings.clear()
         
         # the next two lines implement the advantage normalization trick
-        adv_mean, adv_std = self.adv_buf.mean(), self.adv_buf.std()
+        adv_mean = self.adv_buf.mean()
+        adv_std = self.adv_buf.std()
         self.adv_buf: npt.NDArray[np.float32] = (self.adv_buf - adv_mean) / adv_std
         
         # TODO what is this and why is it commented out?
@@ -717,7 +718,7 @@ class PPO:
         self.lamda = lamda  # Smoothing parameter for GAE calculation
         self.beta = beta  # Entropy for loss function, encourages exploring different policies
         self.epsilon = epsilon  # clipping parameter to ensure we only make the maximum of ε% change to our policy at a time.
-        self.eps_clip = eps_clip
+        self.eps_clip = eps_clip  # clip_ratio
         self.K_epochs = K_epochs
         self.resolution_accuracy = resolution_accuracy
         self.id = id
@@ -803,28 +804,87 @@ class PPO:
         self.maps.buffer.store(obs=obs, act=act, rew=rew, val=val, logp=logp, src=src, terminal=terminal)
 
     def update(self):
+        '''   
+            Compute the new policy and log probabilities
+                new_policy, log_probs = actor(states)
+
+            Compute the advantages
+                advantages = rewards + gamma * critic(next_states) - critic(states)
+
+            Compute the PPO loss
+                loss = ppo_loss(old_policy, new_policy, actions, rewards, advantages, epsilon)
+
+            Perform the backpropagation
+                actor_optimizer.zero_grad()
+                loss.backward()
+
+            Update the network's parameters
+                actor_optimizer.step()            
         '''
-        Calculate how much the policy has changed: 
-            ratio = policy_new / policy_old
-        Take log form of this: 
-            ratio = [log(policy_new) - log(policy_old)].exp()
-        Calculate Actor loss as the minimum of two functions: 
-            p1 = ratio * advantage
-            p2 = clip(ratio, 1-epsilon, 1+epsilon) * advantage
-            actor_loss = min(p1, p2)
-            
-        Calculate critic loss with MSE between returns and critic value
-            critic_loss = (R - V(s))^2
-            
-        Caculcate total loss:
-            total_loss = critic_loss * critic_discount + actor_loss - entropy
-        '''
-        # TODO add some kind of an assert here to ensure buffers are full
-        def calculate_loss(oldpolicy_probs, advantages, rewards, values):
-            pass
+        # actor       
+        data = self.maps.buffer.get_buffers_for_epoch_and_reset()  # Advantages already calculated with finish_path() function
         
-        data = self.maps.buffer.get_buffers_for_epoch_and_reset()
+        # TODO for memory efficiency, could remap state buffers here instead of storing them
+        # convert list to tensor
+        old_maps = torch.squeeze(torch.stack(self.maps.buffer.mapstacks, dim=0)).detach().to(self.device)
+        print(old_maps.shape)
+        old_actions = torch.squeeze(torch.stack(self.maps.buffer.actions, dim=0)).detach().to(self.device)
+        old_logprobs = torch.squeeze(torch.stack(self.maps.buffer.logprobs, dim=0)).detach().to(self.device)        
+        
+        calculate_policy_loss(self, data)
         pass
+    
+        # critic
+        def calculate_value_loss(data):
+            obs, ret = data['obs'], data['ret']
+            obs = obs.to(self.maps.buffer.device)
+            ret = ret.to(self.maps.buffer.device)
+            return ((self.actor.local_critic(obs) - ret)**2).mean()    
+        
+        def calculate_policy_loss(self, data):
+            '''
+            Calculate how much the policy has changed: 
+                ratio = policy_new / policy_old
+            Take log form of this: 
+                ratio = [log(policy_new) - log(policy_old)].exp()
+            Calculate Actor loss as the minimum of two functions: 
+                p1 = ratio * advantage
+                p2 = clip(ratio, 1-epsilon, 1+epsilon) * advantage
+                actor_loss = min(p1, p2)
+                
+            Calculate critic loss with MSE between returns and critic value
+                critic_loss = (R - V(s))^2
+                
+            Caculcate total loss:
+                total_loss = critic_loss * critic_discount + actor_loss - entropy
+            '''            
+            obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
+            
+            # Policy loss
+            
+            pi, logp = self.policy.actor(obs.to(self.maps.buffer.device), act.to(self.maps.buffer.device))
+            logp = logp.cpu()
+            ratio = torch.exp(logp - logp_old)
+            clip_adv = torch.clamp(ratio, 1-self.eps_clip, 1+self.eps_clip) * adv  # clipped ratio
+            loss_pi = -(torch.min(ratio * adv, clip_adv)).mean()
+
+            # TODO why not using surrogate?
+            # surrogate = torch.exp(ratio) * advantages
+            # surrogate_clipped = torch.clamp(surrogate, 1 - epsilon, 1 + epsilon) * advantages
+            # surrogate_loss = -torch.min(surrogate, surrogate_clipped)
+            # entropy = new_policy.entropy()
+            # entropy_loss = -entropy_coef * entropy
+            # loss = surrogate_loss + entropy_loss
+
+            # Useful extra info
+            approx_kl = (logp_old - logp).mean().item()
+            ent = pi.entropy().mean().item()
+            clipped = ratio.gt(1+self.eps_clip) | ratio.lt(1-self.eps_clip)
+            clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
+            pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac)
+
+            return loss_pi, pi_info            
+         
 
     def update_old(self):
         # TODO I believe this is wrong; see vanilla_PPO.py TODO comment
@@ -841,12 +901,6 @@ class PPO:
         rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
         rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
         
-        # TODO for memory efficiency, could remap state buffers here instead of storing them
-        # convert list to tensor
-        old_maps = torch.squeeze(torch.stack(self.maps.buffer.mapstacks, dim=0)).detach().to(self.device)
-        print(old_maps.shape)
-        old_actions = torch.squeeze(torch.stack(self.maps.buffer.actions, dim=0)).detach().to(self.device)
-        old_logprobs = torch.squeeze(torch.stack(self.maps.buffer.logprobs, dim=0)).detach().to(self.device)
         # TODO throws errorraw_action_list
         #returns_tensor = torch.squeeze(returns, dim=-1).detach().to(device)
         #normalized_advantages_tensor = torch.squeeze(normalized_advantages, dim=0).detach().to(device)

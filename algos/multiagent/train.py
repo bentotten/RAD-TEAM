@@ -535,7 +535,7 @@ def train():
         # update PPO agents
         if CNN:
             for id, agent in ppo_agents.items():
-                agent.update(search_area)
+                agent.update()
         
         # Vanilla FFN
         else:
