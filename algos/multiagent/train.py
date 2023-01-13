@@ -295,9 +295,10 @@ def train():
         }
     
     # TODO move to a unit test
-    ppo_agents[0].maps.buffer.adv_buf[0] = 1
-    assert ppo_agents[1].maps.buffer.adv_buf[0] != 1, "Singleton pattern in buffer class"
-    ppo_agents[0].maps.buffer.adv_buf[0] = 0.0
+    if number_of_agents > 1:
+        ppo_agents[0].maps.buffer.adv_buf[0] = 1
+        assert ppo_agents[1].maps.buffer.adv_buf[0] != 1, "Singleton pattern in buffer class"
+        ppo_agents[0].maps.buffer.adv_buf[0] = 0.0
 
 
     # track total training time
@@ -321,24 +322,27 @@ def train():
     total_time_step = 0
     i_episode = 0
     
-    # state = env.reset()['state'] # All agents begin in same location
-    # Returns aggregate_observation_result, aggregate_reward_result, aggregate_done_result, aggregate_info_result
-    observations, rewards, terminals, infos = env.reset() # All agents begin in same location, only need one state
-    
+    # Initial values
     source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
     episode_return = {id: 0 for id in ppo_agents}
-    episode_return_buffer = []
-    out_of_bounds_count = 0
-    done_count = 0
+    episode_return_buffer = []  # TODO can probably get rid of this, unless want to keep for logging
+    out_of_bounds_count = np.zeros(number_of_agents)
+    success_count = 0
     steps_in_episode = 0
+    #local_steps_per_epoch = int(steps_per_epoch / num_procs()) # TODO add this after everything is working
+    local_steps_per_epoch = steps_per_epoch
     
-    # TODO turn into array for each agent ID (maybe a dict or tuple)
-    current_ep_reward_sample = 0    
-
+    # state = env.reset()['state'] # All agents begin in same location
+    # Returns aggregate_observation_result, aggregate_reward_result, aggregate_done_result, aggregate_info_result
+    results = env.reset() # All agents begin in same location, only need one state
+    
+    # Unpack relevant results. This primes the pump for agents to choose an action.
+    observations = results.observation
+    
     # training loop
     #while total_time_step < training_timestep_bound:
     #while steps_in_epoch < epochs:
-    for epoch in range(epochs):
+    for epoch_counter in range(epochs):
         
         # Put actor into evaluation mode
         # TODO why?
@@ -350,7 +354,13 @@ def train():
         for result in results.values():
             prior_coordinates.append([result.state[1], result.state[2]])
 
-        for steps_in_epoch in range(steps_per_epoch):
+        for steps_in_epoch in range(local_steps_per_epoch):
+            
+            # TODO From philippe - is this necessary and should it be added? Appears to make observations between 0 and 1
+            #Standardize input using running statistics per episode
+            # obs_std = o
+            # obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)            
+            
             # Get actions
             if CNN:
                 agent_action_returns = {id: agent.select_action(results, id) for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?                
@@ -361,8 +371,8 @@ def train():
             if number_of_agents == 1:
                 assert ppo_agents[0].maps.others_locations_map.max() == 0.0
             
-            # TODO Make this work in the env calculation for actions instead of here, and make 0 the idle state
             # Convert actions to include -1 as "idle" option
+            # TODO Make this work in the env calculation for actions instead of here, and make 0 the idle state            
             # TODO REMOVE convert_nine_to_five_action_space AFTER WORKING WITH DIAGONALS
             if CNN:
                 if SCOOPERS_IMPLEMENTATION:
@@ -379,7 +389,13 @@ def train():
             for action in action_list.values():
                 assert action < 8 and action >= -1
 
-            results = env.step(action_list=action_list, action=None)
+            next_results = env.step(action_list=action_list, action=None)
+
+            # Unpack information
+            next_observations = next_results.observation
+            rewards = next_results.observation
+            successes = next_results.success
+            infos = next_results.info
                 
             # Sanity Check
             # Ensure Agent moved in a direction
@@ -390,26 +406,24 @@ def train():
                 prior_coordinates[id][0] = result.state[1]
                 prior_coordinates[id][1] = result.state[2]
 
-            # Save returns for tracking purposes
+            # Incremement Counters and save new cumulative return
             for id, result in results.items():
                 episode_return[id] += result.reward
 
             episode_return_buffer.append(episode_return)
-            
-            # Incremement Counters
             total_time_step += 1
-            steps_in_episode += 1
+            steps_in_episode += 1            
             
             # saving prior state, and current reward/is_terminals etc
             if CNN:
                 for id, agent in ppo_agents.items():
-                    obs: npt.NDArray[Any] = prior_state[id].state
-                    rew: npt.NDArray[np.float32] = results[id].reward
+                    obs: npt.NDArray[Any] = observations[id]
+                    rew: npt.NDArray[np.float32] = rewards[id]
+                    terminal: npt.NDArray[np.bool] = successes[id]                                        
                     act: npt.NDArray[np.int32] = agent_action_returns[id].action           
                     val: npt.NDArray[np.float32] = agent_action_returns[id].state_value      
                     logp: npt.NDArray[np.float32] = agent_action_returns[id].action_logprob
-                    src: npt.NDArray[np.float32] = source_coordinates
-                    terminal: npt.NDArray[np.bool] = results[id].done                                        
+                    src: npt.NDArray[np.float32] = source_coordinates                    
                 
                     agent.store(
                         obs = obs,
@@ -421,43 +435,48 @@ def train():
                         terminal = terminal,
                     )
 
-            # TODO implement this how RADPPO has it
             # Update obs (critical!)
-            #o = next_o
+            observations = next_observations
             
-            # Check if terminal
-            terminal_counter = 0
-            for id, value in results.items():
-                if results[id].done == True:
-                    terminal_counter += 1
-            
+            # Check if there was a success
+            sucess_counter = 0
+            for id, value in infos.items():
+                if infos[id].done == True:
+                    sucess_counter += 1
+
+            # Check if some agents went out of bounds
+            for id, value in infos.items():
+                if 'out_of_bounds' in infos[id] and infos[id]['out_of_bounds'] == True:
+                        out_of_bounds_count[id] += 1
+                                    
             # Stopping conditions for episode
             timeout = steps_in_episode == max_ep_len
-            terminal = timeout or terminal_counter > 0
-            epoch_ended = steps_in_epoch == steps_per_epoch - 1
+            terminal = sucess_counter > 0 or timeout
+            epoch_ended = steps_in_epoch == local_steps_per_epoch - 1
             
             if terminal or epoch_ended:
                 if terminal and not timeout:
-                    done_count += 1
-                for id, value in results.items():
-                    msg = results[id].error
-                    if 'out_of_bounds' in msg and msg['out_of_bounds'] == True:
-                        out_of_bounds_count += 1
+                    success_count += 1
+
                 if epoch_ended and not (terminal):
-                    print(f"Warning: trajectory cut off by epoch at {steps_in_episode} steps at epoch count {steps_in_epoch}.", flush=True)
+                    print(f"Warning: trajectory cut off by epoch at {steps_in_episode} steps in episode, at epoch count {steps_in_epoch}.", flush=True)
 
                 if timeout or epoch_ended:
                     # if trajectory didn't reach terminal state, bootstrap value target
+                    
+                    # TODO Philippes normalizing thing, see if we want this
+                    #obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
+                    
                     # TODO Investigate why all state_values are identical
-                    agent_state_values = {id: agent.select_action(results, id).state_value for id, agent in ppo_agents.items()}             
-                                        
+                    agent_state_values = {id: agent.select_action(observations, id).state_value for id, agent in ppo_agents.items()}
+                                                            
                     if epoch_ended:
                         # Set flag to sample new environment parameters
                         env.epoch_end = True # TODO make multi-agent?
                 else:
                     agent_state_values = {id: 0 for id in ppo_agents}        
                 
-                # finish_path_and_compute_advantages
+                # Finish the path and compute advantages
                 for id, agent in ppo_agents.items():
                     agent.maps.buffer.finish_path_and_compute_advantages(agent_state_values[id])
                     
@@ -465,48 +484,61 @@ def train():
                     # only save EpRet / EpLen if trajectory finished
                     agent.maps.buffer.store_episode_length(steps_in_episode)
 
-                if (epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1) == epochs))):
+                if (epoch_ended and render and (epoch_counter % save_gif_freq == 0 or ((epoch_counter + 1) == epochs))):
                     # Render agent progress during training
-                    if epoch != 0:
+                    #if proc_id() == 0 and epoch != 0:
+                    if epoch_counter != 0:
                         for agent in ppo_agents.values():
                             agent.render(
                                 add_value_text=True, 
                                 savepath=directory,
-                                epoch_count=epoch,
+                                epoch_count=epoch_counter,
                             )                   
                         env.render(
                             save_gif=True,
                             path=directory,
-                            epoch_count=epoch,
+                            epoch_count=epoch_counter,
                             )
                 if DEBUG and render:
                     for agent in ppo_agents.values():
                         agent.render(
                             add_value_text=True, 
                             savepath=directory,
-                            epoch_count=epoch,
+                            epoch_count=epoch_counter,
                         )                   
                     env.render(
                         save_gif=True,
                         path=directory,
-                        epoch_count=epoch,
+                        epoch_count=epoch_counter,
                         )                     
 
                 episode_return_buffer = []
                 # Reset the environment
-                if not env.epoch_end: # TODO make multi-agent
+                if not epoch_ended: 
                     # Reset detector position and episode tracking
-                    # hidden = self.ac.reset_hidden() # TODO make multi-agent; do we need to do this for CNN?
-                    results = env.reset()
-                    source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
-                    episode_return = {id: 0 for id in ppo_agents}
+                    # hidden = self.ac.reset_hidden()
+                    pass 
                 else:
                     # Sample new environment parameters, log epoch results
-                    done_count = 0
-                    out_of_bounds_count = 0
-                    results = env.reset()
-                    source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
-                    episode_return = {id: 0 for id in ppo_agents}
+                    #oob += env.oob_count
+                    #logger.store(DoneCount=done_count, OutOfBound=oob)
+                    success_count = 0
+                    out_of_bounds_count = np.zeros(number_of_agents)
+
+                # Unpack relevant results. This primes the pump for agents to choose an action.                
+                results = env.reset().observation
+                source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
+                episode_return = {id: 0 for id in ppo_agents}
+                steps_in_episode = 0
+                
+                # Update stats buffer for normalizer
+                #stat_buff.update(o[0])
+
+        # TODO for eventual merger with radppo
+        # Save model
+        # if (epoch % save_freq == 0) or (epoch == epochs-1):
+        #     logger.save_state(None, None)
+        #     pass
 
         # TODO implement this
         # # Reduce localization module training iterations after 100 epochs to speed up training
@@ -517,10 +549,10 @@ def train():
         # Perform PPO update!
         #self.update(env, bp_args) 
 
-        # update PPO agent
+        # update PPO agents
         if CNN:
-            agent.update(search_area)
-            epoch_counter += 1
+            for id, agent in ppo_agents.items():
+                agent.update(search_area)
         
         # Vanilla FFN
         else:
@@ -530,63 +562,35 @@ def train():
                 ####
                 # update PPO agent
                 agent.update()
-                epoch_counter += 1       
                                     
-            # printing average reward
-            if total_time_step % print_freq == 0:
-                print("Epoch : {} \t\t  Total Timestep: {} \t\t Cumulative Returns: {} \t\t Out of bounds count: {}".format(
-                    epoch, total_time_step, episode_return_buffer, out_of_bounds_count))
-                
-            # Logging goes here
-            # self.logger.log_tabular("Epoch", epoch)
-            # self.logger.log_tabular("EpRet", with_min_and_max=True)
-            # self.logger.log_tabular("EpLen", average_only=True)
-            # self.logger.log_tabular("VVals", with_min_and_max=True)
-            # self.logger.log_tabular("TotalEnvInteracts", (epoch + 1) * steps_per_epoch)
-            # self.logger.log_tabular("LossPi", average_only=True)
-            # self.logger.log_tabular("LossV", average_only=True)
-            # self.logger.log_tabular("LossModel", average_only=True)
-            # self.logger.log_tabular("LocLoss", average_only=True)
-            # self.logger.log_tabular("Entropy", average_only=True)
-            # self.logger.log_tabular("KL", average_only=True)
-            # self.logger.log_tabular("ClipFrac", average_only=True)
-            # self.logger.log_tabular("DoneCount", sum_only=True)
-            # self.logger.log_tabular("OutOfBound", average_only=True)
-            # self.logger.log_tabular("StopIter", average_only=True)
-            # self.logger.log_tabular("Time", time.time() - start_time)
-            # self.logger.dump_tabular()                     
+        # printing average reward
+        if total_time_step % print_freq == 0:
+            print("Epoch : {} \t\t  Total Timestep: {} \t\t Cumulative Returns: {} \t\t Out of bounds count: {}".format(
+                epoch_counter, total_time_step, episode_return_buffer, out_of_bounds_count))
+            
+        # TODO Logging logger goes here
+                 
 
-            # save model weights
-            # TODO Save each agent model instead of one?
-            # if total_time_step % save_model_freq == 0:
-            #     print(
-            #         "--------------------------------------------------------------------------------------------")
-            #     print("saving model at : " + checkpoint_path)
-            #     # Render last episode
-            #     print("TEST RENDER - Delete Me Later")
-            #     episode_rewards = {id: render_buffer_rewards[-max_ep_len:] for id, agent in ppo_agents.items()}
-            #     env.render(
-            #         save_gif=True,
-            #         path=directory,
-            #         epoch_count=epoch_counter,
-            #         episode_rewards=episode_rewards
-            #     )
-            #     #ppo_agent.save(checkpoint_path)
-            #     print("model saved")
-            #     print("Elapsed Time  : ", datetime.now().replace(
-            #         microsecond=0) - start_time)
-            #     print(
-            #         "--------------------------------------------------------------------------------------------")
-
-            # TODO Find better way to do this
-            done = False
-            for result in results.values():
-                if result.done:
-                    done = True
-                    break
-            # break; if the episode is over
-            if done:
-                break
+        # Save model weights
+        # if total_time_step % save_model_freq == 0:
+        #     print(
+        #         "--------------------------------------------------------------------------------------------")
+        #     print("saving model at : " + checkpoint_path)
+        #     # Render last episode
+        #     print("TEST RENDER - Delete Me Later")
+        #     episode_rewards = {id: render_buffer_rewards[-max_ep_len:] for id, agent in ppo_agents.items()}
+        #     env.render(
+        #         save_gif=True,
+        #         path=directory,
+        #         epoch_count=epoch_counter,
+        #         episode_rewards=episode_rewards
+        #     )
+        #     #ppo_agent.save(checkpoint_path)
+        #     print("model saved")
+        #     print("Elapsed Time  : ", datetime.now().replace(
+        #         microsecond=0) - start_time)
+        #     print(
+        #         "--------------------------------------------------------------------------------------------")
 
     # Render last episode
     env.render(

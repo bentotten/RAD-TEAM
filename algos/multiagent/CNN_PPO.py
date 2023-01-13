@@ -750,6 +750,7 @@ class PPO:
 
     def select_action(self, state: dict[int, StepResult], id: int) -> ActionChoice: 
         
+        #TODO update to work with new observation
         # Add intensity readings to a list if reading has not been seen before at that location. 
         for observation in state.values():
             key = (observation.state[1], observation.state[2])
