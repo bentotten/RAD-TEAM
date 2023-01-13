@@ -488,7 +488,6 @@ class RadSearch(gym.Env):
             #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 
         # TODO implement this natively to meet Gym environment requirements
-        aggregate_id: dict = {_: None for _ in self.agents}
         aggregate_observation_result: dict = {_: None for _ in self.agents}
         aggregate_reward_result: dict = {_: None for _ in self.agents}
         aggregate_success_result: dict = {_: None for _ in self.agents}
@@ -508,7 +507,6 @@ class RadSearch(gym.Env):
 
             proposed_coordinates = [sum_p(self.agents[agent_id].det_coords, get_step(action)) for agent_id, action in action_list.items()]
             for agent_id, action in action_list.items():
-                aggregate_id.id[agent_id] = agent_id
                 (
                     aggregate_observation_result[agent_id], 
                     aggregate_reward_result[agent_id], 
