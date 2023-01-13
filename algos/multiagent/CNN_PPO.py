@@ -251,7 +251,7 @@ class PPOBuffer:
 
         self.path_start_idx = self.ptr
 
-    def get_end_epoch(self, logger = None) -> dict[str, Union[torch.Tensor, list]]:  # logger will eventually be EpochLogger from epoch_logger
+    def get_buffers_for_epoch_and_reset(self, logger = None) -> dict[str, Union[torch.Tensor, list]]:  # logger will eventually be EpochLogger from epoch_logger
         """
         Call this at the end of an epoch to get all of the data from
         the buffer, with advantages appropriately normalized (shifted to have
@@ -800,7 +800,7 @@ class PPO:
         ''' Wrapper for inner buffer storage '''
         self.maps.buffer.store(obs=obs, act=act, rew=rew, val=val, logp=logp, src=src, terminal=terminal)
 
-    def update():
+    def update(self):
         '''
         Calculate how much the policy has changed: 
             ratio = policy_new / policy_old
@@ -817,8 +817,11 @@ class PPO:
         Caculcate total loss:
             total_loss = critic_loss * critic_discount + actor_loss - entropy
         '''
+        # TODO add some kind of an assert here to ensure buffers are full
+        def calculate_loss(oldpolicy_probs, advantages, rewards, values):
+            pass
         
-        
+        data = self.maps.buffer.get_buffers_for_epoch_and_reset()
         pass
 
     def update_old(self):

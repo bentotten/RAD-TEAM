@@ -203,12 +203,13 @@ def create_color(id: int) -> Color:
 
 @dataclass()
 class StepResult():
-    state: npt.NDArray[np.float32] = field(init=False)
-    reward: float = field(init=False)
-    done: bool = field(default=False)
-    error: dict[Any, Any] = field(default_factory=dict)
-    id: int = field(default=0)    
-
+    # aggregate_observation_result, aggregate_reward_result, aggregate_done_result, aggregate_info_result    
+    # TODO change to match new return
+    observation: dict[int, npt.NDArray[np.float32]] = field(init=False)
+    reward: dict[int, float] = field(init=False)
+    done: dict[int, bool] = field(default=False)
+    error: dict[dict[Any, Any]] = field(default_factory=dict)
+    
 
 @dataclass
 class Agent():
@@ -358,7 +359,7 @@ class RadSearch(gym.Env):
 
     def step(
         self, action: Optional[Action] = None, action_list: Optional[dict] = None 
-    ) -> dict[int, StepResult]:
+    ) -> StepResult:
         """
         Wrapper that captures gymAI env.step() and expands to include multiple agents for one "timestep". 
         Accepts literal action for single agent, or a dict of agent-IDs and actions.
@@ -487,7 +488,12 @@ class RadSearch(gym.Env):
             return state, round(reward, 2), self.done, info
             #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 
-        aggregate_step_result: dict[int, StepResult] = {_: StepResult() for _ in self.agents}
+        # TODO implement this natively to meet Gym environment requirements
+        aggregate_id: dict = {_: None for _ in self.agents}
+        aggregate_observation_result: dict = {_: None for _ in self.agents}
+        aggregate_reward_result: dict = {_: None for _ in self.agents}
+        aggregate_done_result: dict = {_: None for _ in self.agents}
+        aggregate_info_result: dict = {_: None for _ in self.agents}
         
         if action_list:
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
@@ -503,12 +509,12 @@ class RadSearch(gym.Env):
 
             proposed_coordinates = [sum_p(self.agents[agent_id].det_coords, get_step(action)) for agent_id, action in action_list.items()]
             for agent_id, action in action_list.items():
-                aggregate_step_result[agent_id].id = agent_id
+                aggregate_id.id[agent_id] = agent_id
                 (
-                    aggregate_step_result[agent_id].state, 
-                    aggregate_step_result[agent_id].reward, 
-                    aggregate_step_result[agent_id].done,
-                    aggregate_step_result[agent_id].error,
+                    aggregate_observation_result.observation[agent_id], 
+                    aggregate_reward_result.reward[agent_id], 
+                    aggregate_done_result.done[agent_id],
+                    aggregate_info_result.info[agent_id],
                 ) = agent_step(agent=self.agents[agent_id], action=action, proposed_coordinates=proposed_coordinates)   
             self.iter_count += 1
             #return {k: asdict(v) for k, v in aggregate_step_result.items()}       
@@ -517,27 +523,27 @@ class RadSearch(gym.Env):
             if action and len(self.agents) > 1:
                 print("WARNING: Passing single action to mutliple agents during step.", file=sys.stderr)
             # Used during reset to get initial state or during single-agent move
-            for agent_id, agent in self.agents.items():
-                aggregate_step_result[agent_id].id = agent_id
-                
+            for agent_id, agent in self.agents.items():                
                 (
-                    aggregate_step_result[agent_id].state, 
-                    aggregate_step_result[agent_id].reward, 
-                    aggregate_step_result[agent_id].done,
-                    aggregate_step_result[agent_id].error,
+                    aggregate_observation_result.observation[agent_id], 
+                    aggregate_reward_result.reward[agent_id], 
+                    aggregate_done_result.done[agent_id],
+                    aggregate_info_result.info[agent_id],
                 ) = agent_step(action=action, agent=agent)
             self.iter_count += 1
             
         if self.DEBUG:
             print()
-            print("Step result [state]: ", aggregate_step_result[0].state)
+            print("Step result [state]: ", aggregate_observation_result.observation)
             #print("Step result [reward]: ", aggregate_step_result[0].reward)
             #print("Step result [error]: ", aggregate_step_result[0].error)
             #print("Step result [success]: ", aggregate_step_result[0].done)
             print()
-        return aggregate_step_result
+        
+        #return aggregate_step_result
+        return aggregate_observation_result, aggregate_reward_result, aggregate_done_result, aggregate_info_result
 
-    def reset(self) -> dict[int, StepResult]:
+    def reset(self) -> StepResult:
         """
         Method to reset the environment.
         """
