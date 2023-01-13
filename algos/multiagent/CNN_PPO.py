@@ -45,7 +45,6 @@ Shape: TypeAlias = int | tuple[int, ...]
 DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm for inflating step size to obstruction
 
 ################################## Helper Functions and Classes ##################################
-
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     if shape is None:
         return (length,)
@@ -55,6 +54,7 @@ def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     else:
         shape = cast(tuple[int, ...], shape)
         return (length, *shape)
+
 
 def discount_cumsum(
     x: npt.NDArray[np.float64], discount: float
@@ -75,12 +75,14 @@ def discount_cumsum(
     """
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
+
 @dataclass()
 class ActionChoice():
     id: int 
     action: torch.int # size (1)
     action_logprob: torch.float # size (1)
     state_value: torch.float # size(1)
+
 
 ################################## PPO Buffer ##################################
 @dataclass
@@ -372,35 +374,7 @@ class PPOBuffer:
         assert hold_owstd == self.obs_win_std.shape   
         # TODO add episode length buffer check     
     
-
-# TODO Obsolete - remove
-# @dataclass()
-# class RolloutBuffer():
-#     actions_buffer: List = field(default_factory=list)
-#     states_buffer: List = field(default_factory=list)
-#     logprobs_buffer: List = field(default_factory=list)
-#     state_value_buffer: List = field(default_factory=list)
-#     rewards_buffer: List = field(default_factory=list)
     
-#     is_terminals: List = field(default_factory=list)
-#     mapstacks: List = field(default_factory=list) #TODO change to tensor? # For heatmap render
-
-#     readings: Dict[Any, list] = field(default_factory=dict) # For heatmap resampling
-    
-#     def __post_init__(self):
-#         pass
-    
-#     def clear(self):
-#         del self.actions_buffer[:]
-#         del self.states_buffer[:]
-#         del self.logprobs_buffer[:]
-#         del self.state_values[:]
-#         del self.state_value_buffer[:]
-#         del self.is_terminals[:]
-#         del self.mapstacks[:]
-#         self.readings.clear()
-
-
 @dataclass()
 class MapsBuffer:        
     '''
@@ -716,39 +690,10 @@ class Actor(nn.Module):
         
         return action.detach(), action_logprob.detach(), state_value.detach()
     
-    def evaluate(self, state_map_stack, action):
-        
-        # TODO Works without unsqueezing, investigate why
-        for map_stack in state_map_stack:
-            single_map_stack = torch.unsqueeze(map_stack, dim=0) 
-            self.test(single_map_stack)
-                
-            action_probs = self.actor(state_map_stack)
-            
-            dist = Categorical(action_probs)
-            action_logprobs = dist.log_prob(action)
-            dist_entropy = dist.entropy()
-            state_values = self.local_critic(state_map_stack)
-        
-        return action_logprobs, state_values, dist_entropy
-    
-    def gradient_step(
-        #self, obs: npt.NDArray[np.float32], act, hidden: tuple[Tensor, Tensor]
-        self, obs: torch.Tensor, act: torch.Tensor, hidden: tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]
-    #) -> tuple[Any, Any, Any, Tensor]:
-    ) -> tuple[Any, torch.Tensor, torch.Tensor, torch.Tensor]:
-        ''' Update A2C '''
-        obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(1) # TODO this is already a tensor, is this necessary?
-        loc_pred = torch.empty((obs_t.shape[0], 2))
-        hidden_part = hidden[0]  # TODO his contains two tensors, is that accounted for?
-        obs_t = torch.cat((obs_t, loc_pred.unsqueeze(1)), dim=2)
-        pi, logp_a, hidden2, val = self.actor(obs_t, act=act, hidden=hidden[1])  # Actor
-        return pi, val, logp_a, loc_pred
-     
 
 class PPO:
     def __init__(self, state_dim, action_dim, grid_bounds, lr_actor, lr_critic, gamma, K_epochs, 
-                 eps_clip, resolution_accuracy, steps_per_epoch, id, lamda=0.95, beta: float = 0.005, random_seed=None):
+                 eps_clip, resolution_accuracy, steps_per_epoch, id, lamda=0.95, beta: float = 0.005, epsilon=0.2, random_seed=None):
         '''
         state_dim: The dimensions of the return from the environment
         action_dim: How many actions the actor chooses from
@@ -769,7 +714,8 @@ class PPO:
         # Hyperparameters
         self.gamma: float = gamma  # Discount factor
         self.lamda = lamda  # Smoothing parameter for GAE calculation
-        self.beta = beta
+        self.beta = beta  # Entropy for loss function, encourages exploring different policies
+        self.epsilon = epsilon  # clipping parameter to ensure we only make the maximum of ε% change to our policy at a time.
         self.eps_clip = eps_clip
         self.K_epochs = K_epochs
         self.resolution_accuracy = resolution_accuracy
@@ -853,6 +799,27 @@ class PPO:
         ) -> None:
         ''' Wrapper for inner buffer storage '''
         self.maps.buffer.store(obs=obs, act=act, rew=rew, val=val, logp=logp, src=src, terminal=terminal)
+
+    def update():
+        '''
+        Calculate how much the policy has changed: 
+            ratio = policy_new / policy_old
+        Take log form of this: 
+            ratio = [log(policy_new) - log(policy_old)].exp()
+        Calculate Actor loss as the minimum of two functions: 
+            p1 = ratio * advantage
+            p2 = clip(ratio, 1-epsilon, 1+epsilon) * advantage
+            actor_loss = min(p1, p2)
+            
+        Calculate critic loss with MSE between returns and critic value
+            critic_loss = (R - V(s))^2
+            
+        Caculcate total loss:
+            total_loss = critic_loss * critic_discount + actor_loss - entropy
+        '''
+        
+        
+        pass
 
     def update_old(self):
         # TODO I believe this is wrong; see vanilla_PPO.py TODO comment
