@@ -444,17 +444,18 @@ class MapsBuffer:
         self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.buffer.clear()
         
-    def state_to_map(self, observation: dict[int, StepResult], id: int
-                     ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:  # The return map tuple is 2d np arrays
+    def observation_to_map(self, observation: dict[int, StepResult], id: int
+                     ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:  
         '''
-        state: observations from environment for all agents
-        id: ID of agent to reference in state object 
+        observation: observations from environment for all agents
+        id: ID of agent to reference in observation object 
+        Returns a tuple of 2d map arrays
         '''
         
         # TODO Remove redundant calculations
         
-        # Process state for current agent's locations map
-        scaled_coordinates = (int(observation[id].state[1] * self.resolution_accuracy), int(observation[id].state[2] * self.resolution_accuracy))        
+        # Process observation for current agent's locations map
+        scaled_coordinates = (int(observation[id][1] * self.resolution_accuracy), int(observation[id][2] * self.resolution_accuracy))        
         # Capture current and reset previous location
         if self.buffer.coordinate_buffer:
             last_state = self.buffer.coordinate_buffer[-1][id]
@@ -468,12 +469,12 @@ class MapsBuffer:
         y = int(scaled_coordinates[1])
         self.location_map[x][y] = 1.0 
         
-        # Process state for other agent's locations map
+        # Process observation for other agent's locations map
 
         for other_agent_id in observation:
             # Do not add current agent to other_agent map
             if other_agent_id != id:
-                others_scaled_coordinates = (int(observation[other_agent_id].state[1] * self.resolution_accuracy), int(observation[other_agent_id].state[2] * self.resolution_accuracy))
+                others_scaled_coordinates = (int(observation[other_agent_id][1] * self.resolution_accuracy), int(observation[other_agent_id][2] * self.resolution_accuracy))
                 # Capture current and reset previous location
                 if self.buffer.coordinate_buffer:
                     last_state = self.buffer.coordinate_buffer[-1][other_agent_id]
@@ -488,42 +489,42 @@ class MapsBuffer:
                 y = int(others_scaled_coordinates[1])
                 self.others_locations_map[x][y] += 1.0  # Initial agents begin at same location        
                  
-        # Process state for readings_map
+        # Process observation for readings_map
         for agent_id in observation:
-            scaled_coordinates = (int(observation[agent_id].state[1] * self.resolution_accuracy), int(observation[agent_id].state[2] * self.resolution_accuracy))            
+            scaled_coordinates = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
             x = int(scaled_coordinates[0])
             y = int(scaled_coordinates[1])
-            unscaled_coordinates = (observation[agent_id].state[1], observation[agent_id].state[2])
+            unscaled_coordinates = (observation[agent_id][1], observation[agent_id][2])
                         
             assert len(self.buffer.readings[unscaled_coordinates]) > 0
             # TODO onsider using a particle filter for resampling            
             estimated_reading = np.median(self.buffer.readings[unscaled_coordinates])
             self.readings_map[x][y] = estimated_reading  # Initial agents begin at same location
 
-        # Process state for visit_counts_map
+        # Process observation for visit_counts_map
         for agent_id in observation:
-            scaled_coordinates = (int(observation[agent_id].state[1] * self.resolution_accuracy), int(observation[agent_id].state[2] * self.resolution_accuracy))            
+            scaled_coordinates = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
             x = int(scaled_coordinates[0])
             y = int(scaled_coordinates[1])
 
             self.visit_counts_map[x][y] += 1
             
-        # Process state for obstacles_map 
+        # Process observation for obstacles_map 
         # Agent detects obstructions within 110 cm of itself
         for agent_id in observation:
-            scaled_agent_coordinates = (int(observation[agent_id].state[1] * self.resolution_accuracy), int(observation[agent_id].state[2] * self.resolution_accuracy))            
-            if np.count_nonzero(observation[agent_id].state[self.obstacle_state_offset:]) > 0:
-                indices = np.flatnonzero(observation[agent_id].state[self.obstacle_state_offset::]).astype(int)
+            scaled_agent_coordinates = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
+            if np.count_nonzero(observation[agent_id][self.obstacle_state_offset:]) > 0:
+                indices = np.flatnonzero(observation[agent_id][self.obstacle_state_offset::]).astype(int)
                 for index in indices:
                     real_index = int(index + self.obstacle_state_offset)
                     
                     # Inflate to actual distance, then convert and round with resolution_accuracy
-                    inflated_distance = (-(observation[agent_id].state[real_index] * DIST_TH - DIST_TH))
+                    inflated_distance = (-(observation[agent_id][real_index] * DIST_TH - DIST_TH))
                     
                     # scaled_obstacle_distance = int(inflated_distance / self.resolution_accuracy)
                     # step: int = field(init=False)
                     # match index:
-                        # Access the obstacle detection portion of state and see what direction an obstacle is in
+                        # Access the obstacle detection portion of observation and see what direction an obstacle is in
                         # These offset indexes correspond to:
                         # 0: left
                         # 1: up and left
@@ -748,18 +749,18 @@ class PPO:
         # Rendering
         self.render_counter = 0        
 
-    def select_action(self, state: dict[int, StepResult], id: int) -> ActionChoice: 
+    def select_action(self, state_observation: dict[int, StepResult], id: int) -> ActionChoice: 
         
         #TODO update to work with new observation
         # Add intensity readings to a list if reading has not been seen before at that location. 
-        for observation in state.values():
-            key = (observation.state[1], observation.state[2])
+        for observation in state_observation.values():
+            key = (observation[1], observation[2])
             if key in self.maps.buffer.readings:
-                if observation.state[0] not in self.maps.buffer.readings[key]:
-                    self.maps.buffer.readings[key].append(observation.state[0])
+                if observation[0] not in self.maps.buffer.readings[key]:
+                    self.maps.buffer.readings[key].append(observation[0])
             else:
-                self.maps.buffer.readings[key] = [observation.state[0]]
-            assert observation.state[0] in self.maps.buffer.readings[key], "Observation not recorded into readings buffer"
+                self.maps.buffer.readings[key] = [observation[0]]
+            assert observation[0] in self.maps.buffer.readings[key], "Observation not recorded into readings buffer"
 
         with torch.no_grad():
             (
@@ -768,15 +769,15 @@ class PPO:
                 readings_map,
                 visit_counts_map,
                 obstacles_map
-            ) = self.maps.state_to_map(state, id)
+            ) = self.maps.observation_to_map(state_observation, id)
             
             map_stack = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
             
             # Add to mapstack buffer to eventually be converted into tensor with minibatches
-            self.maps.buffer.mapstacks.append(map_stack)
+            self.maps.buffer.mapstacks.append(map_stack)  # TODO is this necessary?
             self.maps.buffer.coordinate_buffer.append({})
-            for i, observation in state.items():
-                self.maps.buffer.coordinate_buffer[-1][i] = (observation.state[1], observation.state[2])
+            for i, observation in state_observation.items():
+                self.maps.buffer.coordinate_buffer[-1][i] = (observation[1], observation[2])
                 
             # Add single minibatch for action selection
             map_stack = torch.unsqueeze(map_stack, dim=0) 

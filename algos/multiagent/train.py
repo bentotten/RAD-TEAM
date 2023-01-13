@@ -334,12 +334,10 @@ def train():
     
     # state = env.reset()['state'] # All agents begin in same location
     # Returns aggregate_observation_result, aggregate_reward_result, aggregate_done_result, aggregate_info_result
-    results = env.reset() # All agents begin in same location, only need one state
-    
-    # Unpack relevant results. This primes the pump for agents to choose an action.
-    observations = results.observation
-    
-    # training loop
+    # Unpack relevant results. This primes the pump for agents to choose an action.    
+    observations = env.reset().observation # All agents begin in same location, only need one state
+        
+    # Training loop
     #while total_time_step < training_timestep_bound:
     #while steps_in_epoch < epochs:
     for epoch_counter in range(epochs):
@@ -348,11 +346,6 @@ def train():
         # TODO why?
         for agent in ppo_agents.values(): 
             agent.policy.eval()
-
-        # Sanity check
-        prior_coordinates = []
-        for result in results.values():
-            prior_coordinates.append([result.state[1], result.state[2]])
 
         for steps_in_epoch in range(local_steps_per_epoch):
             
@@ -363,10 +356,10 @@ def train():
             
             # Get actions
             if CNN:
-                agent_action_returns = {id: agent.select_action(results, id) for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?                
+                agent_action_returns = {id: agent.select_action(observations, id) for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?                
             else:
                 # Vanilla FFN
-                agent_action_returns = {id: agent.select_action(results[id].state) -1 for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
+                agent_action_returns = {id: agent.select_action(observations[id].state) -1 for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?
             
             if number_of_agents == 1:
                 assert ppo_agents[0].maps.others_locations_map.max() == 0.0
@@ -402,9 +395,7 @@ def train():
             for id, result in results.items():
                 # Because of collision avoidance, this assert will not hold true for multiple agents
                 if number_of_agents == 1 and action_list[id] != -1 and not result.error["out_of_bounds"] and not result.error['blocked']:
-                    assert (result.state[1] != prior_coordinates[id][0] or result.state[2] != prior_coordinates[id][1]), "Agent coodinates did not change when should have"
-                prior_coordinates[id][0] = result.state[1]
-                prior_coordinates[id][1] = result.state[2]
+                    assert (next_observations[1] != observations[1] or next_observations[2] !=  observations[2]), "Agent coodinates did not change when should have"
 
             # Incremement Counters and save new cumulative return
             for id, result in results.items():
