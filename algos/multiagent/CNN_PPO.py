@@ -243,7 +243,7 @@ class PPOBuffer:
         rews = np.append(self.rewards_buffer[path_slice], last_val)
         vals = np.append(self.state_value_buffer[path_slice], last_val)
 
-        self.adv_buf[path_slice] = self.compute_advantages(rews, vals. path_slice)
+        self.adv_buf[path_slice] = self.compute_advantages(rews, vals, path_slice)
 
         # the next line computes rewards-to-go, to be targets for the value function
         # TODO discounted returns?
