@@ -312,16 +312,8 @@ def train():
     log_f = open(log_f_name, "w+")
     log_f.write('episode,timestep,reward\n')
 
-    # printing and logging variables
-    print_running_reward = 0
-    print_running_episodes = 0
-
-    log_running_reward = 0
-    log_running_episodes = 0
-
     total_time_step = 0
-    i_episode = 0
-    
+
     # Initial values
     source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
     episode_return = {id: 0 for id in ppo_agents}
@@ -386,7 +378,7 @@ def train():
 
             # Unpack information
             next_observations = next_results.observation
-            rewards = next_results.observation
+            rewards = next_results.reward
             successes = next_results.success
             infos = next_results.info
                 
@@ -431,12 +423,12 @@ def train():
             
             # Check if there was a success
             sucess_counter = 0
-            for id, value in infos.items():
-                if infos[id].done == True:
+            for id in successes:
+                if successes[id] == True:
                     sucess_counter += 1
 
             # Check if some agents went out of bounds
-            for id, value in infos.items():
+            for id in infos:
                 if 'out_of_bounds' in infos[id] and infos[id]['out_of_bounds'] == True:
                         out_of_bounds_count[id] += 1
                                     
