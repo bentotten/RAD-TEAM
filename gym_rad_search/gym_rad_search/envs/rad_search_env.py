@@ -203,12 +203,11 @@ def create_color(id: int) -> Color:
 
 @dataclass()
 class StepResult():
-    # aggregate_observation_result, aggregate_reward_result, aggregate_done_result, aggregate_info_result    
     # TODO change to match new return
-    observation: dict[int, npt.NDArray[np.float32]] = field(init=False)
-    reward: dict[int, float] = field(init=False)
-    done: dict[int, bool] = field(default=False)
-    error: dict[dict[Any, Any]] = field(default_factory=dict)
+    observation: dict[int, npt.NDArray[np.float32]] = field(default_factory=dict)
+    reward: dict[int, float] = field(default_factory=dict)
+    success: dict[int, bool] = field(default_factory=dict)
+    info: dict[dict[Any, Any]] = field(default_factory=dict)
     
 
 @dataclass
@@ -492,7 +491,7 @@ class RadSearch(gym.Env):
         aggregate_id: dict = {_: None for _ in self.agents}
         aggregate_observation_result: dict = {_: None for _ in self.agents}
         aggregate_reward_result: dict = {_: None for _ in self.agents}
-        aggregate_done_result: dict = {_: None for _ in self.agents}
+        aggregate_success_result: dict = {_: None for _ in self.agents}
         aggregate_info_result: dict = {_: None for _ in self.agents}
         
         if action_list:
@@ -511,10 +510,10 @@ class RadSearch(gym.Env):
             for agent_id, action in action_list.items():
                 aggregate_id.id[agent_id] = agent_id
                 (
-                    aggregate_observation_result.observation[agent_id], 
-                    aggregate_reward_result.reward[agent_id], 
-                    aggregate_done_result.done[agent_id],
-                    aggregate_info_result.info[agent_id],
+                    aggregate_observation_result[agent_id], 
+                    aggregate_reward_result[agent_id], 
+                    aggregate_success_result[agent_id],
+                    aggregate_info_result[agent_id],
                 ) = agent_step(agent=self.agents[agent_id], action=action, proposed_coordinates=proposed_coordinates)   
             self.iter_count += 1
             #return {k: asdict(v) for k, v in aggregate_step_result.items()}       
@@ -525,23 +524,23 @@ class RadSearch(gym.Env):
             # Used during reset to get initial state or during single-agent move
             for agent_id, agent in self.agents.items():                
                 (
-                    aggregate_observation_result.observation[agent_id], 
-                    aggregate_reward_result.reward[agent_id], 
-                    aggregate_done_result.done[agent_id],
-                    aggregate_info_result.info[agent_id],
+                    aggregate_observation_result[agent_id], 
+                    aggregate_reward_result[agent_id], 
+                    aggregate_success_result[agent_id],
+                    aggregate_info_result[agent_id],
                 ) = agent_step(action=action, agent=agent)
             self.iter_count += 1
             
         if self.DEBUG:
             print()
-            print("Step result [state]: ", aggregate_observation_result.observation)
+            print("Step result [state]: ", aggregate_observation_result)
             #print("Step result [reward]: ", aggregate_step_result[0].reward)
             #print("Step result [error]: ", aggregate_step_result[0].error)
             #print("Step result [success]: ", aggregate_step_result[0].done)
             print()
         
         #return aggregate_step_result
-        return aggregate_observation_result, aggregate_reward_result, aggregate_done_result, aggregate_info_result
+        return StepResult(observation=aggregate_observation_result, reward=aggregate_reward_result, success=aggregate_success_result, info=aggregate_info_result)
 
     def reset(self) -> StepResult:
         """
