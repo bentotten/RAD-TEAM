@@ -197,8 +197,8 @@ def train():
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     if DEBUG:
         epochs = 1   # Actual epoch will be a maximum of this number + max_ep_len
-        max_ep_len = 20                      # max timesteps in one episode # TODO delete me after fixing
-        steps_per_epoch = 20
+        max_ep_len = 5                      # max timesteps in one episode # TODO delete me after fixing
+        steps_per_epoch = 5
         K_epochs = 4
                      
         obstruction_count = 0 #TODO error with 7 obstacles

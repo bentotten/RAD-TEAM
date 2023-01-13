@@ -10,9 +10,7 @@
       "request": "launch",
       "module": "unittest",
       "justMyCode": true,
-      "args": [
-          "unit_testing/unit_cnn_ppo.py"
-      ],
+      "args": ["unit_testing/unit_cnn_ppo.py"],
       "cwd": "${workspaceFolder}"
     },
     {
@@ -45,7 +43,7 @@
       "justMyCode": false,
       "args": [],
       "cwd": "${workspaceFolder}/algos/multiagent"
-    }
+    },
     {
       "name": "CNN_PPO",
       "type": "python",
@@ -56,6 +54,6 @@
       "justMyCode": false,
       "args": [],
       "cwd": "${workspaceFolder}/algos/cnn_ppo/"
-    }    
+    }
   ]
 }
