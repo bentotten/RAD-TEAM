@@ -755,7 +755,8 @@ class PPO:
         self.policy_old.load_state_dict(self.policy.state_dict()) # TODO why is this here 
         
         self.MseLoss = nn.MSELoss()
-        evaluate
+        
+    def select_action(self, state_observation: dict[int, StepResult], id: int) -> ActionChoice:         
         #TODO update to work with new observation
         # Add intensity readings to a list if reading has not been seen before at that location. 
         for observation in state_observation.values():
@@ -886,7 +887,6 @@ class PPO:
 
             return loss_pi, pi_info            
          
-
     def update_old(self):
         # TODO I believe this is wrong; see vanilla_PPO.py TODO comment
         # Monte Carlo estimate of returns
