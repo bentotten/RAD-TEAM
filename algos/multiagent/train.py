@@ -202,7 +202,7 @@ def train():
         K_epochs = 4
                      
         obstruction_count = 0 #TODO error with 7 obstacles
-        number_of_agents = 2
+        number_of_agents = 1
         
         seed = 0
         random_seed = _int_list_from_bigint(hash_seed(seed))[0]
@@ -322,7 +322,8 @@ def train():
     i_episode = 0
     
     # state = env.reset()['state'] # All agents begin in same location
-    results = env.reset() # All agents begin in same location, only need one state
+    # Returns aggregate_observation_result, aggregate_reward_result, aggregate_done_result, aggregate_info_result
+    observations, rewards, terminals, infos = env.reset() # All agents begin in same location, only need one state
     
     source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
     episode_return = {id: 0 for id in ppo_agents}
@@ -338,10 +339,11 @@ def train():
     #while total_time_step < training_timestep_bound:
     #while steps_in_epoch < epochs:
     for epoch in range(epochs):
-        # Reset hidden state and put actor into evaluation mode
-        #hidden = test_agent.policy._get_init_states()  # TODO look up how to reset hidden layers for CNN     
-        test_agent = ppo_agents[0]
-        test_agent.policy.eval()
+        
+        # Put actor into evaluation mode
+        # TODO why?
+        for agent in ppo_agents.values(): 
+            agent.policy.eval()
 
         # Sanity check
         prior_coordinates = []
@@ -349,9 +351,6 @@ def train():
             prior_coordinates.append([result.state[1], result.state[2]])
 
         for steps_in_epoch in range(steps_per_epoch):
-            # Mark prior state to match up with proper spot in the buffers
-            prior_state = copy.deepcopy(results)  # TODO make this less shitty
-            
             # Get actions
             if CNN:
                 agent_action_returns = {id: agent.select_action(results, id) for id, agent in ppo_agents.items()} # TODO is this running the same state twice for every step?                
@@ -516,7 +515,7 @@ def train():
         #     reduce_v_iters = False
 
         # Perform PPO update!
-        #self.update(env, bp_args) # TODO make multi-agent
+        #self.update(env, bp_args) 
 
         # update PPO agent
         if CNN:
