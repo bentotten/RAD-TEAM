@@ -130,7 +130,7 @@ class ActorCritic(unittest.TestCase):
         
         self.state = state
         self.map_buffer = MapsBuffer(observation_dimension = state_dim, max_size = max_size)
-        self.map_stack = self.map_buffer.state_to_map(id=state[0].id, observation=state)
+        self.map_stack = self.map_buffer.observation_to_map(id=state[0].id, observation=state)
         
         self.buffer = Actor(map_dim=map_dim, state_dim=state_dim)
         
