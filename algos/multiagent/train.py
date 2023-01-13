@@ -392,14 +392,14 @@ def train():
                 
             # Sanity Check
             # Ensure Agent moved in a direction
-            for id, result in results.items():
+            for id in ppo_agents:
                 # Because of collision avoidance, this assert will not hold true for multiple agents
-                if number_of_agents == 1 and action_list[id] != -1 and not result.error["out_of_bounds"] and not result.error['blocked']:
-                    assert (next_observations[1] != observations[1] or next_observations[2] !=  observations[2]), "Agent coodinates did not change when should have"
+                if number_of_agents == 1 and action_list[id] != -1 and not infos[id]["out_of_bounds"] and not infos[id]['blocked']:
+                    assert (next_observations[id][1] != observations[id][1] or next_observations[id][2] !=  observations[id][2]), "Agent coodinates did not change when should have"
 
             # Incremement Counters and save new cumulative return
-            for id, result in results.items():
-                episode_return[id] += result.reward
+            for id in rewards:
+                episode_return[id] += rewards[id]
 
             episode_return_buffer.append(episode_return)
             total_time_step += 1
@@ -517,7 +517,7 @@ def train():
                     out_of_bounds_count = np.zeros(number_of_agents)
 
                 # Unpack relevant results. This primes the pump for agents to choose an action.                
-                results = env.reset().observation
+                observations = env.reset().observation
                 source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
                 episode_return = {id: 0 for id in ppo_agents}
                 steps_in_episode = 0
@@ -548,8 +548,8 @@ def train():
         # Vanilla FFN
         else:
             for id, agent in ppo_agents.items():
-                agent.buffer.rewards.append(results[id].reward)
-                agent.buffer.is_terminals.append(results[id].done)
+                agent.buffer.rewards.append(rewards[id])
+                agent.buffer.is_terminals.append(successes[id])
                 ####
                 # update PPO agent
                 agent.update()
