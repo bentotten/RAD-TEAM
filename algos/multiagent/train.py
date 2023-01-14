@@ -91,6 +91,14 @@ def convert_nine_to_five_action_space(action):
             raise Exception('Action is not within valid [-1,3] range.')
 
 
+class AgentStepReturn(NamedTuple):
+    action: Union[npt.NDArray, None]
+    value:  Union[npt.NDArray, None]
+    logprob:  Union[npt.NDArray, None]
+    hidden:  Union[torch.Tensor, None]
+    out_prediction:  Union[npt.NDArray, None]
+
+
 class BpArgs(NamedTuple):
     bp_decay: float
     l2_weight: float
@@ -578,18 +586,16 @@ class PPO:
                     
                 # Actor: Compute action and logp (log probability); Critic: compute state-value
                 # a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent # TODO what is the hidden variable doing?                
-                agent_thoughts = {id: {'action': None, 'value': None, 'logprob': None, 'hidden': None, 'out_prediction': None} for id in self.agents}
+                agent_thoughts = {id: None for id in self.agents}
                 for id, agent in self.agents.items():
-                    (
-                        agent_thoughts[id]['action'],
-                        agent_thoughts[id]['value'],
-                        agent_thoughts[id]['logprob'],
-                        agent_thoughts[id]['hidden'],
-                        agent_thoughts[id]['out_prediciton']
-                    ) = agent.step(standardized_observations[id], hidden=hidden[id])
+                    action, value, logprob, hidden, out_prediction = agent.step(standardized_observations[id], hidden=hidden[id])
+                    
+                    agent_thoughts[id] = AgentStepReturn(
+                        action=action, value=value, logprob=logprob, hidden=hidden, out_prediction=out_prediction
+                    )
                 
                 # Create action list to send to environment
-                agent_action_decisions = {id: int(agent_thoughts[id]['action'].item()) for id, action in agent_thoughts.items()} 
+                agent_action_decisions = {id: int(agent_thoughts[id].action.item()) for id, action in agent_thoughts.items()} 
                 
                 # TODO the above does not include idle action. After working, add an additional state space for 9 potential actions and uncomment:                 
                 #agent_action_decisions = {id: int(action)-1 for id, action in agent_thoughts.items()} 
@@ -600,7 +606,7 @@ class PPO:
                 
                 # Take step in environment
                 #StepResult(observation=aggregate_observation_result, reward=aggregate_reward_result, success=aggregate_success_result, info=aggregate_info_result)
-                observations, rewards, dones, infos = env.step(action=1)
+                observations, rewards, terminals, infos = env.step(action=1)
                 
                 # Incremement Counters and save new (individual) cumulative returns
                 for id in rewards:
@@ -609,22 +615,19 @@ class PPO:
                 steps_in_episode += 1    
 
                 for id, buffer in self.agent_buffers.items():
-                    obs: npt.NDArray[Any] = observations[id]
-                    rew: npt.NDArray[np.float32] = rewards[id]
-                    terminal: npt.NDArray[np.bool] = successes[id]                                        
                     act: npt.NDArray[np.int32] = agent_action_returns[id].action           
                     val: npt.NDArray[np.float32] = agent_action_returns[id].state_value      
                     logp: npt.NDArray[np.float32] = agent_action_returns[id].action_logprob
                     src: npt.NDArray[np.float32] = source_coordinates                    
                 
                     agent.store(
-                        obs = obs,
-                        act = act,
-                        rew = rew,
+                        obs = observations[id],
+                        rew = rewards[id],
+                        terminal = terminals[id],                        
+                        act = agent_thoughts['actions'],
                         val = val,
                         logp = logp,
                         src = src,
-                        terminal = terminal,
                     )
 
                 self.buf.store(obs_std, a, r, v, logp, source_coordinates) # Feed prior observation to buffer # TODO make multi-agent?
