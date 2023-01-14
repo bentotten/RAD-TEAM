@@ -267,7 +267,7 @@ class RadSearch(gym.Env):
     observation_area: Interval = field(default_factory=lambda: Interval((200.0, 500.0)))
     np_random: npr.Generator = field(default_factory=lambda: npr.default_rng(0))
     obstruction_count: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
-    enforce_grid_boundaries: bool = field(default=True)
+    enforce_grid_boundaries: bool = field(default=False)
     env_ls: list[Polygon] = field(init=False)
     max_dist: float = field(init=False)
     line_segs: list[list[vis.Line_Segment]] = field(init=False)

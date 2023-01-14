@@ -12,7 +12,7 @@ from epoch_logger import setup_logger_kwargs, EpochLogger
 import train
 from gym_rad_search.envs import RadSearch  # type: ignore
 
-
+''' Parameters passed in through the command line '''
 @dataclass
 class CliArgs:
     hid_gru: int
@@ -33,8 +33,10 @@ class CliArgs:
     alpha: float
     render: bool
     agent_count: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    enforce_grid_boundaries: bool
+    minibatches: int
 
-
+''' Function to parge command line arguments '''
 def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
     args = parser.parse_args()
     return CliArgs(
@@ -55,52 +57,42 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         net_type=args.net_type,
         alpha=args.alpha,
         render=args.render,
-        agent_count=args.agent_count
+        agent_count=args.agent_count,
+        enforce_grid_boundaries=args.enforce_grid_boundaries,
+        minibatches=args.minibatches
     )
 
-
+''' Function to generate argument parser '''
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--hid-pol", type=int, default=32, help="Actor linear layer size"
-    )
-    parser.add_argument(
-        "--hid-val", type=int, default=32, help="Critic linear layer size"
-    )
-    parser.add_argument(
-        "--hid-rec", type=int, default=24, help="PFGRU hidden state size"
-    )
-    parser.add_argument(
-        "--hid-gru", type=int, default=24, help="A2C GRU hidden state size"
-    )    
-    parser.add_argument(
-        "--l-pol", type=int, default=1, help="Number of layers for Actor MLP"
-    )
-    parser.add_argument(
-        "--l-val", type=int, default=1, help="Number of layers for Critic MLP"
-    )
-    parser.add_argument(
-        "--gamma",
-        type=float,
-        default=0.99,
-        help="Reward attribution for advantage estimator",
-    )
-    parser.add_argument("--seed", type=int, default=2, help="Random seed control")
+    
+    # General parameters
     parser.add_argument(
         "--steps-per-epoch",
         type=int,
         default=480,
-        help="Number of timesteps per epoch",
+        help="Number of timesteps per epoch (before updating agent networks)",
     )
     parser.add_argument(
-        "--epochs", type=int, default=3000, help="Number of epochs to train the agent"
+        "--epochs", type=int, default=3000, help="Number of total epochs to train the agent"
     )
+    parser.add_argument("--seed", type=int, default=2, help="Random seed control")
     parser.add_argument(
         "--exp-name",
         type=str,
         default="test",
         help="Name of experiment for saving",
     )
+    parser.add_argument(
+        "--render", type=bool, default=False, help="Render Gif"
+    )
+    parser.add_argument(
+        "--agent_count", type=Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        default=1, 
+        help="Number of agents"
+    )     
+    
+    # Environment Parameters 
     parser.add_argument(
         "--dims",
         type=float,
@@ -115,42 +107,66 @@ def create_parser() -> argparse.ArgumentParser:
         nargs=2,
         default=[200.0, 500.0],
         metavar=("area_obs_min", "area_obs_max"),
-        help="Interval for each obstruction area in cm",
+        help="Interval for each obstruction area in cm. This is how much to remove from bounds to make the 'visible bounds'",
     )
     parser.add_argument(
         "--obstruct",
         type=Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7],
         default=-1,
         help="Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions",
-    )
+    )  
     parser.add_argument(
-        "--net-type",
-        type=str,
-        default="rnn",
-        help="Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp",
+        "--enforce_boundaries", type=bool, default=False, help="Indicate whether or not agents can travel outside of the search area"
+    )   
+              
+    # Hyperparameters and PPO parameters
+    parser.add_argument(
+        "--gamma",
+        type=float,
+        default=0.99,
+        help="Reward attribution for advantage estimator for PPO updates",
     )
     parser.add_argument(
         "--alpha", type=float, default=0.1, help="Entropy reward term scaling"
     )
     parser.add_argument(
-        "--render", type=bool, default=False, help="Render Gif"
+        "--minibatches", type=int, default=1, help="Batches to sample data during actor policy update (k_epochs)"
+    )    
+    
+    # Parameters for Neural Networks
+    parser.add_argument(
+        "--net-type",
+        type=str,
+        default="rnn",
+        help="Choose between recurrent neural network or MLP Actor-Critic (A2C), option: rnn, mlp",
+    )    
+    parser.add_argument(
+        "--hid-pol", type=int, default=32, help="Actor linear layer size (Policy Hidden Layer Size)"
     )
     parser.add_argument(
-        "--agent_count", type=Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-        default=1, 
-        help="Number of agents"
+        "--hid-val", type=int, default=32, help="Critic linear layer size (State-Value Hidden Layer Size)"
+    )
+    parser.add_argument(
+        "--hid-rec", type=int, default=24, help="PFGRU hidden state size (Localization Network)"
+    )
+    parser.add_argument(
+        "--hid-gru", type=int, default=24, help="Actor-Critic GRU hidden state size (Embedding Layers)"
     )    
+    parser.add_argument(
+        "--l-pol", type=int, default=1, help="Number of layers for Actor MLP (Policy Multi-layer Perceptron)"
+    )
+    parser.add_argument(
+        "--l-val", type=int, default=1, help="Number of layers for Critic MLP (State-Value Multi-layer Perceptron)"
+    )
+    
     return parser
 
 
 if __name__ == "__main__":
     args = parse_args(create_parser())
 
-    # Change mini-batch size, only been tested with size of 1
-    batch_s: int = 1
-
     # Save directory and experiment name
-    env_name: str = "bpf"
+    env_name: str = "bpf"  # Stands for bootstrap particle filter, one of the neat resampling methods used
     exp_name: str = (
         "agents"
         + str(args.agent_count)
@@ -172,14 +188,13 @@ if __name__ == "__main__":
     robust_seed = _int_list_from_bigint(hash_seed(args.seed))[0]
     rng = npr.default_rng(robust_seed)
 
-    dim_length, dim_height = args.dims
-    logger_kwargs = setup_logger_kwargs(
-        exp_name, args.seed, data_dir="../../models/train", env_name=env_name
-    )
     # Set up logger and save configuration
+    logger_kwargs = setup_logger_kwargs(exp_name, args.seed, data_dir="../../models/train", env_name=env_name)    
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
-
+    
+    # Set up Radiation environment
+    dim_length, dim_height = args.dims
     env: RadSearch = RadSearch(
         bbox=np.array(  # type: ignore
             [[0.0, 0.0], [dim_length, 0.0], [dim_length, dim_height], [0.0, dim_height]]
@@ -201,7 +216,7 @@ if __name__ == "__main__":
             hidden_sizes_rec=[args.hid_rec],
             hidden=[[args.hid_gru]],
             net_type=args.net_type,
-            batch_s=batch_s,
+            batch_s=args.minibatches,
         ),
         gamma=args.gamma,
         alpha=args.alpha,
