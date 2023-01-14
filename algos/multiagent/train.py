@@ -317,26 +317,26 @@ class PPOBuffer:
 class PPO:
     env: RadSearch
     logger: EpochLogger
-    seed: int = 0
-    max_ep_len: int = 120    
-    steps_per_epoch: int = 4000
-    epochs: int = 50
-    save_freq: int = 500
-    render: bool = False
-    save_gif: bool = False      
-    gamma: float = 0.99
-    alpha: float = 0
-    clip_ratio: float = 0.2
-    pi_lr: float = 3e-4
-    mp_mm: tuple[int, int] = (5, 5)
-    vf_lr: float = 5e-3
-    train_pi_iters: int = 40
-    train_v_iters: int = 15
-    lam: float = 0.9
-    number_of_agents: int = 1
-    target_kl: float = 0.07
-    ac_kwargs: dict[str, Any] = dict()        
-    actor_critic: Type[core.RNNModelActorCritic] = core.RNNModelActorCritic
+    seed: int = field(default= 0)
+    max_ep_len: int = field(default= 120)
+    steps_per_epoch: int = field(default= 4000)
+    epochs: int = field(default= 50)
+    save_freq: int = field(default= 500)
+    render: bool = field(default= False)
+    save_gif: bool = field(default= False)
+    gamma: float = field(default= 0.99)
+    alpha: float = field(default= 0)
+    clip_ratio: float = field(default= 0.2)
+    pi_lr: float = field(default= 3e-4)
+    mp_mm: tuple[int, int] = field(default= (5, 5))
+    vf_lr: float = field(default= 5e-3)
+    train_pi_iters: int = field(default= 40)
+    train_v_iters: int = field(default= 15)
+    lam: float = field(default= 0.9)
+    number_of_agents: int = field(default= 1)
+    target_kl: float = field(default= 0.07)
+    ac_kwargs: dict[str, Any] = field(default_factory= lambda: dict())
+    actor_critic: Type[core.RNNModelActorCritic] = field(default=core.RNNModelActorCritic)
     """
     Proximal Policy Optimization (by clipping),
 
