@@ -206,7 +206,7 @@ class StepResult():
     # TODO change to match new return
     observation: dict[int, npt.NDArray[np.float32]] = field(default_factory=dict)
     reward: dict[int, float] = field(default_factory=dict)
-    success: dict[int, bool] = field(default_factory=dict)
+    done: dict[int, bool] = field(default_factory=dict)
     info: dict[dict[Any, Any]] = field(default_factory=dict)
     
 
@@ -356,9 +356,7 @@ class RadSearch(gym.Env):
         
         self.reset()
 
-    def step(
-        self, action: Optional[Action] = None, action_list: Optional[dict] = None 
-    ) -> StepResult:
+    def step( self, action: Optional[Union[Action, dict]] = None ) -> StepResult:
         """
         Wrapper that captures gymAI env.step() and expands to include multiple agents for one "timestep". 
         Accepts literal action for single agent, or a dict of agent-IDs and actions.
@@ -487,6 +485,13 @@ class RadSearch(gym.Env):
             return state, round(reward, 2), self.done, info
             #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 
+        assert action is None or type(action) == int or  type(action) == dict, 'Action not integer or a dictionary of actions.'
+        if type(action) is int: 
+            assert action in [-1, 0, 1, 2, 3, 4, 5, 6, 7]
+        elif type(action) is dict:
+            for a in action.values(): assert a in [-1, 0, 1, 2, 3, 4, 5, 6, 7]
+        action_list = action if type(action) is dict else None
+
         # TODO implement this natively to meet Gym environment requirements
         aggregate_observation_result: dict = {_: None for _ in self.agents}
         aggregate_reward_result: dict = {_: None for _ in self.agents}
@@ -537,8 +542,10 @@ class RadSearch(gym.Env):
             #print("Step result [success]: ", aggregate_step_result[0].done)
             print()
         
+        # To meet Gym compliance, must be in form observation, reward, done, info
         #return aggregate_step_result
-        return StepResult(observation=aggregate_observation_result, reward=aggregate_reward_result, success=aggregate_success_result, info=aggregate_info_result)
+        #return StepResult(observation=aggregate_observation_result, reward=aggregate_reward_result, success=aggregate_success_result, info=aggregate_info_result)
+        return aggregate_observation_result, aggregate_reward_result, aggregate_success_result, aggregate_info_result
 
     def reset(self) -> StepResult:
         """
@@ -604,7 +611,7 @@ class RadSearch(gym.Env):
             self.reset()
 
         # Get current states
-        step = self.step(action=None, action_list=None)
+        step = self.step(action=None)
         # Reclear iteration count 
         self.iter_count = 0
         return step
