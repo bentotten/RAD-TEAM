@@ -333,7 +333,7 @@ class PPO:
     seed: int = field(default= 0)
     max_ep_len: int = field(default= 120)
     steps_per_epoch: int = field(default= 4000)
-    epochs: int = field(default= 50)
+    total_epochs: int = field(default= 50)
     save_freq: int = field(default= 500)
     render: bool = field(default= False)
     save_gif: bool = field(default= False)
@@ -373,7 +373,7 @@ class PPO:
         steps_per_epoch (int): Number of steps of interaction (state-action pairs)
             for the agent and the environment in each epoch.
 
-        epochs (int): Number of total epochs of interaction (equivalent to
+        total_epochs (int): Number of total epochs of interaction (equivalent to
             number of policy updates) to perform.
 
         save_freq (int): How often (in terms of gap between epochs) to save
@@ -484,7 +484,7 @@ class PPO:
         # Instantiate environment 
         self.obs_dim: int = self.env.observation_space.shape[0]
         self.act_dim: int = rad_search_env.A_SIZE
-        self.save_gif_freq = self.epochs // 3        
+        self.save_gif_freq = self.total_epochs // 3        
 
         # Instantiate Actor-Critic (A2C) Agents
         #self.ac = actor_critic(obs_dim, act_dim, **ac_kwargs)
@@ -572,7 +572,7 @@ class PPO:
         # For a total number of epochs, Agent will choose an action using its policy and send it to the environment to take a step in it, yielding a new state observation.
         #   Agent will continue doing this until the episode concludes; a check will be done to see if Agent is at the end of an epoch or not - if so, the agent will use 
         #   its buffer to update/train its networks. Sometimes an epoch ends mid-episode - there is a finish_path() function that addresses this.
-        for epoch in range(self.epochs):
+        for epoch in range(self.total_epochs):
             
             # Reset hidden states and sets Actor into "eval" mode 
             hidden = {id: ac.reset_hidden() for id, ac in self.agents.items()}
@@ -687,7 +687,7 @@ class PPO:
 
                     # If at the end of an epoch and render flag is set, save the gif if its time according to the 
                     #   save_gif frequency value or itsthe last epoch
-                    if (epoch_ended and self.render and (epoch % self.save_gif_freq == 0 or ((epoch + 1) == self.epochs))):
+                    if (epoch_ended and self.render and (epoch % self.save_gif_freq == 0 or ((epoch + 1) == self.total_epochs))):
                             env.render(
                                 save_gif=True,
                                 path='../'+str(self.loggers[0].output_dir),
@@ -724,7 +724,7 @@ class PPO:
                         self.stat_buffers[id].update(observations[id][0])                    
 
             # Save model
-            if (epoch % save_freq == 0) or (epoch == epochs - 1):
+            if (epoch % self.save_freq == 0) or (epoch == self.total_epochs - 1):
                 logger.save_state({}, None)
                 pass
 
@@ -734,14 +734,14 @@ class PPO:
                 reduce_v_iters = False
 
             # Perform PPO update!
-            self.update(env, bp_args) # TODO make multi-agent
+            #self.update(env, bp_args) # TODO
 
             # Log info about epoch
             self.logger.log_tabular("Epoch", epoch)
             self.logger.log_tabular("EpRet", with_min_and_max=True)
             self.logger.log_tabular("EpLen", average_only=True)
             self.logger.log_tabular("VVals", with_min_and_max=True)
-            self.logger.log_tabular("TotalEnvInteracts", (epoch + 1) * steps_per_epoch)
+            self.logger.log_tabular("TotalEnvInteracts", (epoch + 1) * self.steps_per_epoch)
             self.logger.log_tabular("LossPi", average_only=True)
             self.logger.log_tabular("LossV", average_only=True)
             self.logger.log_tabular("LossModel", average_only=True)
@@ -752,7 +752,7 @@ class PPO:
             self.logger.log_tabular("DoneCount", sum_only=True)
             self.logger.log_tabular("OutOfBound", average_only=True)
             self.logger.log_tabular("StopIter", average_only=True)
-            self.logger.log_tabular("Time", time.time() - start_time)
+            self.logger.log_tabular("Time", time.time() - self.start_time)
             self.logger.dump_tabular()
                         
 
@@ -1268,6 +1268,3 @@ def train_scaffolding():
     print("============================================================================================")
 
 
-if __name__ == '__main__':
-
-    train()
