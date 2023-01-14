@@ -201,6 +201,12 @@ class PPOBuffer:
     ) -> None:
         """
         Append one timestep of agent-environment interaction to the buffer.
+        obs: observation (Usually the one returned from environment for previous step)
+        act: action taken 
+        rew: reward from environment
+        val: state-value from critic
+        logp: log probability from actor
+        src: source coordinates
         """
         assert self.ptr < self.max_size
         self.obs_buf[self.ptr, :] = obs
@@ -336,9 +342,7 @@ class PPO:
     target_kl: float = field(default= 0.07)
     ac_kwargs: dict[str, Any] = field(default_factory= lambda: dict())
     actor_critic: Type[core.RNNModelActorCritic] = field(default=core.RNNModelActorCritic)
-    
-    # Initialized elsewhere
-    start_time: float = field(init=False)
+    start_time: float = field(default_factory= lambda: time.time())
     
     """
     Proximal Policy Optimization (by clipping),
@@ -525,10 +529,10 @@ class PPO:
                 env_name=self.logger_kwargs['env_name']
             ) for id in self.agents
         }
-        self.logger = {id: EpochLogger(**self.logger_kwargs_set[id]) for id in self.agents}
+        self.logger = {id: EpochLogger(**(logger_kwargs_set[id])) for id in self.agents}
         
         for id in self.agents:
-            self.logger[id].save_config(locals())        
+            self.logger[id].save_config(locals())  # TODO THIS PICKLE DEPENDS ON THE DIRECTORY STRUCTURE!! Needs rewrite!      
             self.logger[id].log(
                 f"\nNumber of parameters: \t actor policy (pi): {self.pi_var_count[0]}, particle filter gated recurrent unit (model): {self.model_var_count[0]} \t"
             )
@@ -545,18 +549,17 @@ class PPO:
         steps_in_episode = 0
         
         # Obsertvations aka States: for each agent, 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
-        observations = env.reset().observation
+        observations, _,  _, _ = env.reset()  
 
-        # Update stat buffers for all agent observations
+        # Update stat buffers for all agent observations for later observation normalization
         for id in self.agents:
             self.stat_buffers[id].update(observations[id][0])
-
-        self.start_time = time.time()
         
-        # Removed features - migrating to pytorch lightning instead of mpi
+        # Removed features - migrating to pytorch lightning instead of mpi (God willing)
         #local_steps_per_epoch = int(steps_per_epoch / num_procs())    
 
         print(f"Starting main training loop!", flush=True)
+        self.start_time = time.time()        
         # For a total number of epochs, Agent will choose an action using its policy and send it to the environment to take a step in it, yielding a new state observation.
         #   Agent will continue doing this until the episode concludes; a check will be done to see if Agent is at the end of an epoch or not - if so, the agent will use 
         #   its buffer to update/train its networks. Sometimes an epoch ends mid-episode - there is a finish_path() function that addresses this.
@@ -574,6 +577,7 @@ class PPO:
                     standardized_observations[id][0] = np.clip((observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8)     
                     
                 # Actor: Compute action and logp (log probability); Critic: compute state-value
+                # a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent # TODO what is the hidden variable doing?                
                 agent_thoughts = {id: {'action': None, 'value': None, 'logprob': None, 'hidden': None, 'out_prediction': None} for id in self.agents}
                 for id, agent in self.agents.items():
                     (
@@ -584,20 +588,44 @@ class PPO:
                         agent_thoughts[id]['out_prediciton']
                     ) = agent.step(standardized_observations[id], hidden=hidden[id])
                 
-                a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent # TODO what is the hidden variable doing?
+                # Create action list to send to environment
+                agent_action_decisions = {id: int(agent_thoughts[id]['action'].item()) for id, action in agent_thoughts.items()} 
+                
+                # TODO the above does not include idle action. After working, add an additional state space for 9 potential actions and uncomment:                 
+                #agent_action_decisions = {id: int(action)-1 for id, action in agent_thoughts.items()} 
+                
+                # Ensure no item is above 7 or below -1
+                for action in agent_action_decisions.values():
+                    assert -1 <= action and action < 8            
                 
                 # Take step in environment
-                result = env.step(action=int(a)) # TODO make multi-agent # TODO figure out how to cast a to Action()
+                #StepResult(observation=aggregate_observation_result, reward=aggregate_reward_result, success=aggregate_success_result, info=aggregate_info_result)
+                observations, rewards, dones, infos = env.step(action=1)
                 
-                # Parse step result, since not currently multiagent
-                next_o = result[0].state
-                r = np.array(result[0].reward, dtype="float32")
-                d = result[0].done
-                msg = result[0].error
+                # Incremement Counters and save new (individual) cumulative returns
+                for id in rewards:
+                    episode_return[id] += rewards[id]
+                episode_return_buffer.append(episode_return)
+                steps_in_episode += 1    
+
+                for id, buffer in self.agent_buffers.items():
+                    obs: npt.NDArray[Any] = observations[id]
+                    rew: npt.NDArray[np.float32] = rewards[id]
+                    terminal: npt.NDArray[np.bool] = successes[id]                                        
+                    act: npt.NDArray[np.int32] = agent_action_returns[id].action           
+                    val: npt.NDArray[np.float32] = agent_action_returns[id].state_value      
+                    logp: npt.NDArray[np.float32] = agent_action_returns[id].action_logprob
+                    src: npt.NDArray[np.float32] = source_coordinates                    
                 
-                ep_ret += r
-                ep_len += 1
-                ep_ret_ls.append(ep_ret)
+                    agent.store(
+                        obs = obs,
+                        act = act,
+                        rew = rew,
+                        val = val,
+                        logp = logp,
+                        src = src,
+                        terminal = terminal,
+                    )
 
                 self.buf.store(obs_std, a, r, v, logp, source_coordinates) # Feed prior observation to buffer # TODO make multi-agent?
                 logger.store(VVals=v)
@@ -708,7 +736,7 @@ class PPO:
             self.logger.dump_tabular()
                         
 
-def train():
+def train_scaffolding():
     print("============================================================================================")
 
     # Using this to fold setup in VSCode
