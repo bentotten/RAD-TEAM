@@ -5,6 +5,7 @@ from typing import Literal
 import numpy as np
 import numpy.random as npr
 
+import gym
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
 import core
@@ -35,6 +36,7 @@ class CliArgs:
     agent_count: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     enforce_grid_boundaries: bool
     minibatches: int
+    env_name: str
 
 ''' Function to parge command line arguments '''
 def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
@@ -59,7 +61,8 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         render=args.render,
         agent_count=args.agent_count,
         enforce_grid_boundaries=args.enforce_grid_boundaries,
-        minibatches=args.minibatches
+        minibatches=args.minibatches,
+        env_name=args.env_name
     )
 
 ''' Function to generate argument parser '''
@@ -92,7 +95,8 @@ def create_parser() -> argparse.ArgumentParser:
         help="Number of agents"
     )     
     
-    # Environment Parameters 
+    # Environment Parameters
+    parser.add_argument('--env-name', type=str, default='gym_rad_search:RadSearchMulti-v1', help="Environment name registered with Gym")
     parser.add_argument(
         "--dims",
         type=float,
@@ -166,7 +170,7 @@ if __name__ == "__main__":
     args = parse_args(create_parser())
 
     # Save directory and experiment name
-    env_name: str = "bpf"  # Stands for bootstrap particle filter, one of the neat resampling methods used
+    save_dir_name: str = "test"  # Stands for bootstrap particle filter, one of the neat resampling methods used
     exp_name: str = (
         "agents"
         + str(args.agent_count)
@@ -189,21 +193,33 @@ if __name__ == "__main__":
     rng = npr.default_rng(robust_seed)
 
     # Set up logger and save configuration
-    logger_kwargs = setup_logger_kwargs(exp_name, args.seed, data_dir="../../models/train", env_name=env_name)    
+    logger_kwargs = setup_logger_kwargs(exp_name, args.seed, data_dir="../../models/train", env_name=save_dir_name)    
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
     
     # Set up Radiation environment
     dim_length, dim_height = args.dims
-    env: RadSearch = RadSearch(
-        bbox=np.array(  # type: ignore
+    intial_dimensions = {'bbox': np.array(  # type: ignore
             [[0.0, 0.0], [dim_length, 0.0], [dim_length, dim_height], [0.0, dim_height]]
         ),
-        observation_area=np.array(args.area_obs),  # type: ignore
-        obstruction_count=args.obstruct,
-        np_random=rng,
-        number_agents = args.agent_count
-    )
+        'observation_area': np.array(args.area_obs),  # type: ignore
+        'obstruction_count': args.obstruct,
+        'np_random': rng,
+        'number_agents': args.agent_count
+    }
+
+    env: RadSearch = gym.make(args.env_name,**intial_dimensions)
+    
+    # Uncommenting this will make the environment without Gym's oversight (useful for debugging)
+    # env: RadSearch = RadSearch(
+    #     bbox=np.array(  # type: ignore
+    #         [[0.0, 0.0], [dim_length, 0.0], [dim_length, dim_height], [0.0, dim_height]]
+    #     ),
+    #     observation_area=np.array(args.area_obs),  # type: ignore
+    #     obstruction_count=args.obstruct,
+    #     np_random=rng,
+    #     number_agents = args.agent_count
+    # )    
 
     # Run ppo training function
     ppo = train.PPO(
