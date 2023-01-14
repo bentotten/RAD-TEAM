@@ -460,6 +460,17 @@ class PPO:
         ac_kwargs["seed"] = seed
         ac_kwargs["pad_dim"] = 2        
 
+        # Set arguments for bootstrap particle filter in the Particle Filter Gated Recurrent Unit (PFGRU) for the source prediction neural networks, from Ma et al. 2020
+        bp_args = BpArgs(
+            bp_decay=0.1,
+            l2_weight=1.0,
+            l1_weight=0.0,
+            elbo_weight=1.0,
+            area_scale=env.search_area[2][
+                1
+            ],  # retrieves the height of the created environment
+        )
+
         # Instantiate environment 
         obs_dim: int = env.observation_space.shape[0]
         act_dim: int = rad_search_env.A_SIZE
@@ -502,28 +513,39 @@ class PPO:
                 for i in range(number_of_agents)
             }
         
-        # Arguments for the Particle Filter Gated Recurrent Unit (PFGRU) for the source prediction neural network, from Ma et al. 2020
-        bp_args = BpArgs(
-            bp_decay=0.1,
-            l2_weight=1.0,
-            l1_weight=0.0,
-            elbo_weight=1.0,
-            area_scale=env.search_area[2][
-                1
-            ],  # retrieves the height of the created environment
-        )
+        # Setup statistics buffer for normalizing return from environment. This is not strictly necessary for the RAD env, but good to have for future upgrades
+        stat_buff = core.StatBuff()        
         
         # Instatiate logger and set up model saving
         self.logger = logger
         self.logger.log(
             f"\nNumber of parameters: \t actor policy (pi): {pi_var_count[0]}, particle filter gated recurrent unit (model): {model_var_count[0]} \t"
         )
-        
         if number_of_agents == 1:
             self.logger.setup_pytorch_saver(self.agents[0]) # TODO This will only work for one agent and is dependant on directory structure to unpickle! Needs rewrite
 
-        # Prepare for interaction with environment
-        start_time = time.time()        
+        # Prepare environment and get initial values
+        source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
+        episode_return = {id: 0 for id in self.agents}
+        episode_return_buffer = []  # TODO can probably get rid of this, unless want to keep for logging
+        out_of_bounds_count = np.zeros(number_of_agents) # TODO consider changing to dict for consistency
+        success_count = 0
+        steps_in_episode = 0
+        
+        # Obsertvation aka State: 11 dimensions, [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
+        observations = env.reset().observation
+
+
+        stat_buff.update(o[0])
+        ep_ret_ls = []
+        oob = 0
+        reduce_v_iters = True  # Reduces training iteration when further along to speed up training, looks like just for PFGRU
+        self.ac.model.eval() # TODO make multi-agent # Sets PFGRU model into "eval" mode
+
+        start_time = time.time()
+        
+        # Removed features - migrating to pytorch lightning instead of mpi
+        #local_steps_per_epoch = int(steps_per_epoch / num_procs())    
 
 
 def train():
