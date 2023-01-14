@@ -367,10 +367,11 @@ class PPO:
         # Set Pytorch random seed
         torch.manual_seed(seed)
 
-        # Instantiate environment
+        # Set Actor-Critic variables
         ac_kwargs["seed"] = seed
-        ac_kwargs["pad_dim"] = 2
+        ac_kwargs["pad_dim"] = 2        
 
+        # Instantiate environment 
         obs_dim: int = env.observation_space.shape[0]
         act_dim: int = rad_search_env.A_SIZE
 
@@ -695,9 +696,10 @@ class PPO:
         term = False
 
         # Train Actor-Critic policy with multiple steps of gradient descent (mini batch)
+        # TODO what is "term" for?
         while not term and kk < self.train_pi_iters:
             # Early stop training if KL-div above certain threshold
-            pi_l, pi_info, term, loc_loss = self.update_a2c(data, env, min_iters, kk)
+            pi_l, pi_info, term, loc_loss = self.update_a2c(data, env, min_iters, kk)  # pi_l = policy loss
             kk += 1
 
         # Reduce learning rate
