@@ -116,7 +116,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions",
     )  
     parser.add_argument(
-        "--enforce_boundaries", type=bool, default=False, help="Indicate whether or not agents can travel outside of the search area"
+        "--enforce_grid_boundaries", type=bool, default=False, help="Indicate whether or not agents can travel outside of the search area"
     )   
               
     # Hyperparameters and PPO parameters
