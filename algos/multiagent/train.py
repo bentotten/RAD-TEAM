@@ -575,7 +575,7 @@ class PPO:
         for epoch in range(self.total_epochs):
             
             # Reset hidden states and sets Actor into "eval" mode 
-            hidden = {id: ac.reset_hidden() for id, ac in self.agents.items()}
+            hiddens = {id: ac.reset_hidden() for id, ac in self.agents.items()}
             for ac in self.agents.values():
                 ac.pi.logits_net.v_net.eval() # TODO should the pfgru call .eval also?
             
@@ -589,10 +589,10 @@ class PPO:
                 # a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent # TODO what is the hidden variable doing?                
                 agent_thoughts = {id: None for id in self.agents}
                 for id, agent in self.agents.items():
-                    action, value, logprob, hidden, out_prediction = agent.step(standardized_observations[id], hidden=hidden[id])
+                    action, value, logprob, hiddens[id], out_prediction = agent.step(standardized_observations[id], hidden=hiddens[id])
                     
                     agent_thoughts[id] = AgentStepReturn(
-                        action=action, value=value, logprob=logprob, hidden=hidden, out_prediction=out_prediction
+                        action=action, value=value, logprob=logprob, hidden=hiddens[id], out_prediction=out_prediction
                     )
                 
                 # Create action list to send to environment
@@ -615,7 +615,7 @@ class PPO:
                 episode_return_buffer.append(episode_return)
                 steps_in_episode += 1    
 
-                # Store previous observations in buffers, update mean/std for the next observation in buffers,
+                # Store previous observations in buffers, update mean/std for the next observation in stat buffers,
                 #   record state values with logger 
                 for id in self.agents:
                     self.agent_buffers[id].store(
@@ -629,7 +629,7 @@ class PPO:
                     )
                     
                     self.loggers[id].store(VVals=agent_thoughts[id].value)
-                    self.agent_buffers[id].update(next_observations[0])                    
+                    self.stat_buffers[id].update(next_observations[id][0])                    
 
                 # Update obs (critical!)
                 assert observations is not next_observations, 'Previous step observation is pointing to next observation'
@@ -669,7 +669,7 @@ class PPO:
                                 (observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8
                             )     
                             for id, agent in self.agents.items():
-                                _, value, _, _, _ = agent.step(standardized_observations[id], hidden=hidden[id])
+                                _, value, _, _, _ = agent.step(standardized_observations[id], hidden=hiddens[id])
  
                         if epoch_ended:
                             # Set flag to sample new environment parameters
@@ -678,7 +678,7 @@ class PPO:
                         value = 0
                     # Finish the trajectory and compute advantages. See function comments for more information                        
                     for id, agent in self.agents.items():
-                        self.agent_buffers.finish_path(value)
+                        self.agent_buffers[id].finish_path(value)
                         
                     if terminal:
                         # only save episode returns and episode length if trajectory finished
@@ -701,13 +701,13 @@ class PPO:
                     # If not at the end of an epoch, reset the detector position and episode tracking for incoming new episode                      
                     if not env.epoch_end:
                         for id, ac in self.agents.items():                        
-                            hidden = ac.reset_hidden()
+                            hiddens[id] = ac.reset_hidden()
                     else:
                         # Sample new environment parameters, log epoch results
                         for id in self.agents:
                             if 'out_of_bounds_count' in infos[id]:
                                 out_of_bounds_count[id] += infos[id]['out_of_bounds_count']  # TODO this was already done above, is this being done twice?
-                            self.loggers[id].store(DoneCount=terminal_counter, OutOfBound=out_of_bounds_count)
+                            self.loggers[id].store(DoneCount=terminal_counter[id], OutOfBound=out_of_bounds_count[id])
                             terminal_counter[id] = 0
                             out_of_bounds_count[id] = 0
                     
@@ -730,12 +730,15 @@ class PPO:
                 pass
 
             # Reduce localization module training iterations after 100 epochs to speed up training
-            if reduce_v_iters and epoch > 99:
+            if self.reduce_v_iters and epoch > 99:
                 self.train_v_iters = 5
-                reduce_v_iters = False
+                self.reduce_v_iters = False
 
             # Perform PPO update!
             #self.update(env, bp_args) # TODO ######################################################################
+            # TODO Delete this after update is implemented - inside the update function the buffers get reset for the next epoch
+            for id in self.agents:
+                self.agent_buffers[id].get(logger=self.loggers[id])
 
             # Log info about epoch
             for id in self.agents:            
@@ -744,16 +747,17 @@ class PPO:
                 self.loggers[id].log_tabular("EpLen", average_only=True)
                 self.loggers[id].log_tabular("VVals", with_min_and_max=True)
                 self.loggers[id].log_tabular("TotalEnvInteracts", (epoch + 1) * self.steps_per_epoch)
-                self.loggers[id].log_tabular("LossPi", average_only=True)
-                self.loggers[id].log_tabular("LossV", average_only=True)
-                self.loggers[id].log_tabular("LossModel", average_only=True)
-                self.loggers[id].log_tabular("LocLoss", average_only=True)
-                self.loggers[id].log_tabular("Entropy", average_only=True)
-                self.loggers[id].log_tabular("KL", average_only=True)
-                self.loggers[id].log_tabular("ClipFrac", average_only=True)
+                # TODO uncomment after updating is happening
+                # self.loggers[id].log_tabular("LossPi", average_only=True)
+                # self.loggers[id].log_tabular("LossV", average_only=True)
+                # self.loggers[id].log_tabular("LossModel", average_only=True)
+                # self.loggers[id].log_tabular("LocLoss", average_only=True)
+                # self.loggers[id].log_tabular("Entropy", average_only=True)
+                # self.loggers[id].log_tabular("KL", average_only=True)
+                # self.loggers[id].log_tabular("ClipFrac", average_only=True)
                 self.loggers[id].log_tabular("DoneCount", sum_only=True)
                 self.loggers[id].log_tabular("OutOfBound", average_only=True)
-                self.loggers[id].log_tabular("StopIter", average_only=True)
+                #self.loggers[id].log_tabular("StopIter", average_only=True)
                 self.loggers[id].log_tabular("Time", time.time() - self.start_time)
                 self.loggers[id].dump_tabular()
                         
