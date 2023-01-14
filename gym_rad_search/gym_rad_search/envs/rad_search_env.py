@@ -1143,6 +1143,7 @@ class RadSearch(gym.Env):
                 ax3.plot()
                     
             else: # If not first frame
+                # TODO add this back now that multi-agent radppo is up
                 # if location_estimate:
                 #     location_estimate.remove()
                     
