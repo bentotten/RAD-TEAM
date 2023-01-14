@@ -1,5 +1,5 @@
 '''
-Built from https://github.com/nikhilbarhate99/PPO-PyTorch
+Originally built from https://github.com/nikhilbarhate99/PPO-PyTorch, however has been merged with RAD-PPO
 '''
 import os
 import sys
@@ -8,15 +8,19 @@ import time
 from datetime import datetime
 
 import torch
+from torch.optim import Adam
+import torch.nn.functional as F
+
 import numpy as np
 import numpy.random as npr
 import numpy.typing as npt
-from typing import Any, List, Literal, NewType, Optional, TypedDict, cast, get_args, Dict
+from typing import Any, List, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, NamedTuple, Type, Union
 from typing_extensions import TypeAlias
 
 import gym
 # import roboschool
-from gym_rad_search.envs import RadSearch  # type: ignore
+from gym_rad_search.envs import rad_search_env # type: ignore
+from gym_rad_search.envs.rad_search_env import RadSearch, StepResult  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
 from vanilla_PPO import PPO as van_PPO # vanilla_PPO
@@ -26,6 +30,11 @@ from dataclasses import dataclass, field
 from typing_extensions import TypeAlias
 
 import copy
+
+from cgitb import reset
+
+import core
+from epoch_logger import EpochLogger
 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -41,6 +50,7 @@ DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
 DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
 DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm
 
+################################### Functions for algorithm/implementation conversions ###################################
 
 def convert_nine_to_five_action_space(action):
     ''' Converts 4 direction + idle action space to 9 dimensional equivelant
@@ -80,10 +90,362 @@ def convert_nine_to_five_action_space(action):
             return 6
         case _:
             raise Exception('Action is not within valid [-1,3] range.')
-from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
+
+
+class BpArgs(NamedTuple):
+    bp_decay: float
+    l2_weight: float
+    l1_weight: float
+    elbo_weight: float
+    area_scale: float
+
+
+@dataclass
+class PPOBuffer:
+    obs_dim: core.Shape  # Observation space dimensions
+    max_size: int  # Max steps per epoch
+
+    obs_buf: npt.NDArray[np.float32] = field(init=False)
+    act_buf: npt.NDArray[np.float32] = field(init=False)
+    adv_buf: npt.NDArray[np.float32] = field(init=False)
+    rew_buf: npt.NDArray[np.float32] = field(init=False)
+    ret_buf: npt.NDArray[np.float32] = field(init=False)
+    val_buf: npt.NDArray[np.float32] = field(init=False)
+    source_tar: npt.NDArray[np.float32] = field(init=False)
+    logp_buf: npt.NDArray[np.float32] = field(init=False)
+    obs_win: npt.NDArray[np.float32] = field(init=False) # TODO where is this used?
+    obs_win_std: npt.NDArray[np.float32] = field(init=False) # TODO where is this used?
+
+    gamma: float = 0.99
+    lam: float = 0.90
+    beta: float = 0.005
+    ptr: int = 0
+    path_start_idx: int = 0
+
+    """
+    A buffer for storing histories experienced by a PPO agent interacting
+    with the environment, and using Generalized Advantage Estimation (GAE-Lambda)
+    for calculating the advantages of state-action pairs.
+    """
+
+    def __post_init__(self):
+        self.obs_buf: npt.NDArray[np.float32] = np.zeros(
+            core.combined_shape(self.max_size, self.obs_dim), dtype=np.float32
+        )
+        self.act_buf: npt.NDArray[np.float32] = np.zeros(
+            core.combined_shape(self.max_size), dtype=np.float32
+        )
+        self.adv_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.rew_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.ret_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.val_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.source_tar: npt.NDArray[np.float32] = np.zeros(
+            (self.max_size, 2), dtype=np.float32
+        )
+        self.logp_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.obs_win: npt.NDArray[np.float32] = np.zeros(self.obs_dim, dtype=np.float32)
+        self.obs_win_std: npt.NDArray[np.float32] = np.zeros(
+            self.obs_dim, dtype=np.float32
+        )
+        
+        ################################## set device ##################################
+        print("============================================================================================")
+        # set device to cpu or cuda
+        device = torch.device('cpu')
+        if(torch.cuda.is_available()): 
+            device = torch.device('cuda:0') 
+            torch.cuda.empty_cache()
+            print("Device set to : " + str(torch.cuda.get_device_name(device)))
+        else:
+            print("Device set to : cpu")
+        print("============================================================================================")
+
+    def store(
+        self,
+        obs: npt.NDArray[np.float32],
+        act: npt.NDArray[np.float32],
+        rew: npt.NDArray[np.float32],
+        val: npt.NDArray[np.float32],
+        logp: npt.NDArray[np.float32],
+        src: npt.NDArray[np.float32],
+    ) -> None:
+        """
+        Append one timestep of agent-environment interaction to the buffer.
+        """
+        assert self.ptr < self.max_size
+        self.obs_buf[self.ptr, :] = obs
+        self.act_buf[self.ptr] = act
+        self.rew_buf[self.ptr] = rew
+        self.val_buf[self.ptr] = val
+        self.source_tar[self.ptr] = src
+        self.logp_buf[self.ptr] = logp
+        self.ptr += 1
+
+    def finish_path(self, last_val: int = 0) -> None:
+        """
+        Call this at the end of a trajectory, or when one gets cut off
+        by an epoch ending. This looks back in the buffer to where the
+        trajectory started, and uses rewards and value estimates from
+        the whole trajectory to compute advantage estimates with GAE-Lambda,
+        as well as compute the rewards-to-go for each state, to use as
+        the targets for the value function.
+
+        The "last_val" argument should be 0 if the trajectory ended
+        because the agent reached a terminal state (died), and otherwise
+        should be V(s_T), the value function estimated for the last state.
+        This allows us to bootstrap the reward-to-go calculation to account
+        for timesteps beyond the arbitrary episode horizon (or epoch cutoff).
+        """
+
+        path_slice = slice(self.path_start_idx, self.ptr)
+        rews = np.append(self.rew_buf[path_slice], last_val)
+        vals = np.append(self.val_buf[path_slice], last_val)
+
+        # the next two lines implement GAE-Lambda advantage calculation
+        # gamma determines scale of value function, introduces bias regardless of VF accuracy
+        # lambda introduces bias when VF is inaccurate
+        deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
+        self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lam)
+
+        # the next line computes rewards-to-go, to be targets for the value function
+        self.ret_buf[path_slice] = core.discount_cumsum(rews, self.gamma)[:-1]
+
+        self.path_start_idx = self.ptr
+
+    def get(self, logger: EpochLogger) -> dict[str, Union[torch.Tensor, list]]:
+        """
+        Call this at the end of an epoch to get all of the data from
+        the buffer, with advantages appropriately normalized (shifted to have
+        mean zero and std one). Also, resets some pointers in the buffer.
+        """
+        assert self.ptr == self.max_size  # buffer has to be full before you can get
+        self.ptr, self.path_start_idx = 0, 0
+        # the next two lines implement the advantage normalization trick
+        adv_mean, adv_std = self.adv_buf.mean(), self.adv_buf.std()
+        self.adv_buf: npt.NDArray[np.float32] = (self.adv_buf - adv_mean) / adv_std
+        # ret_mean, ret_std = self.ret_buf.mean(), self.ret_buf.std()
+        # self.ret_buf = (self.ret_buf) / ret_std
+        # obs_mean, obs_std = self.obs_buf.mean(), self.obs_buf.std()
+        # self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
+
+        epLens: list[int] = logger.epoch_dict["EpLen"]
+        numEps = len(epLens)
+        epLenTotal = sum(epLens)
+        data = dict(
+            obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
+            act=torch.as_tensor(self.act_buf, dtype=torch.float32),
+            ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
+            adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
+            logp=torch.as_tensor(self.logp_buf, dtype=torch.float32),
+            loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32),
+            ep_len=torch.as_tensor(epLenTotal, dtype=torch.float32),
+            ep_form = []
+        )
+
+        if logger:
+            epLenSize = (
+                # If they're equal then we don't need to do anything
+                # Otherwise we need to add one to make sure that numEps is the correct size
+                numEps
+                + int(epLenTotal != len(self.obs_buf))
+            )
+            obs_buf = np.hstack(
+                (
+                    self.obs_buf,
+                    self.adv_buf[:, None],
+                    self.ret_buf[:, None],
+                    self.logp_buf[:, None],
+                    self.act_buf[:, None],
+                    self.source_tar,
+                )
+            )
+            epForm: list[list[torch.Tensor]] = [[] for _ in range(epLenSize)]
+            slice_b: int = 0
+            slice_f: int = 0
+            jj: int = 0
+            # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
+            for ep_i in epLens:
+                slice_f += ep_i
+                epForm[jj].append(
+                    torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)
+                )
+                slice_b += ep_i
+                jj += 1
+            if slice_f != len(self.obs_buf):
+                epForm[jj].append(
+                    torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32)
+                )
+
+            data["ep_form"] = epForm
+
+        return data
 
 
 ################################### Training ###################################
+class PPO:
+    """
+    Proximal Policy Optimization (by clipping),
+
+    with early stopping based on approximate KL
+
+    Base code from OpenAI:
+    https://github.com/openai/spinningup/blob/master/spinup/algos/pytorch/ppo/ppo.py
+    """
+
+    def __init__(
+        self,
+        env: RadSearch,
+        logger: EpochLogger,
+        actor_critic: Type[core.RNNModelActorCritic] = core.RNNModelActorCritic,
+        ac_kwargs: dict[str, Any] = dict(),
+        seed: int = 0,
+        steps_per_epoch: int = 4000,
+        epochs: int = 50,
+        gamma: float = 0.99,
+        alpha: float = 0,
+        clip_ratio: float = 0.2,
+        pi_lr: float = 3e-4,
+        mp_mm: tuple[int, int] = (5, 5),
+        vf_lr: float = 5e-3,
+        train_pi_iters: int = 40,
+        train_v_iters: int = 15,
+        lam: float = 0.9,
+        max_ep_len: int = 120,
+        number_of_agents: int = 1,
+        save_gif: bool = False,
+        target_kl: float = 0.07,
+        save_freq: int = 500,
+        render: bool = False,
+    ) -> None:
+        """
+        Proximal Policy Optimization (by clipping),
+
+        with early stopping based on approximate KL
+
+        Base code from OpenAI:
+        https://github.com/openai/spinningup/blob/master/spinup/algos/pytorch/ppo/ppo.py
+
+        Args:
+            env : An environment satisfying the OpenAI Gym API.
+
+            actor_critic: The constructor method for a PyTorch Module with a
+                ``step`` method, an ``act`` method, a ``pi`` module, and a ``v``
+                module. The ``step`` method should accept a batch of observations
+                and return:
+
+                ===========  ================  ======================================
+                Symbol       Shape             Description
+                ===========  ================  ======================================
+                ``a``        (batch, act_dim)  | Numpy array of actions for each
+                                            | observation.
+                ``v``        (batch,)          | Numpy array of value estimates
+                                            | for the provided observations.
+                ``logp_a``   (batch,)          | Numpy array of log probs for the
+                                            | actions in ``a``.
+                ===========  ================  ======================================
+
+                The ``act`` method behaves the same as ``step`` but only returns ``a``.
+
+                The ``pi`` module's forward call should accept a batch of
+                observations and optionally a batch of actions, and return:
+
+                ===========  ================  ======================================
+                Symbol       Shape             Description
+                ===========  ================  ======================================
+                ``pi``       N/A               | Torch Distribution object, containing
+                                            | a batch of distributions describing
+                                            | the policy for the provided observations.
+                ``logp_a``   (batch,)          | Optional (only returned if batch of
+                                            | actions is given). Tensor containing
+                                            | the log probability, according to
+                                            | the policy, of the provided actions.
+                                            | If actions not given, will contain
+                                            | ``None``.
+                ===========  ================  ======================================
+
+                The ``v`` module's forward call should accept a batch of observations
+                and return:
+
+                ===========  ================  ======================================
+                Symbol       Shape             Description
+                ===========  ================  ======================================
+                ``v``        (batch,)          | Tensor containing the value estimates
+                                            | for the provided observations. (Critical:
+                                            | make sure to flatten this!)
+                ===========  ================  ======================================
+
+
+            ac_kwargs (dict): Any kwargs appropriate for the ActorCritic object
+                you provided to PPO.
+
+            seed (int): Seed for random number generators.
+
+            steps_per_epoch (int): Number of steps of interaction (state-action pairs)
+                for the agent and the environment in each epoch.
+
+            epochs (int): Number of epochs of interaction (equivalent to
+                number of policy updates) to perform.
+
+            gamma (float): Discount factor. (Always between 0 and 1.)
+
+            clip_ratio (float): Hyperparameter for clipping in the policy objective.
+                Roughly: how far can the new policy go from the old policy while
+                still profiting (improving the objective function)? The new policy
+                can still go farther than the clip_ratio says, but it doesn't help
+                on the objective anymore. (Usually small, 0.1 to 0.3.) Typically
+                denoted by :math:`\epsilon`.
+
+            pi_lr (float): Learning rate for policy optimizer.
+
+            vf_lr (float): Learning rate for value function optimizer.
+
+            train_pi_iters (int): Maximum number of gradient descent steps to take
+                on policy loss per epoch. (Early stopping may cause optimizer
+                to take fewer than this.)
+
+            train_v_iters (int): Number of gradient descent steps to take on
+                value function per epoch.
+
+            lam (float): Lambda for GAE-Lambda. (Always between 0 and 1,
+                close to 1.)
+
+            max_ep_len (int): Maximum length of trajectory / episode / rollout.
+
+            target_kl (float): Roughly what KL divergence we think is appropriate
+                between new and old policies after an update. This will get used
+                for early stopping. (Usually small, 0.01 or 0.05.)
+
+            logger_kwargs (dict): Keyword args for EpochLogger.
+
+            save_freq (int): How often (in terms of gap between epochs) to save
+                the current policy and value function.
+
+        """
+        # Set Pytorch random seed
+        torch.manual_seed(seed)
+
+        # Set additional Actor-Critic variables
+        ac_kwargs["seed"] = seed
+        ac_kwargs["pad_dim"] = 2        
+
+        # Instantiate environment 
+        obs_dim: int = env.observation_space.shape[0]
+        act_dim: int = rad_search_env.A_SIZE
+
+        # Instantiate Actor-Critics 
+        #self.ac = actor_critic(obs_dim, act_dim, **ac_kwargs)
+        agents = {i: actor_critic(obs_dim, act_dim, **ac_kwargs) for i in range(number_of_agents)} # TODO verify all of these args are not doing the singleton pattern thing  
+
 
 def train():
     print("============================================================================================")
@@ -131,7 +493,7 @@ def train():
 
     random_seed = 0        # set random seed if required (0 = no random seed)
     
-    #####################################################
+    #################################################torchinfo####
 
     ###################### logging ######################
     
@@ -218,8 +580,8 @@ def train():
         
         # How much unscaling to do. State returnes scaled coordinates for each agent. 
         # A resolution_accuracy value of 1 here means no unscaling, so all agents will fit within 1x1 grid
-        resolution_accuracy = 0.01 * 1/env.scale  
-        #resolution_accuracy = 1 * 1/env.scale  
+        resolution_accuracy = 0.01 * 1/env.scale  # Less accurate
+        #resolution_accuracy = 1 * 1/env.scale   # More accurate
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     
     env.render(

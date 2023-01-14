@@ -5,6 +5,7 @@ Partially adapted from:
     - github.com/nikhilbarhate99/PPO-PyTorch
     - https://towardsdatascience.com/a-graphic-guide-to-implementing-ppo-for-atari-games-5740ccbe3fbc
     - https://www.youtube.com/watch?v=KHZVXao4qXs 
+    - https://stackoverflow.com/questions/46422845/what-is-the-way-to-understand-proximal-policy-optimization-algorithm-in-rl 
 
 '''
 from os import stat, path, mkdir, getcwd
@@ -19,6 +20,7 @@ import torch
 import torch.nn as nn
 from torch.distributions import MultivariateNormal
 from torch.distributions import Categorical
+from torchinfo import summary
 
 import pytorch_lightning as pl
 
@@ -114,7 +116,7 @@ class PPOBuffer:
     terminal_mask_buffer: npt.NDArray[np.bool] = field(init=False)
 
     # Additional buffers
-    mapstacks: list = field(default_factory=list)  # TODO Change to numpy arrays like above
+    mapstacks: list = field(default_factory=list)  # TODO Change to numpy arrays like above  # TODO do we really want to store these or rerender them when needed for update?
     readings: Dict[Any, list] = field(default_factory=dict)  # TODO Change to numpy arrays like above
     coordinate_buffer: list = field(default_factory=list)  # TODO Change to numpy arrays like above
     episode_length_buffer: list = field(default_factory=list)      
@@ -260,11 +262,6 @@ class PPOBuffer:
         """
         assert self.ptr == self.max_size  # buffer has to be full before you can get
         
-        # Reset readings, mapstacks, and buffer pointers
-        self.ptr, self.path_start_idx = 0, 0
-        del self.mapstacks[:]
-        self.readings.clear()
-        
         # the next two lines implement the advantage normalization trick
         adv_mean = self.adv_buf.mean()
         adv_std = self.adv_buf.std()
@@ -281,7 +278,8 @@ class PPOBuffer:
         epLenTotal = sum(epLens)
         
         data = dict(
-            obs=torch.as_tensor(self.states_buffer, dtype=torch.float32),
+            maps=torch.stack(self.mapstacks), # TODO do we need states if we already have the maps?
+            obs=torch.as_tensor(self.states_buffer, dtype=torch.float32), # TODO do we need states if we already have an old-map stack?
             act=torch.as_tensor(self.actions_buffer, dtype=torch.float32),
             ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
             adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
@@ -325,6 +323,12 @@ class PPOBuffer:
             )
 
         data["ep_form"] = epForm
+        
+        # Reset readings, mapstacks, and buffer pointers
+        # TODO should this be a clear() instead?
+        self.ptr, self.path_start_idx = 0, 0
+        del self.mapstacks[:]
+        self.readings.clear()        
 
         return data
 
@@ -574,7 +578,7 @@ class MapsBuffer:
 
 #TODO make a reset function, similar to self.ac.reset_hidden() in RADPPO
 class Actor(nn.Module):
-    def __init__(self, map_dim, state_dim, batches: int=1, map_count: int=5, action_dim: int=5, global_critic: bool=False):
+    def __init__(self, map_dim, state_dim, batches: int=6, map_count: int=5, action_dim: int=5, global_critic: bool=False):
         super(Actor, self).__init__()
         
         ''' Actor Input tensor shape: (batch size, number of channels, height of grid, width of grid)
@@ -681,6 +685,7 @@ class Actor(nn.Module):
     def act(self, state_map_stack: torch.float) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:  # Tesnor Shape [batch_size, map_size, scaled_grid_x_bound, scaled_grid_y_bound] ([1, 5, 22, 22])
 
         # Select Action from Actor
+        self.test(state_map_stack=state_map_stack)
         action_probs = self.actor(state_map_stack)
         dist = Categorical(action_probs)
         action = dist.sample()
@@ -692,7 +697,16 @@ class Actor(nn.Module):
         
         return action.detach(), action_logprob.detach(), state_value.detach()
     
-    def evaluate(self, state_map_stack, action):
+    def evaluate(self, state_map_stack, action):       
+        
+        self.actor.train()
+        self.local_critic.train()
+        
+        # TODO Delete 
+        print(summary(self.actor, input=state_map_stack.shape))
+        self.test(state_map_stack=state_map_stack)
+        exit()
+        
         action_probs = self.actor(state_map_stack)
         dist = Categorical(action_probs)
         action_logprobs = dist.log_prob(action)
@@ -746,19 +760,22 @@ class PPO:
 
         self.policy = Actor(map_dim=self.maps.buffer.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(self.maps.buffer.device) # TODO these are really slow
 
-        self.optimizer = torch.optim.Adam([
+        self.optimizer_actor = torch.optim.Adam([
                         {'params': self.policy.actor.parameters(), 'lr': lr_actor},
-                        {'params': self.policy.local_critic.parameters(), 'lr': lr_critic}
+                        
                     ])
-
+        self.optimizer_critic = torch.optim.Adam([
+                {'params': self.policy.local_critic.parameters(), 'lr': lr_critic}           
+            ])
+        
         self.policy_old = Actor(map_dim=self.maps.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(self.maps.buffer.device)  # TODO why is this here
         self.policy_old.load_state_dict(self.policy.state_dict()) # TODO why is this here 
         
         self.MseLoss = nn.MSELoss()
         
     def select_action(self, state_observation: dict[int, StepResult], id: int) -> ActionChoice:         
-        #TODO update to work with new observation
-        # Add intensity readings to a list if reading has not been seen before at that location. 
+
+        # Add intensity readings to a list if reading has not been seen before at that location.
         for observation in state_observation.values():
             key = (observation[1], observation[2])
             if key in self.maps.buffer.readings:
@@ -780,7 +797,7 @@ class PPO:
             map_stack = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
             
             # Add to mapstack buffer to eventually be converted into tensor with minibatches
-            self.maps.buffer.mapstacks.append(map_stack)  # TODO is this necessary?
+            self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
             self.maps.buffer.coordinate_buffer.append({})
             for i, observation in state_observation.items():
                 self.maps.buffer.coordinate_buffer[-1][i] = (observation[1], observation[2])
@@ -790,6 +807,11 @@ class PPO:
             
             #state = torch.FloatTensor(state).to(device) # Convert to tensor TODO already a tensor, is this necessary?
             #action, action_logprob = self.policy_old.act(state) # Choose action
+            
+            # TODO Delete 
+            summary(self.policy_old.actor, input=map_stack.shape)        
+            #self.policy.test(map_stack)
+            
             action, action_logprob, state_value = self.policy_old.act(map_stack) # Choose action # TODO why old policy?
 
         return ActionChoice(id=id, action=action.item(), action_logprob=action_logprob.item(), state_value=state_value.item())
@@ -829,12 +851,30 @@ class PPO:
         # Rewards have already been normalized and advantages already calculated with finish_path() function
         
         # Get data from buffers for old policy    
-        data = self.maps.buffer.get_buffers_for_epoch_and_reset()  
+        data: dict[str, torch.Tensor] = self.maps.buffer.get_buffers_for_epoch_and_reset()  
         
-        # TODO write evaluation function      
+        # Reset gradients (actor and critic will be set to train mode in evaluate())
+        self.optimizer_actor.zero_grad()
+        self.optimizer_critic.zero_grad()
+            
+        # Optimize policy for K epochs (TODO minibatches?)
+        print(data['maps'])
+        print(data["act"])
+
+        for _ in range(self.K_epochs):
+            for i, (observations, actions, advantages) in enumerate(train_loader):         
+                logprobs, state_values, dist_entropy = self.policy.evaluate(data['maps'], data['act']) # Actor-critic            
         
-        calculate_policy_loss(self, data)
-        pass
+        surrogate_loss = calculate_surrogate_loss()
+        actor_loss = calculate_policy_loss(self, data)
+        value_loss = calculate_critic_loss(self, data)
+        
+        actor_loss.backward()
+        self.optimizer_actor.step()
+        
+        value_loss.backward()
+        self.optimizer_critic.step()        
+        
     
         # critic
         def calculate_value_loss(data):
