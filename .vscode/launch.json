@@ -43,15 +43,15 @@
       "justMyCode": false,
       "args": [
         "--agent_count",
-        "2",
-        "--steps-per-epoch",
         "5",
+        //"--steps-per-epoch",
+        //"5",
         "--epochs",
-        "5",
+        "2",
         "--render",
         "True",
-        "--obstruct",
-        "1",
+        //"--obstruct",
+        //"1",
         "--seed",
         "2"
       ],
@@ -71,6 +71,8 @@
 // "--exp-name", "test",
 // help="Render Gif
 // "--render", "False",
+// help="Save frequency for gifs
+// "--sav_freq", "500",
 // help="Number of agents"
 // "--agent_count", "1",
 // help="Environment name registered with Gym"

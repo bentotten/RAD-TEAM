@@ -38,6 +38,7 @@ class CliArgs:
     minibatches: int
     env_name: str
     save_freq: int
+    save_gif_freq: int
 
 ''' Function to parge command line arguments '''
 def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
@@ -64,7 +65,8 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         enforce_grid_boundaries=args.enforce_grid_boundaries,
         minibatches=args.minibatches,
         env_name=args.env_name,
-        save_freq=args.save_freq
+        save_freq=args.save_freq,
+        save_gif_freq=args.save_gif_freq
     )
 
 ''' Function to generate argument parser '''
@@ -97,8 +99,11 @@ def create_parser() -> argparse.ArgumentParser:
         "--render", type=bool, default=False, help="Save gif"
     )          
     parser.add_argument(
-        "--save_freq", type=int, default=500, help="If render is true, save gif after this many epochs."
+        "--save_gif_freq", type=int, default=3, help="If render is true, save gif after this many epochs."
     )     
+    parser.add_argument(
+        "--save_freq", type=int, default=500, help="How often to save the model."
+    )        
     
     # Environment Parameters
     parser.add_argument('--env-name', type=str, default='gym_rad_search:RadSearchMulti-v1', help="Environment name registered with Gym")
@@ -209,7 +214,7 @@ if __name__ == "__main__":
         'obstruction_count': args.obstruct,
         'np_random': rng,
         'number_agents': args.agent_count,
-        'save_gif': args.render
+        'save_gif': args.render,
     }
 
     env: RadSearch = gym.make(args.env_name,**intial_parameters)
@@ -246,7 +251,8 @@ if __name__ == "__main__":
         number_of_agents=args.agent_count,
         render=args.render,
         save_gif=args.render, # TODO combine into just render
-        save_freq=args.save_freq
+        save_freq=args.save_freq,
+        save_gif_freq=args.save_gif_freq
     )
     
     ppo.train()

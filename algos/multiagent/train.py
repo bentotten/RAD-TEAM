@@ -336,6 +336,7 @@ class PPO:
     steps_per_epoch: int = field(default= 4000)
     total_epochs: int = field(default= 50)
     save_freq: int = field(default= 500)
+    save_gif_freq: int = field(default= 3)
     render: bool = field(default= False)
     save_gif: bool = field(default= False)
     gamma: float = field(default= 0.99)
@@ -379,6 +380,8 @@ class PPO:
 
         save_freq (int): How often (in terms of gap between epochs) to save
             the current policy and value function.
+            
+        save_gif_freq (int): How many epochs to save a gif
             
         render (bool): Indicates whether to render last episode
         
@@ -485,7 +488,7 @@ class PPO:
         # Instantiate environment 
         self.obs_dim: int = self.env.observation_space.shape[0]
         self.act_dim: int = rad_search_env.A_SIZE
-        self.save_gif_freq = self.total_epochs // 3        
+        self.save_gif_freq = self.save_gif_freq if self.save_gif_freq != 0 else float('inf')
 
         # Instantiate Actor-Critic (A2C) Agents
         #self.ac = actor_critic(obs_dim, act_dim, **ac_kwargs)
@@ -1145,7 +1148,7 @@ def train_scaffolding():
                     # only save EpRet / EpLen if trajectory finished
                     agent.maps.buffer.store_episode_length(steps_in_episode)
 
-                if (epoch_ended and render and (epoch_counter % save_gif_freq == 0 or ((epoch_counter + 1) == epochs))):
+                if (epoch_ended and render and (((epoch_counter + 1) == epochs) or epoch_counter % save_gif_freq == 0)):
                     # Render agent progress during training
                     #if proc_id() == 0 and epoch != 0:
                     if epoch_counter != 0:
