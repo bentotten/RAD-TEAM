@@ -18,7 +18,6 @@ from typing import Any, List, Literal, NewType, Optional, TypedDict, cast, get_a
 from typing_extensions import TypeAlias
 
 import gym
-# import roboschool
 from gym_rad_search.envs import rad_search_env # type: ignore
 from gym_rad_search.envs.rad_search_env import RadSearch, StepResult  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
@@ -34,7 +33,7 @@ import copy
 from cgitb import reset
 
 import core
-from epoch_logger import EpochLogger
+from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs
 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -316,7 +315,7 @@ class PPOBuffer:
 @dataclass
 class PPO:
     env: RadSearch
-    logger: EpochLogger
+    logger_kwargs: EpochLoggerKwargs
     seed: int = field(default= 0)
     max_ep_len: int = field(default= 120)
     steps_per_epoch: int = field(default= 4000)
@@ -337,6 +336,10 @@ class PPO:
     target_kl: float = field(default= 0.07)
     ac_kwargs: dict[str, Any] = field(default_factory= lambda: dict())
     actor_critic: Type[core.RNNModelActorCritic] = field(default=core.RNNModelActorCritic)
+    
+    # Initialized elsewhere
+    start_time: float = field(init=False)
+    
     """
     Proximal Policy Optimization (by clipping),
 
@@ -348,7 +351,7 @@ class PPO:
     Args:
         env : An environment satisfying the OpenAI Gym API.
         
-        logger: A logging mechanism for saving models and saving/printing progress
+        logger_kwargs: Arguments for the logging mechanism for saving models and saving/printing progress for each agent
         
         seed (int): Seed for random number generators.
         
@@ -474,8 +477,7 @@ class PPO:
         #self.ac = actor_critic(obs_dim, act_dim, **ac_kwargs)
         self.agents = {i: self.actor_critic(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)}
         for agent in self.agents.values():
-            agent.model.eval() # Sets PFGRU model into "eval" mode 
-            # TODO make sure all other networks are set to eval mode also   
+            agent.model.eval() # Sets PFGRU model into "eval" mode # TODO why not in the episode with the other agents?   
         
         # Count variables for actor/policy (pi) and PFGRU (model)
         # TODO rename all of these to make them consistent :V 
@@ -514,12 +516,23 @@ class PPO:
         self.stat_buffers = {i: core.StatBuff() for i in range(self.number_of_agents)}
         self.reduce_v_iters = True  # Reduces training iteration when further along to speed up training
                 
-        # Instatiate logger and set up model saving
-        self.logger.log(
-            f"\nNumber of parameters: \t actor policy (pi): {self.pi_var_count[0]}, particle filter gated recurrent unit (model): {self.model_var_count[0]} \t"
-        )
-        if self.number_of_agents == 1:
-            self.logger.setup_pytorch_saver(self.agents[0]) # TODO This will only work for one agent and is dependant on directory structure to unpickle! Needs rewrite
+        # Instatiate loggers and set up model saving
+        logger_kwargs_set = {
+            id: setup_logger_kwargs(
+                exp_name=f"{id}_{self.logger_kwargs['exp_name']}",
+                seed=self.logger_kwargs['seed'],
+                data_dir=self.logger_kwargs['data_dir'],
+                env_name=self.logger_kwargs['env_name']
+            ) for id in self.agents
+        }
+        self.logger = {id: EpochLogger(**self.logger_kwargs_set[id]) for id in self.agents}
+        
+        for id in self.agents:
+            self.logger[id].save_config(locals())        
+            self.logger[id].log(
+                f"\nNumber of parameters: \t actor policy (pi): {self.pi_var_count[0]}, particle filter gated recurrent unit (model): {self.model_var_count[0]} \t"
+            )
+            self.logger[id].setup_pytorch_saver(self.agents[id])
 
     def train(self):
         # Prepare environment and get initial values
@@ -538,256 +551,408 @@ class PPO:
         for id in self.agents:
             self.stat_buffers[id].update(observations[id][0])
 
-        start_time = time.time()
+        self.start_time = time.time()
         
         # Removed features - migrating to pytorch lightning instead of mpi
         #local_steps_per_epoch = int(steps_per_epoch / num_procs())    
 
-        # Start 
+        print(f"Starting main training loop!", flush=True)
+        # For a total number of epochs, Agent will choose an action using its policy and send it to the environment to take a step in it, yielding a new state observation.
+        #   Agent will continue doing this until the episode concludes; a check will be done to see if Agent is at the end of an epoch or not - if so, the agent will use 
+        #   its buffer to update/train its networks. Sometimes an epoch ends mid-episode - there is a finish_path() function that addresses this.
+        for epoch in range(self.epochs):
+            
+            # Reset hidden states and sets Actor into "eval" mode 
+            hidden = {id: ac.reset_hidden() for id, ac in self.agents.items()}
+            for ac in self.agents.values():
+                ac.pi.logits_net.v_net.eval() # TODO should the pfgru call .eval also?
+            
+            for t in range(self.steps_per_epoch):
+                # Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode
+                standardized_observations = {id: observations[id] for id in self.agents}
+                for id in self.agents:
+                    standardized_observations[id][0] = np.clip((observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8)     
+                    
+                # Actor: Compute action and logp (log probability); Critic: compute state-value
+                agent_thoughts = {id: {'action': None, 'value': None, 'logprob': None, 'hidden': None, 'out_prediction': None} for id in self.agents}
+                for id, agent in self.agents.items():
+                    (
+                        agent_thoughts[id]['action'],
+                        agent_thoughts[id]['value'],
+                        agent_thoughts[id]['logprob'],
+                        agent_thoughts[id]['hidden'],
+                        agent_thoughts[id]['out_prediciton']
+                    ) = agent.step(standardized_observations[id], hidden=hidden[id])
+                
+                a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent # TODO what is the hidden variable doing?
+                
+                # Take step in environment
+                result = env.step(action=int(a)) # TODO make multi-agent # TODO figure out how to cast a to Action()
+                
+                # Parse step result, since not currently multiagent
+                next_o = result[0].state
+                r = np.array(result[0].reward, dtype="float32")
+                d = result[0].done
+                msg = result[0].error
+                
+                ep_ret += r
+                ep_len += 1
+                ep_ret_ls.append(ep_ret)
+
+                self.buf.store(obs_std, a, r, v, logp, source_coordinates) # Feed prior observation to buffer # TODO make multi-agent?
+                logger.store(VVals=v)
+
+                # Update obs (critical!)
+                o = next_o
+
+                # Update running mean and std
+                stat_buff.update(o[0])
+
+                timeout = ep_len == max_ep_len
+                terminal = d or timeout
+                epoch_ended = t == steps_per_epoch - 1
+
+                if terminal or epoch_ended:
+                    if d and not timeout:
+                        done_count += 1
+                    #if env.out_of_bounds:
+                    # Artifact - TODO decouple from rad_ppo agent
+                    if 'out_of_bounds' in msg and msg['out_of_bounds'] == True:
+                        # Log if agent went out of bounds
+                        oob += 1
+                    if epoch_ended and not (terminal):
+                        print(
+                            f"Warning: trajectory cut off by epoch at {ep_len} steps and time {t}.",
+                            flush=True,
+                        )
+
+                    if timeout or epoch_ended:
+                        # if trajectory didn't reach terminal state, bootstrap value target
+                        obs_std[0] = np.clip(
+                            (o[0] - stat_buff.mu) / stat_buff.sig_obs, -8, 8
+                        )
+                        _, v, _, _, _ = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent
+                        if epoch_ended:
+                            # Set flag to sample new environment parameters
+                            env.epoch_end = True # TODO make multi-agent?
+                    else:
+                        v = 0
+                    self.buf.finish_path(v)
+                    if terminal:
+                        # only save EpRet / EpLen if trajectory finished
+                        logger.store(EpRet=ep_ret, EpLen=ep_len)
+
+                    if (
+                        epoch_ended
+                        and render
+                        and (epoch % save_gif_freq == 0 or ((epoch + 1) == epochs))
+                    ):
+                        # Check agent progress during training
+                        if epoch != 0:
+                            env.render(
+                                save_gif=save_gif,
+                                path=str(logger.output_dir),
+                                epoch_count=epoch,
+                                #ep_rew=ep_ret_ls,
+                            )
+
+                    ep_ret_ls = []
+                    stat_buff.reset()
+                    if not env.epoch_end: # TODO make multi-agent
+                        # Reset detector position and episode tracking
+                        hidden = self.ac.reset_hidden() # TODO make multi-agent
+                        o, ep_ret, ep_len, a = env.reset()[0].state, 0, 0, -1 # TODO make multi-agent
+                        source_coordinates = np.array(env.src_coords, dtype="float32")
+                    else:
+                        # Sample new environment parameters, log epoch results
+                        if 'out_of_bounds_count' in msg:
+                            oob += msg['out_of_bounds_count']
+                        logger.store(DoneCount=done_count, OutOfBound=oob)
+                        done_count = 0
+                        oob = 0
+                        o, ep_ret, ep_len, a = env.reset()[0].state, 0, 0, -1 # TODO make multi-agent
+                        source_coordinates = np.array(env.src_coords, dtype="float32")
+                        
+                    stat_buff.update(o[0])
+
+            # Save model
+            if (epoch % save_freq == 0) or (epoch == epochs - 1):
+                logger.save_state({}, None)
+                pass
+
+            # Reduce localization module training iterations after 100 epochs to speed up training
+            if reduce_v_iters and epoch > 99:
+                self.train_v_iters = 5
+                reduce_v_iters = False
+
+            # Perform PPO update!
+            self.update(env, bp_args) # TODO make multi-agent
+
+            # Log info about epoch
+            self.logger.log_tabular("Epoch", epoch)
+            self.logger.log_tabular("EpRet", with_min_and_max=True)
+            self.logger.log_tabular("EpLen", average_only=True)
+            self.logger.log_tabular("VVals", with_min_and_max=True)
+            self.logger.log_tabular("TotalEnvInteracts", (epoch + 1) * steps_per_epoch)
+            self.logger.log_tabular("LossPi", average_only=True)
+            self.logger.log_tabular("LossV", average_only=True)
+            self.logger.log_tabular("LossModel", average_only=True)
+            self.logger.log_tabular("LocLoss", average_only=True)
+            self.logger.log_tabular("Entropy", average_only=True)
+            self.logger.log_tabular("KL", average_only=True)
+            self.logger.log_tabular("ClipFrac", average_only=True)
+            self.logger.log_tabular("DoneCount", sum_only=True)
+            self.logger.log_tabular("OutOfBound", average_only=True)
+            self.logger.log_tabular("StopIter", average_only=True)
+            self.logger.log_tabular("Time", time.time() - start_time)
+            self.logger.dump_tabular()
+                        
 
 def train():
     print("============================================================================================")
 
-    ####### initialize environment hyperparameters ######
-    env_name = "radppo-v2"
+    # Using this to fold setup in VSCode
+    if True:
+        ####### initialize environment hyperparameters ######
+        env_name = "radppo-v2"
 
-    # max_ep_len = 1000                   # max timesteps in one episode
-    #training_timestep_bound = int(3e6)   # break training loop if timeteps > training_timestep_bound TODO DELETE
-    epochs = int(3e6)  # Actual epoch will be a maximum of this number + max_ep_len
-    steps_per_epoch = 3000
-    max_ep_len = 120                      # max timesteps in one episode
-    #training_timestep_bound = 100  # Change to epoch count DELETE ME
+        # max_ep_len = 1000                   # max timesteps in one episode
+        #training_timestep_bound = int(3e6)   # break training loop if timeteps > training_timestep_bound TODO DELETE
+        epochs = int(3e6)  # Actual epoch will be a maximum of this number + max_ep_len
+        steps_per_epoch = 3000
+        max_ep_len = 120                      # max timesteps in one episode
+        #training_timestep_bound = 100  # Change to epoch count DELETE ME
 
-    # print avg reward in the interval (in num timesteps)
-    #print_freq = max_ep_len * 3
-    print_freq = max_ep_len * 100
-    # log avg rewardfrom gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore in the interval (in num timesteps)
-    log_freq = max_ep_len * 2
-    # save model frequency (in num timesteps)
-    save_model_freq = int(1e5)
+        # print avg reward in the interval (in num timesteps)
+        #print_freq = max_ep_len * 3
+        print_freq = max_ep_len * 100
+        # log avg rewardfrom gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore in the interval (in num timesteps)
+        log_freq = max_ep_len * 2
+        # save model frequency (in num timesteps)
+        save_model_freq = int(1e5)
 
-    # starting std for action distribution (Multivariate Normal)
-    action_std = 0.6
-    # linearly decay action_std (action_std = action_std - action_std_decay_rate)
-    action_std_decay_rate = 0.05
-    # minimum action_std (stop decay after action_std <= min_action_std)
-    min_action_std = 0.1
-    # action_std decay frequency (in num timesteps)
-    action_std_decay_freq = int(2.5e5)
-    #####################################################
+        # starting std for action distribution (Multivariate Normal)
+        action_std = 0.6
+        # linearly decay action_std (action_std = action_std - action_std_decay_rate)
+        action_std_decay_rate = 0.05
+        # minimum action_std (stop decay after action_std <= min_action_std)
+        min_action_std = 0.1
+        # action_std decay frequency (in num timesteps)
+        action_std_decay_freq = int(2.5e5)
+        #####################################################
 
-    # Note : print/log frequencies should be > than max_ep_len
+        # Note : print/log frequencies should be > than max_ep_len
 
-    ################ PPO hyperparameters ################
-    steps_per_epoch = 480
-    K_epochs = 80               # update policy for K epochs in one PPO update
-    eps_clip = 0.2          # clip parameter for PPO
-    gamma = 0.99            # discount factor
-    lamda = 0.95            # smoothing parameter for Generalize Advantage Estimate (GAE) calculations
-    beta: float = 0.005     # TODO look up what this is doing
+        ################ PPO hyperparameters ################
+        steps_per_epoch = 480
+        K_epochs = 80               # update policy for K epochs in one PPO update
+        eps_clip = 0.2          # clip parameter for PPO
+        gamma = 0.99            # discount factor
+        lamda = 0.95            # smoothing parameter for Generalize Advantage Estimate (GAE) calculations
+        beta: float = 0.005     # TODO look up what this is doing
 
-    lr_actor = 0.0003       # learning rate for actor network
-    lr_critic = 0.001       # learning rate for critic network
+        lr_actor = 0.0003       # learning rate for actor network
+        lr_critic = 0.001       # learning rate for critic network
 
-    random_seed = 0        # set random seed if required (0 = no random seed)
-    
-    #################################################torchinfo####
+        random_seed = 0        # set random seed if required (0 = no random seed)
+        
+        #################################################torchinfo####
 
-    ###################### logging ######################
-    
-    # For render
-    render = True
-    save_gif_freq = 1
+        ###################### logging ######################
+        
+        # For render
+        render = True
+        save_gif_freq = 1
 
-    # log files for multiple runs are NOT overwritten
-    log_dir = "PPO_logs"
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
+        # log files for multiple runs are NOT overwritten
+        log_dir = "PPO_logs"
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
 
-    log_dir = log_dir + '/' + env_name + '/'
-    if not os.path.exists(log_dir):
-        os.makedirs(log_dir)
+        log_dir = log_dir + '/' + env_name + '/'
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
 
-    # get number of log files in log directory
-    run_num = 0
-    current_num_files = next(os.walk(log_dir))[2]
-    run_num = len(current_num_files)
+        # get number of log files in log directory
+        run_num = 0
+        current_num_files = next(os.walk(log_dir))[2]
+        run_num = len(current_num_files)
 
-    # create new log file for each run
-    log_f_name = log_dir + 'PPO_' + env_name + "_log_" + str(run_num) + ".csv"
+        # create new log file for each run
+        log_f_name = log_dir + 'PPO_' + env_name + "_log_" + str(run_num) + ".csv"
 
-    print("current logging run number for " + env_name + " : ", run_num)
-    print("logging at : " + log_f_name)
-    #####################################################
+        print("current logging run number for " + env_name + " : ", run_num)
+        print("logging at : " + log_f_name)
+        #####################################################
 
-    ################### checkpointing ###################
-    # change this to prevent overwriting weights in same env_name folder
-    run_num_pretrained = 0
+        ################### checkpointing ###################
+        # change this to prevent overwriting weights in same env_name folder
+        run_num_pretrained = 0
 
-    # directoself.step(action=None, action_list=None)ry = "PPO_preTrained"
-    directory = "RAD_PPO"
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+        # directoself.step(action=None, action_list=None)ry = "PPO_preTrained"
+        directory = "RAD_PPO"
+        if not os.path.exists(directory):
+            os.makedirs(directory)
 
-    directory = directory + '/' + env_name + '/'
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+        directory = directory + '/' + env_name + '/'
+        if not os.path.exists(directory):
+            os.makedirs(directory)
 
-    checkpoint_path = directory + "PPO_{}_{}_{}.pth".format(env_name, random_seed, run_num_pretrained)
-    print("save checkpoint path : " + checkpoint_path)
+        checkpoint_path = directory + "PPO_{}_{}_{}.pth".format(env_name, random_seed, run_num_pretrained)
+        print("save checkpoint path : " + checkpoint_path)
 
-    print(f"Current directory: {os.getcwd()}")
-    #####################################################
+        print(f"Current directory: {os.getcwd()}")
+        #####################################################
 
-    ################ Setup Environment ################
+        ################ Setup Environment ################
 
-    print("training environment name : " + env_name)
-    
-    # Generate a large random seed and random generator object for reproducibility
-    #robust_seed = _int_list_from_bigint(hash_seed(seed))[0] # TODO get this to work
-    #rng = npr.default_rng(robust_seed)
-    # Pass np_random=rng, to env creation
+        print("training environment name : " + env_name)
+        
+        # Generate a large random seed and random generator object for reproducibility
+        #robust_seed = _int_list_from_bigint(hash_seed(seed))[0] # TODO get this to work
+        #rng = npr.default_rng(robust_seed)
+        # Pass np_random=rng, to env creation
 
-    obstruction_count = 0
-    number_of_agents = 1
-    env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)
-    
-    resolution_accuracy = 1 * 1/env.scale  
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    if DEBUG:
-        epochs = 1   # Actual epoch will be a maximum of this number + max_ep_len
-        max_ep_len = 5                      # max timesteps in one episode # TODO delete me after fixing
-        steps_per_epoch = 5
-        K_epochs = 4
-                     
-        obstruction_count = 0 #TODO error with 7 obstacles
+        obstruction_count = 0
         number_of_agents = 1
+        env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)
         
-        seed = 0
-        random_seed = _int_list_from_bigint(hash_seed(seed))[0]
+        resolution_accuracy = 1 * 1/env.scale  
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        if DEBUG:
+            epochs = 1   # Actual epoch will be a maximum of this number + max_ep_len
+            max_ep_len = 5                      # max timesteps in one episode # TODO delete me after fixing
+            steps_per_epoch = 5
+            K_epochs = 4
+                        
+            obstruction_count = 0 #TODO error with 7 obstacles
+            number_of_agents = 1
+            
+            seed = 0
+            random_seed = _int_list_from_bigint(hash_seed(seed))[0]
+            
+            log_freq = 2000
+            
+            render = False
+            
+            #bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
+            
+            #env: RadSearch = RadSearch(DEBUG=DEBUG, number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count, bbox=bbox) 
+            env: RadSearch = RadSearch(DEBUG=DEBUG, number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)         
+            
+            # How much unscaling to do. State returnes scaled coordinates for each agent. 
+            # A resolution_accuracy value of 1 here means no unscaling, so all agents will fit within 1x1 grid
+            resolution_accuracy = 0.01 * 1/env.scale  # Less accurate
+            #resolution_accuracy = 1 * 1/env.scale   # More accurate
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         
-        log_freq = 2000
-        
-        render = False
-        
-        #bbox = tuple(tuple(((0.0, 0.0), (2000.0, 0.0), (2000.0, 2000.0), (0.0, 2000.0))))  
-        
-        #env: RadSearch = RadSearch(DEBUG=DEBUG, number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count, bbox=bbox) 
-        env: RadSearch = RadSearch(DEBUG=DEBUG, number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)         
-        
-        # How much unscaling to do. State returnes scaled coordinates for each agent. 
-        # A resolution_accuracy value of 1 here means no unscaling, so all agents will fit within 1x1 grid
-        resolution_accuracy = 0.01 * 1/env.scale  # Less accurate
-        #resolution_accuracy = 1 * 1/env.scale   # More accurate
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    
-    env.render(
-        just_env=True,
-        path=directory,
-        save_gif=True
-    )
-    # state space dimension
-    state_dim = env.observation_space.shape[0]
+        env.render(
+            just_env=True,
+            path=directory,
+            save_gif=True
+        )
+        # state space dimension
+        state_dim = env.observation_space.shape[0]
 
-    # action space dimension
-    action_dim = env.action_space.n
-    
-    # Search area
-    search_area = env.search_area[2][1]
-    
-    # Scaled grid dimensions
-    scaled_grid_bounds = (1, 1)  # Scaled to match return from env.step(). Can be reinflated with resolution_accuracy
+        # action space dimension
+        action_dim = env.action_space.n
+        
+        # Search area
+        search_area = env.search_area[2][1]
+        
+        # Scaled grid dimensions
+        scaled_grid_bounds = (1, 1)  # Scaled to match return from env.step(). Can be reinflated with resolution_accuracy
 
 
-    ############# print all hyperparameters #############
-    print("--------------------------------------------------------------------------------------------")
-    #print("max training timesteps : ", training_timestep_bound)
-    print("max training epochs : ", epochs)    
-    print("max timesteps per episode : ", max_ep_len)
-    print("model saving frequency : " + str(save_model_freq) + " timesteps")
-    print("log frequency : " + str(log_freq) + " timesteps")
-    print("printing average reward over episodes in last : " + str(print_freq) + " timesteps")
-    print("--------------------------------------------------------------------------------------------")
-    print("state space dimension : ", state_dim)
-    print("action space dimension : ", action_dim)
-    print("Grid space bounds : ", scaled_grid_bounds)
-    print("--------------------------------------------------------------------------------------------")
-    print("Initializing a discrete action space policy")
-    print("--------------------------------------------------------------------------------------------")
-    print("PPO update frequency : " + str(steps_per_epoch) + " timesteps")
-    print("PPO K epochs : ", K_epochs)
-    print("PPO epsilon clip : ", eps_clip)
-    print("discount factor (gamma) : ", gamma)
-    print("--------------------------------------------------------------------------------------------")
-    print("optimizer learning rate actor : ", lr_actor)
-    print("optimizer learning rate critic : ", lr_critic)
-    if random_seed:
+        ############# print all hyperparameters #############
         print("--------------------------------------------------------------------------------------------")
-        print("setting random seed to ", random_seed)
-        torch.manual_seed(random_seed)
-        np.random.seed(random_seed)
-    #####################################################
+        #print("max training timesteps : ", training_timestep_bound)
+        print("max training epochs : ", epochs)    
+        print("max timesteps per episode : ", max_ep_len)
+        print("model saving frequency : " + str(save_model_freq) + " timesteps")
+        print("log frequency : " + str(log_freq) + " timesteps")
+        print("printing average reward over episodes in last : " + str(print_freq) + " timesteps")
+        print("--------------------------------------------------------------------------------------------")
+        print("state space dimension : ", state_dim)
+        print("action space dimension : ", action_dim)
+        print("Grid space bounds : ", scaled_grid_bounds)
+        print("--------------------------------------------------------------------------------------------")
+        print("Initializing a discrete action space policy")
+        print("--------------------------------------------------------------------------------------------")
+        print("PPO update frequency : " + str(steps_per_epoch) + " timesteps")
+        print("PPO K epochs : ", K_epochs)
+        print("PPO epsilon clip : ", eps_clip)
+        print("discount factor (gamma) : ", gamma)
+        print("--------------------------------------------------------------------------------------------")
+        print("optimizer learning rate actor : ", lr_actor)
+        print("optimizer learning rate critic : ", lr_critic)
+        if random_seed:
+            print("--------------------------------------------------------------------------------------------")
+            print("setting random seed to ", random_seed)
+            torch.manual_seed(random_seed)
+            np.random.seed(random_seed)
+        #####################################################
 
-    print("============================================================================================")
+        print("============================================================================================")
 
-    ################# training procedure ################
+        ################# training procedure ################
 
-    # initialize PPO agents
-    ppo_agents = {i:
-        PPO(
-            state_dim=state_dim, 
-            action_dim=action_dim, 
-            grid_bounds=scaled_grid_bounds, 
-            lr_actor=lr_actor, 
-            lr_critic=lr_critic,
-            gamma=gamma, 
-            K_epochs=K_epochs, 
-            eps_clip=eps_clip,
-            resolution_accuracy=resolution_accuracy,
-            steps_per_epoch=steps_per_epoch,
-            id=i,
-            lamda=lamda,
-            beta = beta,
-            random_seed= _int_list_from_bigint(hash_seed(seed))[0]
-            ) 
-        for i in range(number_of_agents)
-        }
-    
-    # TODO move to a unit test
-    if number_of_agents > 1:
-        ppo_agents[0].maps.buffer.adv_buf[0] = 1
-        assert ppo_agents[1].maps.buffer.adv_buf[0] != 1, "Singleton pattern in buffer class"
-        ppo_agents[0].maps.buffer.adv_buf[0] = 0.0
+        # initialize PPO agents
+        ppo_agents = {i:
+            PPO(
+                state_dim=state_dim, 
+                action_dim=action_dim, 
+                grid_bounds=scaled_grid_bounds, 
+                lr_actor=lr_actor, 
+                lr_critic=lr_critic,
+                gamma=gamma, 
+                K_epochs=K_epochs, 
+                eps_clip=eps_clip,
+                resolution_accuracy=resolution_accuracy,
+                steps_per_epoch=steps_per_epoch,
+                id=i,
+                lamda=lamda,
+                beta = beta,
+                random_seed= _int_list_from_bigint(hash_seed(seed))[0]
+                ) 
+            for i in range(number_of_agents)
+            }
+        
+        # TODO move to a unit test
+        if number_of_agents > 1:
+            ppo_agents[0].maps.buffer.adv_buf[0] = 1
+            assert ppo_agents[1].maps.buffer.adv_buf[0] != 1, "Singleton pattern in buffer class"
+            ppo_agents[0].maps.buffer.adv_buf[0] = 0.0
 
 
-    # track total training time
-    start_time = datetime.now().replace(microsecond=0)
-    print("Started training at (GMT) : ", start_time)
+        # track total training time
+        start_time = datetime.now().replace(microsecond=0)
+        print("Started training at (GMT) : ", start_time)
 
-    print("============================================================================================")
+        print("============================================================================================")
 
-    # logging file
-    # TODO Need to log for each agent?
-    log_f = open(log_f_name, "w+")
-    log_f.write('episode,timestep,reward\n')
+        # logging file
+        # TODO Need to log for each agent?
+        log_f = open(log_f_name, "w+")
+        log_f.write('episode,timestep,reward\n')
 
-    total_time_step = 0
+        total_time_step = 0
 
-    # Initial values
-    source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
-    episode_return = {id: 0 for id in ppo_agents}
-    episode_return_buffer = []  # TODO can probably get rid of this, unless want to keep for logging
-    out_of_bounds_count = np.zeros(number_of_agents)
-    success_count = 0
-    steps_in_episode = 0
-    #local_steps_per_epoch = int(steps_per_epoch / num_procs()) # TODO add this after everything is working
-    local_steps_per_epoch = steps_per_epoch
-    
-    # state = env.reset()['state'] # All agents begin in same location
-    # Returns aggregate_observation_result, aggregate_reward_result, aggregate_done_result, aggregate_info_result
-    # Unpack relevant results. This primes the pump for agents to choose an action.    
-    observations = env.reset().observation # All agents begin in same location, only need one state
+        # Initial values
+        source_coordinates = np.array(env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
+        episode_return = {id: 0 for id in ppo_agents}
+        episode_return_buffer = []  # TODO can probably get rid of this, unless want to keep for logging
+        out_of_bounds_count = np.zeros(number_of_agents)
+        success_count = 0
+        steps_in_episode = 0
+        #local_steps_per_epoch = int(steps_per_epoch / num_procs()) # TODO add this after everything is working
+        local_steps_per_epoch = steps_per_epoch
+        
+        # state = env.reset()['state'] # All agents begin in same location
+        # Returns aggregate_observation_result, aggregate_reward_result, aggregate_done_result, aggregate_info_result
+        # Unpack relevant results. This primes the pump for agents to choose an action.    
+        observations = env.reset().observation # All agents begin in same location, only need one state
         
     # Training loop
     #while total_time_step < training_timestep_bound:
@@ -795,7 +960,6 @@ def train():
     for epoch_counter in range(epochs):
         
         # Put actor into evaluation mode
-        # TODO why?
         for agent in ppo_agents.values(): 
             agent.policy.eval()
 

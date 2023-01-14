@@ -192,11 +192,9 @@ if __name__ == "__main__":
     robust_seed = _int_list_from_bigint(hash_seed(args.seed))[0]
     rng = npr.default_rng(robust_seed)
 
-    # Set up logger and save configuration
-    logger_kwargs = setup_logger_kwargs(exp_name, args.seed, data_dir="../../models/train", env_name=save_dir_name)    
-    logger = EpochLogger(**logger_kwargs)
-    logger.save_config(locals())
-    
+    # Set up logger args 
+    logger_kwargs = {'exp_name': exp_name, 'seed': args.seed, 'data_dir': "../../models/train", 'env_name': save_dir_name}   
+
     # Set up Radiation environment
     dim_length, dim_height = args.dims
     intial_dimensions = {'bbox': np.array(  # type: ignore
@@ -225,7 +223,7 @@ if __name__ == "__main__":
     ppo = train.PPO(
         env=env,
         actor_critic=core.RNNModelActorCritic,
-        logger=logger,
+        logger_kwargs=logger_kwargs,
         ac_kwargs=dict(
             hidden_sizes_pol=[[args.hid_pol]] * args.l_pol,
             hidden_sizes_val=[[args.hid_val]] * args.l_val,
@@ -243,3 +241,5 @@ if __name__ == "__main__":
         render=args.render,
         save_gif=args.render, # TODO combine into just render
     )
+    
+    ppo.train()
