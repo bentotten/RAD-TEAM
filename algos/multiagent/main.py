@@ -62,9 +62,6 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--hid-gru", type=int, default=24, help="A2C GRU hidden state size"
-    )
-    parser.add_argument(
         "--hid-pol", type=int, default=32, help="Actor linear layer size"
     )
     parser.add_argument(
@@ -73,6 +70,9 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hid-rec", type=int, default=24, help="PFGRU hidden state size"
     )
+    parser.add_argument(
+        "--hid-gru", type=int, default=24, help="A2C GRU hidden state size"
+    )    
     parser.add_argument(
         "--l-pol", type=int, default=1, help="Number of layers for Actor MLP"
     )

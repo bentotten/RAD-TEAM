@@ -10,7 +10,7 @@
       "request": "launch",
       "module": "unittest",
       "justMyCode": true,
-      "args": ["unit_testing/unit_cnn_ppo.py"],
+      "args": ["unit_testing/unit_rad_ppo_agent.py"],
       "cwd": "${workspaceFolder}"
     },
     {
