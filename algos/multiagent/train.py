@@ -105,12 +105,12 @@ class OptimizationStorage:
     train_v_iters: int    
     pi_optimizer: torch.optim
     model_optimizer: torch.optim
-    pi_scheduler: torch.optim.lr_scheduler
-    model_scheduler = torch.optim.lr_scheduler
     clip_ratio: float
     alpha: float
     target_kl: float
-    loss: torch.nn.modules.loss.MSELoss = field(default_factory= (lambda: torch.nn.MSELoss(reduction="mean")))        
+    pi_scheduler: torch.optim.lr_scheduler = field(init=False)
+    model_scheduler: torch.optim.lr_scheduler = field(init=False)    
+    loss: torch.nn.modules.loss.MSELoss = field(default_factory= (lambda: torch.nn.MSELoss(reduction="mean")))          
         
     def __post_init__(self):        
         self.pi_scheduler = torch.optim.lr_scheduler.StepLR(
@@ -119,6 +119,7 @@ class OptimizationStorage:
         self.model_scheduler = torch.optim.lr_scheduler.StepLR(
             self.model_optimizer, step_size=100, gamma=0.99
         )        
+
 
 @dataclass
 class PPOBuffer:
@@ -475,13 +476,32 @@ class PPO:
             pi_var_count[id], model_var_count[id] = (
                 core.count_vars(module) for module in [ac.pi, ac.model] # TODO make multi-agent
             )
-            
-        # Instatiate logger
-        self.logger = logger
-        self.logger.log(
-            f"\nNumber of parameters: \t actor policy (pi): {pi_var_count[0]}, particle filter gated recurrent unit (model): {model_var_count[0]} \t"
-        )
+        
+        # Set up PPO trajectory buffers. This stores values to be later used for updating each agent after the conclusion of an epoch
+        self.agent_buffers = {
+            i: PPOBuffer(
+                    obs_dim=obs_dim, max_size=steps_per_epoch, gamma=gamma, lam=lam,
+                )
+                for i in range(number_of_agents)
+            }
+        self.buf = self.agent_buffers # Adding for backwards compatibility # TODO verify .buf has been replaced and delete
 
+        # Set up optimizers and learning rate decay for policy and localization modules in each agent. 
+        #   Pi_scheduler and model_scheduler are set up in initialization.      
+        self.agent_optimizers = {
+                i: OptimizationStorage(
+                    train_pi_iters = train_pi_iters,                
+                    train_v_iters = train_v_iters,                
+                    pi_optimizer = Adam(self.agents[i].pi.parameters(), lr=pi_lr),
+                    model_optimizer = Adam(self.agents[i].model.parameters(), lr=vf_lr),
+                    loss = torch.nn.MSELoss(reduction="mean"),
+                    clip_ratio = clip_ratio,
+                    alpha = alpha,
+                    target_kl = target_kl,             
+                    )
+                for i in range(number_of_agents)
+            }
+        
         # Arguments for the Particle Filter Gated Recurrent Unit (PFGRU) for the source prediction neural network, from Ma et al. 2020
         bp_args = BpArgs(
             bp_decay=0.1,
@@ -493,31 +513,17 @@ class PPO:
             ],  # retrieves the height of the created environment
         )
         
-        # Set up PPO trajectory buffer. This stores values to be later used for updating each agent after the conclusion of an epoch
-        self.agent_buffers = {
-            i: PPOBuffer(
-                    obs_dim=obs_dim, max_size=steps_per_epoch, gamma=gamma, lam=lam,
-                )
-                for i in range(number_of_agents)
-            }
+        # Instatiate logger and set up model saving
+        self.logger = logger
+        self.logger.log(
+            f"\nNumber of parameters: \t actor policy (pi): {pi_var_count[0]}, particle filter gated recurrent unit (model): {model_var_count[0]} \t"
+        )
         
-        self.buf = self.agent_buffers # Adding for backwards compatibility # TODO verify .buf has been replaced and delete
+        if number_of_agents == 1:
+            self.logger.setup_pytorch_saver(self.agents[0]) # TODO This will only work for one agent and is dependant on directory structure to unpickle! Needs rewrite
 
-        # Set up optimizers and learning rate decay for policy and localization modules in each agent. 
-        #   Pi_scheduler and model_scheduler are set up in initialization.      
-        self.agent_optimizers = {
-                i: OptimizationStorage(
-                    train_pi_iters = train_pi_iters,                
-                    train_v_iters = train_v_iters,                
-                    pi_optimizer = Adam(self.ac.pi.parameters(), lr=pi_lr),
-                    model_optimizer = Adam(self.ac.model.parameters(), lr=vf_lr),
-                    loss = torch.nn.MSELoss(reduction="mean"),
-                    clip_ratio = clip_ratio,
-                    alpha = alpha,
-                    target_kl = target_kl,             
-                    )
-                for i in range(number_of_agents)
-            }        
+        # Prepare for interaction with environment
+        start_time = time.time()        
 
 
 def train():
