@@ -522,7 +522,7 @@ class RadSearch(gym.Env):
         else:
             # Provides backwards compatability for single actions instead of action lists for single agents.
             if type(action) == int and len(self.agents) > 1:
-                print("WARNING: Passing single action to mutliple agents during step.", file=sys.stderr)
+                print("WARNING: Passing single action to mutliple agents during step! Collision avoidance has been disabled!", file=sys.stderr)
             # Used during reset to get initial state or during single-agent move
             for agent_id, agent in self.agents.items():                
                 (

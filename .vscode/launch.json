@@ -51,7 +51,9 @@
         "--render",
         "True",
         "--obstruct",
-        "1"
+        "1",
+        "--seed",
+        "2"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }
@@ -64,7 +66,7 @@
 // help="Number of total epochs to train the agent"
 // "--epochs", "3000",
 // help="Random seed control"
-//"--seed", "2",
+// "--seed", "2",
 // help="Name of experiment for saving",
 // "--exp-name", "test",
 // help="Render Gif
