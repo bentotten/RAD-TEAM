@@ -336,7 +336,7 @@ class PPO:
     steps_per_epoch: int = field(default= 4000)
     total_epochs: int = field(default= 50)
     save_freq: int = field(default= 500)
-    save_gif_freq: int = field(default= 3)
+    save_gif_freq: int = field(default= float('inf'))
     render: bool = field(default= False)
     save_gif: bool = field(default= False)
     gamma: float = field(default= 0.99)
@@ -744,7 +744,8 @@ class PPO:
                 self.agent_buffers[id].get(logger=self.loggers[id])
 
             # Log info about epoch
-            for id in self.agents:            
+            for id in self.agents:
+                self.loggers[id].log_tabular("Agent ID", id)        
                 self.loggers[id].log_tabular("Epoch", epoch)
                 if terminal:                
                     self.loggers[id].log_tabular("EpRet", with_min_and_max=True)

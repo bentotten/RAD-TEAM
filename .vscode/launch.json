@@ -43,17 +43,19 @@
       "justMyCode": false,
       "args": [
         "--agent_count",
-        "5",
+        "2",
         //"--steps-per-epoch",
         //"5",
-        "--epochs",
-        "2",
-        "--render",
-        "True",
+        // "--epochs",
+        // "2",
+        // "--render",
+        // "False",
         //"--obstruct",
         //"1",
         "--seed",
         "2"
+        // "--save_gif_freq",
+        // "0"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }
@@ -72,6 +74,8 @@
 // help="Render Gif
 // "--render", "False",
 // help="Save frequency for gifs
+// "--sav_gif_freq", "3",
+// help="Save frequency for models
 // "--sav_freq", "500",
 // help="Number of agents"
 // "--agent_count", "1",
