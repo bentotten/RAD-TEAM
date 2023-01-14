@@ -548,17 +548,17 @@ class PPO:
             self.loggers[id].setup_pytorch_saver(self.agents[id])
 
     def train(self):
-        # Prepare environment and get initial values
+        # Prepare environment variables and reset
         env = self.env
+        observations, _,  _, _ = env.reset()  # Obsertvations for each agent, 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
         source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
         episode_return = {id: 0 for id in self.agents}
         episode_return_buffer = []  # TODO can probably get rid of this, unless want to keep for logging
-        out_of_bounds_count = {id: 0 for id in self.agents} # Out of Bounds counter for the epoch (not the episode)
-        terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
         steps_in_episode = 0
         
-        # Obsertvations aka States: for each agent, 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
-        observations, _,  _, _ = env.reset()  
+        # Prepare epoch variables
+        out_of_bounds_count = {id: 0 for id in self.agents} # Out of Bounds counter for the epoch (not the episode)
+        terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
 
         # Update stat buffers for all agent observations for later observation normalization
         for id in self.agents:
@@ -710,11 +710,18 @@ class PPO:
                             self.loggers[id].store(DoneCount=terminal_counter, OutOfBound=out_of_bounds_count)
                             terminal_counter[id] = 0
                             out_of_bounds_count[id] = 0
-                        
-                    o, ep_ret, steps_in_episode, a = env.reset()[0].state, 0, 0, -1 # TODO make multi-agent
+                    
+                    # Reset environment. Obsertvations for each agent - 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
+                    observations, _,  _, _ = env.reset()                          
+                    source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
+                    episode_return = {id: 0 for id in self.agents}
+                    episode_return_buffer = []  # TODO can probably get rid of this, unless want to keep for logging
+                    steps_in_episode = 0
                     source_coordinates = np.array(env.src_coords, dtype="float32")
-                        
-                    stat_buff.update(o[0])
+
+                    # Update stat buffers for all agent observations for later observation normalization
+                    for id in self.agents:
+                        self.stat_buffers[id].update(observations[id][0])                    
 
             # Save model
             if (epoch % save_freq == 0) or (epoch == epochs - 1):
