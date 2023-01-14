@@ -725,7 +725,8 @@ class PPO:
 
             # Save model
             if (epoch % self.save_freq == 0) or (epoch == self.total_epochs - 1):
-                logger.save_state({}, None)
+                for id in self.agents:
+                    self.loggers[id].save_state({}, None)
                 pass
 
             # Reduce localization module training iterations after 100 epochs to speed up training
@@ -734,26 +735,27 @@ class PPO:
                 reduce_v_iters = False
 
             # Perform PPO update!
-            #self.update(env, bp_args) # TODO
+            #self.update(env, bp_args) # TODO ######################################################################
 
             # Log info about epoch
-            self.logger.log_tabular("Epoch", epoch)
-            self.logger.log_tabular("EpRet", with_min_and_max=True)
-            self.logger.log_tabular("EpLen", average_only=True)
-            self.logger.log_tabular("VVals", with_min_and_max=True)
-            self.logger.log_tabular("TotalEnvInteracts", (epoch + 1) * self.steps_per_epoch)
-            self.logger.log_tabular("LossPi", average_only=True)
-            self.logger.log_tabular("LossV", average_only=True)
-            self.logger.log_tabular("LossModel", average_only=True)
-            self.logger.log_tabular("LocLoss", average_only=True)
-            self.logger.log_tabular("Entropy", average_only=True)
-            self.logger.log_tabular("KL", average_only=True)
-            self.logger.log_tabular("ClipFrac", average_only=True)
-            self.logger.log_tabular("DoneCount", sum_only=True)
-            self.logger.log_tabular("OutOfBound", average_only=True)
-            self.logger.log_tabular("StopIter", average_only=True)
-            self.logger.log_tabular("Time", time.time() - self.start_time)
-            self.logger.dump_tabular()
+            for id in self.agents:            
+                self.loggers[id].log_tabular("Epoch", epoch)
+                self.loggers[id].log_tabular("EpRet", with_min_and_max=True)
+                self.loggers[id].log_tabular("EpLen", average_only=True)
+                self.loggers[id].log_tabular("VVals", with_min_and_max=True)
+                self.loggers[id].log_tabular("TotalEnvInteracts", (epoch + 1) * self.steps_per_epoch)
+                self.loggers[id].log_tabular("LossPi", average_only=True)
+                self.loggers[id].log_tabular("LossV", average_only=True)
+                self.loggers[id].log_tabular("LossModel", average_only=True)
+                self.loggers[id].log_tabular("LocLoss", average_only=True)
+                self.loggers[id].log_tabular("Entropy", average_only=True)
+                self.loggers[id].log_tabular("KL", average_only=True)
+                self.loggers[id].log_tabular("ClipFrac", average_only=True)
+                self.loggers[id].log_tabular("DoneCount", sum_only=True)
+                self.loggers[id].log_tabular("OutOfBound", average_only=True)
+                self.loggers[id].log_tabular("StopIter", average_only=True)
+                self.loggers[id].log_tabular("Time", time.time() - self.start_time)
+                self.loggers[id].dump_tabular()
                         
 
 def train_scaffolding():
