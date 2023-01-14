@@ -608,7 +608,7 @@ class PPO:
                 
                 # Take step in environment - Critical that this value is saved as "next" observation so we can link
                 #  rewards from this new state to the prior step/action
-                next_observations, rewards, terminals, infos = env.step(action=1) 
+                next_observations, rewards, terminals, infos = env.step(action=agent_action_decisions) 
                 
                 # Incremement Counters and save new (individual) cumulative returns
                 for id in rewards:
