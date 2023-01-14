@@ -21,7 +21,7 @@ from matplotlib.ticker import FormatStrFormatter
 from matplotlib.animation import PillowWriter
 from matplotlib.patches import Polygon as PolygonPatches
 
-from typing import Any, List, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict
+from typing import Any, List, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, NamedTuple
 from typing_extensions import TypeAlias
 
 
@@ -201,13 +201,11 @@ def create_color(id: int) -> Color:
     return Color(np.array(specific_color) / 255)
 
 
-@dataclass()
-class StepResult():
-    # TODO change to match new return
-    observation: dict[int, npt.NDArray[np.float32]] = field(default_factory=dict)
-    reward: dict[int, float] = field(default_factory=dict)
-    done: dict[int, bool] = field(default_factory=dict)
-    info: dict[dict[Any, Any]] = field(default_factory=dict)
+class StepResult(NamedTuple):
+    observation: dict[int, npt.NDArray[np.float32]]
+    reward: dict[int, float]
+    terminal: dict[int, bool] 
+    info: dict[dict[Any, Any]] 
     
 
 @dataclass
