@@ -690,8 +690,7 @@ class PPO:
                     #   save_gif frequency value or itsthe last epoch
                     if (epoch_ended and self.render and (epoch % self.save_gif_freq == 0 or ((epoch + 1) == self.total_epochs))):
                             env.render(
-                                save_gif=True,
-                                path='../'+str(self.loggers[0].output_dir),
+                                path=str(self.loggers[0].output_dir),
                                 epoch_count=epoch,
                             )
 
@@ -744,8 +743,9 @@ class PPO:
             # Log info about epoch
             for id in self.agents:            
                 self.loggers[id].log_tabular("Epoch", epoch)
-                self.loggers[id].log_tabular("EpRet", with_min_and_max=True)
-                self.loggers[id].log_tabular("EpLen", average_only=True)
+                if terminal:                
+                    self.loggers[id].log_tabular("EpRet", with_min_and_max=True)
+                    self.loggers[id].log_tabular("EpLen", average_only=True)
                 self.loggers[id].log_tabular("VVals", with_min_and_max=True)
                 self.loggers[id].log_tabular("TotalEnvInteracts", (epoch + 1) * self.steps_per_epoch)
                 # TODO uncomment after updating is happening
@@ -905,7 +905,6 @@ def train_scaffolding():
         env.render(
             just_env=True,
             path=directory,
-            save_gif=True
         )
         # state space dimension
         state_dim = env.observation_space.shape[0]
@@ -1157,7 +1156,6 @@ def train_scaffolding():
                                 epoch_count=epoch_counter,
                             )                   
                         env.render(
-                            save_gif=True,
                             path=directory,
                             epoch_count=epoch_counter,
                             )
@@ -1169,7 +1167,6 @@ def train_scaffolding():
                             epoch_count=epoch_counter,
                         )                   
                     env.render(
-                        save_gif=True,
                         path=directory,
                         epoch_count=epoch_counter,
                         )                     
@@ -1242,7 +1239,6 @@ def train_scaffolding():
         #     print("TEST RENDER - Delete Me Later")
         #     episode_rewards = {id: render_buffer_rewards[-max_ep_len:] for id, agent in ppo_agents.items()}
         #     env.render(
-        #         save_gif=True,
         #         path=directory,
         #         epoch_count=epoch_counter,
         #         episode_rewards=episode_rewards
@@ -1256,7 +1252,6 @@ def train_scaffolding():
 
     # Render last episode
     env.render(
-        save_gif=True,
         path=directory,
         epoch_count=epoch_counter,
     )

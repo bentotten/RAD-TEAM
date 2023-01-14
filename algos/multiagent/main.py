@@ -202,16 +202,17 @@ if __name__ == "__main__":
 
     # Set up Radiation environment
     dim_length, dim_height = args.dims
-    intial_dimensions = {'bbox': np.array(  # type: ignore
+    intial_parameters = {'bbox': np.array(  # type: ignore
             [[0.0, 0.0], [dim_length, 0.0], [dim_length, dim_height], [0.0, dim_height]]
         ),
         'observation_area': np.array(args.area_obs),  # type: ignore
         'obstruction_count': args.obstruct,
         'np_random': rng,
-        'number_agents': args.agent_count
+        'number_agents': args.agent_count,
+        'save_gif': args.render
     }
 
-    env: RadSearch = gym.make(args.env_name,**intial_dimensions)
+    env: RadSearch = gym.make(args.env_name,**intial_parameters)
     
     # Uncommenting this will make the environment without Gym's oversight (useful for debugging)
     # env: RadSearch = RadSearch(

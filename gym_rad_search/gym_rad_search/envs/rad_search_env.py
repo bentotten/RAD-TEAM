@@ -266,6 +266,7 @@ class RadSearch(gym.Env):
     np_random: npr.Generator = field(default_factory=lambda: npr.default_rng(0))
     obstruction_count: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
     enforce_grid_boundaries: bool = field(default=False)
+    save_gif: bool = field(default=False)    
     env_ls: list[Polygon] = field(init=False)
     max_dist: float = field(init=False)
     line_segs: list[list[vis.Line_Segment]] = field(init=False)
@@ -520,7 +521,7 @@ class RadSearch(gym.Env):
             #return {k: asdict(v) for k, v in aggregate_step_result.items()}       
         else:
             # Provides backwards compatability for single actions instead of action lists for single agents.
-            if action and len(self.agents) > 1:
+            if type(action) == int and len(self.agents) > 1:
                 print("WARNING: Passing single action to mutliple agents during step.", file=sys.stderr)
             # Used during reset to get initial state or during single-agent move
             for agent_id, agent in self.agents.items():                
@@ -1295,7 +1296,7 @@ class RadSearch(gym.Env):
             ax1.legend(loc="lower right", fontsize=8)
         
             # Save
-            if save_gif:
+            if self.save_gif:
                 if os.path.isdir(str(path) + "/gifs/"):
                     fig.savefig(str(path) + f"/gifs/environment.png")
                 else:
@@ -1325,7 +1326,7 @@ class RadSearch(gym.Env):
                 frames=data_length,
                 fargs=(ax1, ax2, ax3, self.src_coords, self.search_area, measurements, flattened_rewards),
             )
-            if save_gif:
+            if self.save_gif:
                 writer = PillowWriter(fps=5)
                 if os.path.isdir(str(path) + "/gifs/"):
                     ani.save(str(path) + f"/gifs/test_epoch{epoch_count}.gif", writer=writer)

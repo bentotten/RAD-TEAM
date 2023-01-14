@@ -43,15 +43,15 @@
       "justMyCode": false,
       "args": [
         "--agent_count",
+        "2",
+        "--steps-per-epoch",
+        "5",
+        "--epochs",
+        "5",
+        "--render",
+        "True",
+        "--obstruct",
         "1"
-        // "--steps-per-epoch",
-        // "5",
-        // "--epochs",
-        // "5",
-        // "--render",
-        // "True",
-        // "--obstruct",
-        // "0",
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }
