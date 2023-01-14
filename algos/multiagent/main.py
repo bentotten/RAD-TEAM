@@ -236,7 +236,7 @@ if __name__ == "__main__":
         alpha=args.alpha,
         seed=robust_seed,
         steps_per_epoch=args.steps_per_epoch,
-        epochs=args.epochs,
+        total_epochs=args.epochs,
         number_of_agents=args.agent_count,
         render=args.render,
         save_gif=args.render, # TODO combine into just render
