@@ -363,7 +363,8 @@ class PPO:
     Args:
         env : An environment satisfying the OpenAI Gym API.
         
-        logger_kwargs: Arguments for the logging mechanism for saving models and saving/printing progress for each agent
+        logger_kwargs: Arguments for the logging mechanism for saving models and saving/printing progress for each agent.
+            Note that the logger is also used for calculating values later on in the episode.
         
         seed (int): Seed for random number generators.
         
@@ -537,14 +538,14 @@ class PPO:
                 env_name=self.logger_kwargs['env_name']
             ) for id in self.agents
         }
-        self.logger = {id: EpochLogger(**(logger_kwargs_set[id])) for id in self.agents}
+        self.loggers = {id: EpochLogger(**(logger_kwargs_set[id])) for id in self.agents}
         
         for id in self.agents:
-            self.logger[id].save_config(locals())  # TODO THIS PICKLE DEPENDS ON THE DIRECTORY STRUCTURE!! Needs rewrite!      
-            self.logger[id].log(
+            self.loggers[id].save_config(locals())  # TODO THIS PICKLE DEPENDS ON THE DIRECTORY STRUCTURE!! Needs rewrite!      
+            self.loggers[id].log(
                 f"\nNumber of parameters: \t actor policy (pi): {self.pi_var_count[0]}, particle filter gated recurrent unit (model): {self.model_var_count[0]} \t"
             )
-            self.logger[id].setup_pytorch_saver(self.agents[id])
+            self.loggers[id].setup_pytorch_saver(self.agents[id])
 
     def train(self):
         # Prepare environment and get initial values
@@ -614,24 +615,18 @@ class PPO:
                 episode_return_buffer.append(episode_return)
                 steps_in_episode += 1    
 
-                for id, buffer in self.agent_buffers.items():
-                    act: npt.NDArray[np.int32] = agent_action_returns[id].action           
-                    val: npt.NDArray[np.float32] = agent_action_returns[id].state_value      
-                    logp: npt.NDArray[np.float32] = agent_action_returns[id].action_logprob
-                    src: npt.NDArray[np.float32] = source_coordinates                    
-                
-                    agent.store(
+                # Store in buffers and log state values with logger
+                for id in self.agents:
+                    self.agent_buffers[id].store(
                         obs = observations[id],
                         rew = rewards[id],
-                        terminal = terminals[id],                        
-                        act = agent_thoughts['actions'],
-                        val = val,
-                        logp = logp,
-                        src = src,
+                        act = agent_action_decisions[id],
+                        val = agent_thoughts[id].value,
+                        logp = agent_thoughts[id].logprob,
+                        src = source_coordinates,
+                        #terminal = terminals[id],  # TODO do we want to store terminal flags?
                     )
-
-                self.buf.store(obs_std, a, r, v, logp, source_coordinates) # Feed prior observation to buffer # TODO make multi-agent?
-                logger.store(VVals=v)
+                    self.loggers[id].store(VVals=agent_thoughts[id].value)
 
                 # Update obs (critical!)
                 o = next_o
