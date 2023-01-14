@@ -153,7 +153,8 @@ class PPOBuffer:
     """
     A buffer for storing histories experienced by a PPO agent interacting
     with the environment, and using Generalized Advantage Estimation (GAE-Lambda)
-    for calculating the advantages of state-action pairs.
+    for calculating the advantages of state-action pairs. This is left outside of the
+    PPO agent so that A2C architectures can be swapped out as desired.
     """
 
     def __post_init__(self):
