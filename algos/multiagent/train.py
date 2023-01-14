@@ -553,8 +553,8 @@ class PPO:
         source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
         episode_return = {id: 0 for id in self.agents}
         episode_return_buffer = []  # TODO can probably get rid of this, unless want to keep for logging
-        out_of_bounds_count = np.zeros(self.number_of_agents) # TODO consider changing to dict for consistency
-        success_count = 0
+        out_of_bounds_count = {id: 0 for id in self.agents} # Out of Bounds counter for the epoch (not the episode)
+        terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
         steps_in_episode = 0
         
         # Obsertvations aka States: for each agent, 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
@@ -579,7 +579,7 @@ class PPO:
             for ac in self.agents.values():
                 ac.pi.logits_net.v_net.eval() # TODO should the pfgru call .eval also?
             
-            for t in range(self.steps_per_epoch):
+            for steps in range(self.steps_per_epoch):
                 # Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode
                 standardized_observations = {id: observations[id] for id in self.agents}
                 for id in self.agents:
@@ -605,9 +605,9 @@ class PPO:
                 for action in agent_action_decisions.values():
                     assert -1 <= action and action < 8            
                 
-                # Take step in environment
-                #StepResult(observation=aggregate_observation_result, reward=aggregate_reward_result, success=aggregate_success_result, info=aggregate_info_result)
-                observations, rewards, terminals, infos = env.step(action=1)
+                # Take step in environment - Critical that this value is saved as "next" observation so we can link
+                #  rewards from this new state to the prior step/action
+                next_observations, rewards, terminals, infos = env.step(action=1) 
                 
                 # Incremement Counters and save new (individual) cumulative returns
                 for id in rewards:
@@ -615,7 +615,8 @@ class PPO:
                 episode_return_buffer.append(episode_return)
                 steps_in_episode += 1    
 
-                # Store in buffers and log state values with logger
+                # Store previous observations in buffers, update mean/std for the next observation in buffers,
+                #   record state values with logger 
                 for id in self.agents:
                     self.agent_buffers[id].store(
                         obs = observations[id],
@@ -626,78 +627,92 @@ class PPO:
                         src = source_coordinates,
                         #terminal = terminals[id],  # TODO do we want to store terminal flags?
                     )
+                    
                     self.loggers[id].store(VVals=agent_thoughts[id].value)
+                    self.agent_buffers[id].update(next_observations[0])                    
 
                 # Update obs (critical!)
-                o = next_o
+                assert observations is not next_observations, 'Previous step observation is pointing to next observation'
+                observations = next_observations
 
-                # Update running mean and std
-                stat_buff.update(o[0])
-
-                timeout = ep_len == max_ep_len
-                terminal = d or timeout
-                epoch_ended = t == steps_per_epoch - 1
+                # Tally up ending conditions
+                
+                # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not
+                #  all, this will need to be changed.
+                terminal_reached = False
+                for id in terminal_counter:
+                    if terminals[id] == True and not timeout:
+                        terminal_counter[id] += 1   
+                        terminal_reached = True             
+                # Check if some agents went out of bounds
+                for id in infos:
+                    if 'out_of_bounds' in infos[id] and infos[id]['out_of_bounds'] == True:
+                        out_of_bounds_count[id] += infos[id]['out_of_bounds_count']
+                                    
+                # Stopping conditions for episode
+                timeout = steps_in_episode == self.max_ep_len
+                terminal = terminal_reached or timeout
+                epoch_ended = steps == self.steps_per_epoch - 1
 
                 if terminal or epoch_ended:
-                    if d and not timeout:
-                        done_count += 1
-                    #if env.out_of_bounds:
-                    # Artifact - TODO decouple from rad_ppo agent
-                    if 'out_of_bounds' in msg and msg['out_of_bounds'] == True:
-                        # Log if agent went out of bounds
-                        oob += 1
                     if epoch_ended and not (terminal):
                         print(
-                            f"Warning: trajectory cut off by epoch at {ep_len} steps and time {t}.",
+                            f"Warning: trajectory cut off by epoch at {steps_in_episode} steps and step count {steps}.",
                             flush=True,
                         )
 
                     if timeout or epoch_ended:
-                        # if trajectory didn't reach terminal state, bootstrap value target
-                        obs_std[0] = np.clip(
-                            (o[0] - stat_buff.mu) / stat_buff.sig_obs, -8, 8
-                        )
-                        _, v, _, _, _ = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent
+                        # if trajectory didn't reach terminal state, bootstrap value target with standardized observation using per episode running statistics 
+                        standardized_observations = {id: observations[id] for id in self.agents}
+                        for id in self.agents:
+                            standardized_observations[id][0] = np.clip(
+                                (observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8
+                            )     
+                            for id, agent in self.agents.items():
+                                _, value, _, _, _ = agent.step(standardized_observations[id], hidden=hidden[id])
+ 
                         if epoch_ended:
                             # Set flag to sample new environment parameters
-                            env.epoch_end = True # TODO make multi-agent?
+                            env.epoch_end = True 
                     else:
-                        v = 0
-                    self.buf.finish_path(v)
+                        value = 0
+                    # Finish the trajectory and compute advantages. See function comments for more information                        
+                    for id, agent in self.agents.items():
+                        self.agent_buffers.finish_path(value)
+                        
                     if terminal:
-                        # only save EpRet / EpLen if trajectory finished
-                        logger.store(EpRet=ep_ret, EpLen=ep_len)
+                        # only save episode returns and episode length if trajectory finished
+                        for id, agent in self.agents.items():
+                            self.loggers[id].store(EpRet=episode_return[id], EpLen=steps_in_episode)                 
 
-                    if (
-                        epoch_ended
-                        and render
-                        and (epoch % save_gif_freq == 0 or ((epoch + 1) == epochs))
-                    ):
-                        # Check agent progress during training
-                        if epoch != 0:
+                    # If at the end of an epoch and render flag is set, save the gif if its time according to the 
+                    #   save_gif frequency value or itsthe last epoch
+                    if (epoch_ended and self.render and (epoch % self.save_gif_freq == 0 or ((epoch + 1) == self.epochs))):
                             env.render(
-                                save_gif=save_gif,
-                                path=str(logger.output_dir),
+                                save_gif=True,
+                                path='../'+str(self.loggers[0].output_dir),
                                 epoch_count=epoch,
-                                #ep_rew=ep_ret_ls,
                             )
 
-                    ep_ret_ls = []
-                    stat_buff.reset()
-                    if not env.epoch_end: # TODO make multi-agent
-                        # Reset detector position and episode tracking
-                        hidden = self.ac.reset_hidden() # TODO make multi-agent
-                        o, ep_ret, ep_len, a = env.reset()[0].state, 0, 0, -1 # TODO make multi-agent
-                        source_coordinates = np.array(env.src_coords, dtype="float32")
+                    # Reset the environment and counters
+                    episode_return_buffer = []
+                    for id in self.agents:
+                         self.stat_buffers[id].reset()
+                    # If not at the end of an epoch, reset the detector position and episode tracking for incoming new episode                      
+                    if not env.epoch_end:
+                        for id, ac in self.agents.items():                        
+                            hidden = ac.reset_hidden()
                     else:
                         # Sample new environment parameters, log epoch results
-                        if 'out_of_bounds_count' in msg:
-                            oob += msg['out_of_bounds_count']
-                        logger.store(DoneCount=done_count, OutOfBound=oob)
-                        done_count = 0
-                        oob = 0
-                        o, ep_ret, ep_len, a = env.reset()[0].state, 0, 0, -1 # TODO make multi-agent
-                        source_coordinates = np.array(env.src_coords, dtype="float32")
+                        for id in self.agents:
+                            if 'out_of_bounds_count' in infos[id]:
+                                out_of_bounds_count[id] += infos[id]['out_of_bounds_count']  # TODO this was already done above, is this being done twice?
+                            self.loggers[id].store(DoneCount=terminal_counter, OutOfBound=out_of_bounds_count)
+                            terminal_counter[id] = 0
+                            out_of_bounds_count[id] = 0
+                        
+                    o, ep_ret, steps_in_episode, a = env.reset()[0].state, 0, 0, -1 # TODO make multi-agent
+                    source_coordinates = np.array(env.src_coords, dtype="float32")
                         
                     stat_buff.update(o[0])
 
@@ -970,7 +985,7 @@ def train_scaffolding():
         episode_return = {id: 0 for id in ppo_agents}
         episode_return_buffer = []  # TODO can probably get rid of this, unless want to keep for logging
         out_of_bounds_count = np.zeros(number_of_agents)
-        success_count = 0
+        terminal_counter = 0
         steps_in_episode = 0
         #local_steps_per_epoch = int(steps_per_epoch / num_procs()) # TODO add this after everything is working
         local_steps_per_epoch = steps_per_epoch
