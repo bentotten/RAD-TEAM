@@ -43,7 +43,7 @@
       "justMyCode": false,
       "args": [
         "--agent_count",
-        "2",
+        "1",
         // "--steps-per-epoch",
         // "2",
         // "--epochs",
