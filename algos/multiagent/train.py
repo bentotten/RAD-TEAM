@@ -273,7 +273,7 @@ class PPOBuffer:
         # obs_mean, obs_std = self.obs_buf.mean(), self.obs_buf.std()
         # self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
 
-        epLens: list[int] = logger.epoch_dict["EpLen"]
+        epLens: list[int] = logger.epoch_dict["EpLen"]  # TODO add to buffer instead of pulling from logger
         numEps = len(epLens)
         epLenTotal = sum(epLens)
         assert numEps > 0
@@ -326,45 +326,6 @@ class PPOBuffer:
 
         return data
 
-
-    def get_old(self,logger=None):
-        """
-        Call this at the end of an epoch to get all of the data from
-        the buffer, with advantages appropriately normalized (shifted to have
-        mean zero and std one). Also, resets some pointers in the buffer.
-        """
-        assert self.ptr == self.max_size    # buffer has to be full before you can get
-        self.ptr, self.path_start_idx = 0, 0
-        # the next two lines implement the advantage normalization trick
-        #adv_mean, adv_std = mpi_statistics_scalar(self.adv_buf)
-        adv_mean, adv_std = self.adv_buf.mean(), self.adv_buf.std()
-        self.adv_buf = (self.adv_buf - adv_mean) / adv_std
-        #ret_mean, ret_std = mpi_statistics_scalar(self.ret_buf)
-        #self.ret_buf = (self.ret_buf) / ret_std
-        #obs_mean, obs_std = mpi_statistics_vector(self.obs_buf)
-        #self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
-        
-        data = dict(obs=self.obs_buf, act=self.act_buf, ret=self.ret_buf,
-                    adv=self.adv_buf, logp=self.logp_buf, loc_pred=self.obs_win_std,ep_len= sum(logger.epoch_dict['EpLen']))
-        data = {k: torch.as_tensor(v, dtype=torch.float32) for k,v in data.items()}
-
-        if logger:
-            slice_b = 0
-            slice_f = 0
-            epLen = logger.epoch_dict['EpLen']
-            epLenSize = len(epLen) if sum(epLen) == len(self.obs_buf) else (len(epLen) + 1)
-            obs_buf = np.hstack((self.obs_buf,self.adv_buf[:,None],self.ret_buf[:,None],self.logp_buf[:,None],self.act_buf[:,None],self.source_tar))
-            epForm = [[] for _ in range(epLenSize)]
-            for jj, ep_i in enumerate(epLen):
-                slice_f += ep_i
-                epForm[jj].append(torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32))
-                slice_b += ep_i
-            if slice_f != len(self.obs_buf):
-                epForm[jj+1].append(torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32))
-                
-            data['ep_form'] = epForm
-
-        return data
 
 ################################### Training ###################################
 @dataclass
@@ -781,27 +742,170 @@ class PPO:
 
             # Perform PPO update!
             self.update_agents() 
+            
+            if not terminal:
+                pass            
 
             # Log info about epoch
             for id in self.agents:
-                self.loggers[id].log_tabular("AgentIDActual", id)        
-                self.loggers[id].log_tabular("EpochActual", epoch)      
+                self.loggers[id].log_tabular("AgentID", id)        
+                self.loggers[id].log_tabular("Epoch", epoch)      
                 self.loggers[id].log_tabular("EpRet", with_min_and_max=True)
-                self.loggers[id].log_tabular("EpLenAvg", average_only=True)
+                self.loggers[id].log_tabular("EpLen", average_only=True)
                 self.loggers[id].log_tabular("VVals", with_min_and_max=True)
-                self.loggers[id].log_tabular("TotalSteps", (epoch + 1) * self.steps_per_epoch)
-                self.loggers[id].log_tabular("LossPiAvg", average_only=True)
-                self.loggers[id].log_tabular("LossVAvg", average_only=True)
+                self.loggers[id].log_tabular("TotalEnvInteracts", (epoch + 1) * self.steps_per_epoch)
+                self.loggers[id].log_tabular("LossPi", average_only=True)
+                self.loggers[id].log_tabular("LossV", average_only=True)
                 self.loggers[id].log_tabular("LossModel", average_only=True)  # Specific to the regressive GRU
-                self.loggers[id].log_tabular("LocLossAvg", average_only=True)
-                self.loggers[id].log_tabular("EntropyAvg", average_only=True)
-                self.loggers[id].log_tabular("KLAvg", average_only=True)
-                self.loggers[id].log_tabular("ClipFracAvg", average_only=True)
-                self.loggers[id].log_tabular("DoneCountTotal", sum_only=True)
-                self.loggers[id].log_tabular("OutOfBoundAvg", average_only=True)
-                self.loggers[id].log_tabular("StopIterAvg", average_only=True)
-                self.loggers[id].log_tabular("SecondsActual", time.time() - self.start_time)
+                self.loggers[id].log_tabular("LocLoss", average_only=True)
+                self.loggers[id].log_tabular("Entropy", average_only=True)
+                self.loggers[id].log_tabular("KL", average_only=True)
+                self.loggers[id].log_tabular("ClipFrac", average_only=True)
+                self.loggers[id].log_tabular("DoneCount", sum_only=True)
+                self.loggers[id].log_tabular("OutOfBound", average_only=True)
+                self.loggers[id].log_tabular("StopIter", average_only=True)
+                self.loggers[id].log_tabular("Time", time.time() - self.start_time)                 
                 self.loggers[id].dump_tabular()
+
+
+    def train_old(self):
+        env = self.env
+        ac = self.agents[0]
+        epochs = self.total_epochs
+        local_steps_per_epoch = self.steps_per_epoch
+        buf = self.agent_buffers[0]
+        logger = self.loggers[0]
+        max_ep_len = self.max_ep_len
+        render = self.render
+        save_gif_freq = self.save_gif_freq
+        save_gif = self.save_gif
+        save_freq = self.save_freq
+        steps_per_epoch = self.steps_per_epoch
+        
+        # Prepare for interaction with environment
+        start_time = time.time()
+        o = env.reset()[0][0]
+        ep_ret, ep_len, done_count, a = 0, 0, 0, -1
+        stat_buff = core.StatBuff()
+        stat_buff.update(o[0])
+        ep_ret_ls = []
+        oob = 0
+        reduce_v_iters = True
+        ac.model.eval()
+        # Main loop: collect experience in env and update/log each epoch
+        for epoch in range(epochs):
+            #Reset hidden state
+            hidden = ac.reset_hidden()
+            ac.pi.logits_net.v_net.eval()
+            for t in range(local_steps_per_epoch):
+                #Standardize input using running statistics per episode
+                obs_std = o
+                obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
+                #compute action and logp (Actor), compute value (Critic)
+                a, v, logp, hidden, out_pred = ac.step(obs_std, hidden=hidden)
+                results = env.step(int(a))
+                next_o = results[0][0]
+                r = results[1][0]
+                d = results[2][0]
+                ep_ret += r
+                ep_len += 1
+                ep_ret_ls.append(ep_ret)
+
+                buf.store(obs_std, a, r, v, logp, env.src_coords)
+                logger.store(VVals=v)
+
+                # Update obs (critical!)
+                o = next_o
+
+                #Update running mean and std
+                stat_buff.update(o[0])
+
+                timeout = ep_len == max_ep_len
+                terminal = d or timeout
+                epoch_ended = t==local_steps_per_epoch-1
+                
+                if terminal or epoch_ended:
+                    if d and not timeout:
+                        done_count += 1
+                    if 'out_of_bounds' in results[3][0] and results[3][0]['out_of_bounds'] == True:
+                        oob += 1
+                    if epoch_ended and not(terminal):
+                        print(f'Warning: trajectory cut off by epoch at {ep_len} steps and time {t}.', flush=True)
+
+                    if timeout or epoch_ended:
+                        # if trajectory didn't reach terminal state, bootstrap value target
+                        obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
+                        _, v, _, _, _ = ac.step(obs_std, hidden=hidden)
+                        if epoch_ended:
+                            #Set flag to sample new environment parameters
+                            env.epoch_end = True
+                    else:
+                        v = 0
+                    buf.finish_path(v)
+                    if terminal:
+                        # only save EpRet / EpLen if trajectory finished
+                        logger.store(EpRet=ep_ret, EpLen=ep_len)
+
+                    if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1 ) == epochs)):
+                        #Check agent progress during training
+                        if epoch != 0:
+                            env.render(save_gif=save_gif,path=logger.output_dir,epoch_count=epoch,
+                                    ep_rew=ep_ret_ls)
+                    
+                    ep_ret_ls = []
+                    stat_buff.reset()
+                    if not env.epoch_end:
+                        #Reset detector position and episode tracking
+                        hidden = ac.reset_hidden()
+                        o = env.reset()[0][0]
+                        ep_ret, ep_len, done_count, a = 0, 0, 0, -1
+                    else:
+                        #Sample new environment parameters, log epoch results
+                        #oob += env.oob_count
+                        logger.store(DoneCount=done_count, OutOfBound=oob)
+                        done_count = 0; oob = 0
+                        o = env.reset()[0][0]
+                        ep_ret, ep_len, done_count, a = 0, 0, 0, -1
+
+                    stat_buff.update(o[0])
+
+            # Save model
+            if (epoch % save_freq == 0) or (epoch == epochs-1):
+                logger.save_state(None, None)
+                pass
+
+            
+            #Reduce localization module training iterations after 100 epochs to speed up training
+            if reduce_v_iters and epoch > 99:
+                train_v_iters = 5
+                reduce_v_iters = False
+
+            # Perform PPO update!
+            self.update_agents()
+            
+            if not terminal:
+                pass
+
+            # Log info about epoch
+            # WARNING: DO NOT RENAME VARIABLES UNTIL REPLACING THEM WITH A BUFFER! Logger is used extensively for agent update
+            logger.log_tabular('Epoch', epoch)
+            logger.log_tabular('EpRet', with_min_and_max=True)
+            logger.log_tabular('EpLen', average_only=True)
+            logger.log_tabular('VVals', with_min_and_max=True)
+            logger.log_tabular('TotalEnvInteracts', (epoch+1)*steps_per_epoch)
+            logger.log_tabular('LossPi', average_only=True)
+            logger.log_tabular('LossV', average_only=True)
+            logger.log_tabular('LossModel', average_only=True)
+            logger.log_tabular('LocLoss', average_only=True)
+            logger.log_tabular('Entropy', average_only=True)
+            logger.log_tabular('KL', average_only=True)
+            logger.log_tabular('ClipFrac', average_only=True)
+            logger.log_tabular('DoneCount', sum_only=True)
+            logger.log_tabular('OutOfBound', average_only=True)
+            logger.log_tabular('StopIter', average_only=True)
+            logger.log_tabular('Time', time.time()-start_time)
+            logger.dump_tabular()        
+
 
     def update_agents(self) -> None: #         (env, bp_args, loss_fcn=loss)
 
@@ -815,7 +919,7 @@ class PPO:
         model_losses = {id: self.update_model(id, data[id], agent) for id, agent in self.agents.items()}
 
         # Update function if using the regression GRU
-        # loss_mod = update_loc_rnn(data,env,loss)
+        # model_losses = update_loc_rnn(data,env,loss)
 
         # Length of data ep_form
         length = len(data[0]["ep_form"])
