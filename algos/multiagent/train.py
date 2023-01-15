@@ -691,7 +691,9 @@ class PPO:
 
                     # If at the end of an epoch and render flag is set, save the gif if its time according to the 
                     #   save_gif frequency value or itsthe last epoch
-                    if (epoch_ended and self.render and (epoch % self.save_gif_freq == 0 or ((epoch + 1) == self.total_epochs))):
+                    time_to_save = (epoch % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
+                        
+                    if (epoch_ended and self.render and ( time_to_save or ((epoch + 1) == self.total_epochs))):
                             env.render(
                                 path=str(self.loggers[0].output_dir),
                                 epoch_count=epoch,
