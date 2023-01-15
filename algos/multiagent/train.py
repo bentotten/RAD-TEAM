@@ -142,7 +142,7 @@ class PPOBuffer:
     source_tar: npt.NDArray[np.float32] = field(init=False)
     logp_buf: npt.NDArray[np.float32] = field(init=False)
     obs_win: npt.NDArray[np.float32] = field(init=False) # TODO where is this used?
-    obs_win_std: npt.NDArray[np.float32] = field(init=False) # TODO where is this used?
+    obs_win_std: npt.NDArray[np.float32] = field(init=False) # Location prediction
 
     gamma: float = 0.99
     lam: float = 0.90
@@ -276,6 +276,7 @@ class PPOBuffer:
         epLens: list[int] = logger.epoch_dict["EpLen"]
         numEps = len(epLens)
         epLenTotal = sum(epLens)
+        assert numEps > 0
         data = dict(
             obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
             act=torch.as_tensor(self.act_buf, dtype=torch.float32),
@@ -325,6 +326,45 @@ class PPOBuffer:
 
         return data
 
+
+    def get_old(self,logger=None):
+        """
+        Call this at the end of an epoch to get all of the data from
+        the buffer, with advantages appropriately normalized (shifted to have
+        mean zero and std one). Also, resets some pointers in the buffer.
+        """
+        assert self.ptr == self.max_size    # buffer has to be full before you can get
+        self.ptr, self.path_start_idx = 0, 0
+        # the next two lines implement the advantage normalization trick
+        #adv_mean, adv_std = mpi_statistics_scalar(self.adv_buf)
+        adv_mean, adv_std = self.adv_buf.mean(), self.adv_buf.std()
+        self.adv_buf = (self.adv_buf - adv_mean) / adv_std
+        #ret_mean, ret_std = mpi_statistics_scalar(self.ret_buf)
+        #self.ret_buf = (self.ret_buf) / ret_std
+        #obs_mean, obs_std = mpi_statistics_vector(self.obs_buf)
+        #self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
+        
+        data = dict(obs=self.obs_buf, act=self.act_buf, ret=self.ret_buf,
+                    adv=self.adv_buf, logp=self.logp_buf, loc_pred=self.obs_win_std,ep_len= sum(logger.epoch_dict['EpLen']))
+        data = {k: torch.as_tensor(v, dtype=torch.float32) for k,v in data.items()}
+
+        if logger:
+            slice_b = 0
+            slice_f = 0
+            epLen = logger.epoch_dict['EpLen']
+            epLenSize = len(epLen) if sum(epLen) == len(self.obs_buf) else (len(epLen) + 1)
+            obs_buf = np.hstack((self.obs_buf,self.adv_buf[:,None],self.ret_buf[:,None],self.logp_buf[:,None],self.act_buf[:,None],self.source_tar))
+            epForm = [[] for _ in range(epLenSize)]
+            for jj, ep_i in enumerate(epLen):
+                slice_f += ep_i
+                epForm[jj].append(torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32))
+                slice_b += ep_i
+            if slice_f != len(self.obs_buf):
+                epForm[jj+1].append(torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32))
+                
+            data['ep_form'] = epForm
+
+        return data
 
 ################################### Training ###################################
 @dataclass
@@ -688,15 +728,16 @@ class PPO:
                         for id, agent in self.agents.items():
                             self.loggers[id].store(EpRet=episode_return[id], EpLen=steps_in_episode)                 
 
-                    # If at the end of an epoch and render flag is set, save the gif if its time according to the 
-                    #   save_gif frequency value or itsthe last epoch
-
-                    time_to_save = (epoch % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False                        
-                    if (epoch != 0 and epoch_ended and self.render and ( time_to_save or ((epoch + 1) == self.total_epochs))):
-                            env.render(
-                                path=str(self.loggers[0].output_dir),
-                                epoch_count=epoch,
-                            )
+                    # If at the end of an epoch and render flag is set or the save_gif frequency indicates it is time to
+                    asked_to_save = epoch_ended and self.render
+                    save_first_epoch = (epoch != 0 or self.save_gif_freq == 1)
+                    save_time_triggered = (epoch % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
+                    time_to_save = save_time_triggered or ((epoch + 1) == self.total_epochs)
+                    if (asked_to_save and save_first_epoch and time_to_save):
+                        env.render(
+                            path=str(self.loggers[0].output_dir),
+                            epoch_count=epoch,
+                        )
 
                     # Reset the environment and counters
                     episode_return_buffer = []
@@ -743,24 +784,23 @@ class PPO:
 
             # Log info about epoch
             for id in self.agents:
-                self.loggers[id].log_tabular("Agent ID", id)        
-                self.loggers[id].log_tabular("Epoch", epoch)
-                if terminal:                
-                    self.loggers[id].log_tabular("EpRet", with_min_and_max=True)
-                    self.loggers[id].log_tabular("EpLen", average_only=True)
+                self.loggers[id].log_tabular("AgentIDActual", id)        
+                self.loggers[id].log_tabular("EpochActual", epoch)      
+                self.loggers[id].log_tabular("EpRet", with_min_and_max=True)
+                self.loggers[id].log_tabular("EpLenAvg", average_only=True)
                 self.loggers[id].log_tabular("VVals", with_min_and_max=True)
-                self.loggers[id].log_tabular("TotalEnvInteracts", (epoch + 1) * self.steps_per_epoch)
-                self.loggers[id].log_tabular("LossPi", average_only=True)
-                self.loggers[id].log_tabular("LossV", average_only=True)
-                #self.loggers[id].log_tabular("LossModel", average_only=True)  # Specific to the regressive GRU
-                self.loggers[id].log_tabular("LocLoss", average_only=True)
-                self.loggers[id].log_tabular("Entropy", average_only=True)
-                self.loggers[id].log_tabular("KL", average_only=True)
-                self.loggers[id].log_tabular("ClipFrac", average_only=True)
-                self.loggers[id].log_tabular("DoneCount", sum_only=True)
-                self.loggers[id].log_tabular("OutOfBound", average_only=True)
-                self.loggers[id].log_tabular("StopIter", average_only=True)
-                self.loggers[id].log_tabular("Time", time.time() - self.start_time)
+                self.loggers[id].log_tabular("TotalSteps", (epoch + 1) * self.steps_per_epoch)
+                self.loggers[id].log_tabular("LossPiAvg", average_only=True)
+                self.loggers[id].log_tabular("LossVAvg", average_only=True)
+                self.loggers[id].log_tabular("LossModel", average_only=True)  # Specific to the regressive GRU
+                self.loggers[id].log_tabular("LocLossAvg", average_only=True)
+                self.loggers[id].log_tabular("EntropyAvg", average_only=True)
+                self.loggers[id].log_tabular("KLAvg", average_only=True)
+                self.loggers[id].log_tabular("ClipFracAvg", average_only=True)
+                self.loggers[id].log_tabular("DoneCountTotal", sum_only=True)
+                self.loggers[id].log_tabular("OutOfBoundAvg", average_only=True)
+                self.loggers[id].log_tabular("StopIterAvg", average_only=True)
+                self.loggers[id].log_tabular("SecondsActual", time.time() - self.start_time)
                 self.loggers[id].dump_tabular()
 
     def update_agents(self) -> None: #         (env, bp_args, loss_fcn=loss)
@@ -772,7 +812,7 @@ class PPO:
         # Note: update functions perform multiple updates per call, according to minibatch number (sometimes known as k_epoch)
         
         # Update function for the PFGRU localization module. Module will be set to train mode, then eval mode within update_model
-        model_losses = {self.update_model(id, data[id], agent) for id, agent in self.agents.items()}
+        model_losses = {id: self.update_model(id, data[id], agent) for id, agent in self.agents.items()}
 
         # Update function if using the regression GRU
         # loss_mod = update_loc_rnn(data,env,loss)
@@ -820,7 +860,7 @@ class PPO:
             self.loggers[id].store(
                 LossPi=update_results[id]['pi_l'].item(),
                 LossV=loss_v.item(),
-                #LossModel=loss_mod.item(),  # TODO if using the regression GRU
+                LossModel=model_losses[id].item(),  # TODO if using the regression GRU
                 KL=kl,
                 Entropy=ent,
                 ClipFrac=cf,
