@@ -488,7 +488,6 @@ class PPO:
         # Instantiate environment 
         self.obs_dim: int = self.env.observation_space.shape[0]
         self.act_dim: int = rad_search_env.A_SIZE
-        self.save_gif_freq = self.save_gif_freq if self.save_gif_freq != 0 else float('inf')
 
         # Instantiate Actor-Critic (A2C) Agents
         #self.ac = actor_critic(obs_dim, act_dim, **ac_kwargs)
@@ -691,9 +690,9 @@ class PPO:
 
                     # If at the end of an epoch and render flag is set, save the gif if its time according to the 
                     #   save_gif frequency value or itsthe last epoch
-                    time_to_save = (epoch % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
-                        
-                    if (epoch_ended and self.render and ( time_to_save or ((epoch + 1) == self.total_epochs))):
+
+                    time_to_save = (epoch % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False                        
+                    if (epoch != 0 and epoch_ended and self.render and ( time_to_save or ((epoch + 1) == self.total_epochs))):
                             env.render(
                                 path=str(self.loggers[0].output_dir),
                                 epoch_count=epoch,
