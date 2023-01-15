@@ -99,7 +99,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--render", type=bool, default=False, help="Save gif"
     )          
     parser.add_argument(
-        "--save_gif_freq", type=int, default=3, help="If render is true, save gif after this many epochs."
+        "--save_gif_freq", type=float, default=float('inf'), help="If render is true, save gif after this many epochs."
     )     
     parser.add_argument(
         "--save_freq", type=int, default=500, help="How often to save the model."
