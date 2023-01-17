@@ -88,6 +88,7 @@ def multi_plot(data,smooth=None,x_axis='Epoch', save_f=False, file_name="."):
         div = 3
     
     #fig,axs = plt.subplots(len(lst)//div,len(lst)//(div+1),figsize=(12,8), constrained_layout=True)
+    plt.rc("font", size=26)
     fig,axs = plt.subplots(div,(len(lst)-len(exclude))//(div+1),figsize=(50,16), constrained_layout=True)
     x = data[data.columns[data.columns == x_axis][0]].to_numpy()
     

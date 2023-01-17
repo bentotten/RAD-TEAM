@@ -43,19 +43,23 @@
       "justMyCode": false,
       "args": [
         "--agent_count",
-        "1",
+        "3",
         // "--steps-per-epoch",
         // "2",
-        // "--epochs",
-        // "1",
+        "--epochs",
+        "5",
         "--render",
         "True",
         //"--obstruct",
         //"1",
         "--seed",
-        "2"
+        "2",
         // "--save_gif_freq",
-        // "0"
+        // "0",
+        "--enforce_grid_boundaries",
+        "True",
+        "--exp-name",
+        "multi-ppo"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     },
@@ -69,7 +73,9 @@
       "justMyCode": false,
       "args": [
         "--data_dir",
-        "${workspaceFolder}/../../models/train/test/0_agents1_loc24_hid24_pol32_val32_test_ep3000_steps480_s2"
+        "${workspaceFolder}/../../models/train/test/0_agents1_loc24_hid24_pol32_val32_test_ep3000_steps480_s2",
+        "--smooth",
+        "100"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }    
