@@ -167,7 +167,7 @@ def get_y_step_coeff(action: Action) -> int:
 
 # The signs of the x-coefficients follow the signs of cos(pi * (1 - action/4)) = sin(pi * (1 - (action + 6)/4))
 def get_x_step_coeff(action: Action) -> int:
-    return get_y_step_coeff((action + 6) % 8)
+    return get_y_step_coeff((action + 6) % 8) # TODO CHANGE TO A_SIZE and make work correctly
 
 
 def get_step(action: Action) -> Point:
@@ -446,6 +446,11 @@ class RadSearch(gym.Env):
                         if agent.intersect
                         else self.intensity / agent.euc_dist + self.bkg_intensity
                     )
+                    
+                    if action == -1:
+                        raise ValueError("Take Action function returned false, but 'Idle' indicated")
+                    else:
+                        reward = -0.5 * agent.sp_dist / self.max_dist
 
                 if action == -1 and not agent.collision:
                     reward = -0.5 * agent.sp_dist / self.max_dist
@@ -454,7 +459,6 @@ class RadSearch(gym.Env):
                     reward = -0.5 * agent.sp_dist / self.max_dist
 
             # If detector coordinate noise is desired
-            # TODO why is noise coordinate being added here? Why is noise a coordinate at all?
             noise: Point = Point(
                 tuple(self.np_random.normal(scale=5, size=2))
                 if self.coord_noise
@@ -1244,7 +1248,6 @@ class RadSearch(gym.Env):
 
         if obstacles == []:
             obstacles = self.obs_coord
-
         if just_env:
             # Setup Graph
             plt.rc("font", size=12)
