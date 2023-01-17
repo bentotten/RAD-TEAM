@@ -2,7 +2,7 @@ from cgitb import reset
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple, Type, Union
 from gym_rad_search.envs import rad_search_env  # type: ignore
-from gym_rad_search.envs.rad_search_env import RadSearch, Action  # type: ignore
+from gym_rad_search.envs.rad_search_env import RadSearch, StepResult  # type: ignore
 import numpy as np
 import numpy.typing as npt
 import torch
@@ -36,8 +36,8 @@ class BpArgs(NamedTuple):
 
 @dataclass
 class PPOBuffer:
-    obs_dim: core.Shape
-    max_size: int
+    obs_dim: core.Shape  # Observation space dimensions
+    max_size: int  # Max steps per epoch
 
     obs_buf: npt.NDArray[np.float32] = field(init=False)
     act_buf: npt.NDArray[np.float32] = field(init=False)
@@ -47,8 +47,8 @@ class PPOBuffer:
     val_buf: npt.NDArray[np.float32] = field(init=False)
     source_tar: npt.NDArray[np.float32] = field(init=False)
     logp_buf: npt.NDArray[np.float32] = field(init=False)
-    obs_win: npt.NDArray[np.float32] = field(init=False)
-    obs_win_std: npt.NDArray[np.float32] = field(init=False)
+    obs_win: npt.NDArray[np.float32] = field(init=False) # TODO where is this used?
+    obs_win_std: npt.NDArray[np.float32] = field(init=False) # TODO where is this used?
 
     gamma: float = 0.99
     lam: float = 0.90
@@ -367,10 +367,11 @@ class PPO:
         # Set Pytorch random seed
         torch.manual_seed(seed)
 
-        # Instantiate environment
+        # Set Actor-Critic variables
         ac_kwargs["seed"] = seed
-        ac_kwargs["pad_dim"] = 2
+        ac_kwargs["pad_dim"] = 2        
 
+        # Instantiate environment 
         obs_dim: int = env.observation_space.shape[0]
         act_dim: int = rad_search_env.A_SIZE
 
@@ -404,9 +405,9 @@ class PPO:
         save_gif_freq = epochs // 3
 
         # Set up optimizers and learning rate decay for policy and localization module
-        self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=pi_lr) # TODO make multi-agent
+        self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=pi_lr) # pi is Actor # TODO make multi-agent
         self.train_pi_iters = train_pi_iters
-        self.model_optimizer = Adam(self.ac.model.parameters(), lr=vf_lr) # TODO make multi-agent
+        self.model_optimizer = Adam(self.ac.model.parameters(), lr=vf_lr) # model is PFGRU # TODO make multi-agent
         self.pi_scheduler = torch.optim.lr_scheduler.StepLR(
             self.pi_optimizer, step_size=100, gamma=0.99
         )
@@ -424,36 +425,52 @@ class PPO:
 
         # Prepare for interaction with environment
         start_time = time.time()
-        o, ep_ret, ep_len, done_count, a = env.reset()[0].state, 0, 0, 0, -1 # TODO make multi-agent
+             
+        # Obsertvation aka State: 11 dimensions, [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
+        o = env.reset()[0].state  # TODO make multi-agent
+        ep_ret, ep_len, done_count, a = 0, 0, 0, -1 # TODO make multi-agent
         source_coordinates = np.array(env.src_coords, dtype="float32")
         stat_buff = core.StatBuff()
         stat_buff.update(o[0])
         ep_ret_ls = []
         oob = 0
-        reduce_v_iters = True
-        self.ac.model.eval() # TODO make multi-agent
+        reduce_v_iters = True  # Reduces training iteration when further along to speed up training, looks like just for PFGRU
+        self.ac.model.eval() # TODO make multi-agent # Sets PFGRU model into "eval" mode
+        
         # Main loop: collect experience in env and update/log each epoch
         print(f"Starting main training loop!", flush=True)
         for epoch in range(epochs):
             # Reset hidden state
             hidden = self.ac.reset_hidden() # TODO make multi-agent
-            self.ac.pi.logits_net.v_net.eval() # Pylance note - this seems to call just fine # TODO make multi-agent
+            self.ac.pi.logits_net.v_net.eval() # Sets Actor into "eval" mode # TODO make multi-agent
+            
             for t in range(steps_per_epoch):
+                
                 # Standardize input using running statistics per episode
-                obs_std = o
+                # TODO I do not think this is needed for our environment
+                obs_std = o # NOTE this will be the prior state that is stored in the buffer # TODO make multi-agent
                 obs_std[0] = np.clip((o[0] - stat_buff.mu) / stat_buff.sig_obs, -8, 8)
+                
+                for i in range(len(o)):
+                    assert obs_std[i] == o[i], "If this triggers, the above standardization was needed and should be left."
+                    
                 # compute action and logp (Actor), compute value (Critic)
-                a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent
+                a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent # TODO what is the hidden variable doing?
+                
+                # Take step in environment
                 result = env.step(action=int(a)) # TODO make multi-agent # TODO figure out how to cast a to Action()
+                
+                # Parse step result, since not currently multiagent
                 next_o = result[0].state
                 r = np.array(result[0].reward, dtype="float32")
                 d = result[0].done
                 msg = result[0].error
+                
                 ep_ret += r
                 ep_len += 1
                 ep_ret_ls.append(ep_ret)
 
-                self.buf.store(obs_std, a, r, v, logp, source_coordinates) # TODO make multi-agent?
+                self.buf.store(obs_std, a, r, v, logp, source_coordinates) # Feed prior observation to buffer # TODO make multi-agent?
                 logger.store(VVals=v)
 
                 # Update obs (critical!)
@@ -595,7 +612,7 @@ class PPO:
                 trajectories[:, source_loc_idx:].clone(),
             )
             # Calculate new log prob.
-            pi, val, logp, loc = self.ac.grad_step(obs, act, hidden=hidden) # TODO make multi-agent
+            pi, val, logp, loc = self.ac.grad_step(obs, act, hidden=hidden) # Both PFGRU and A2C? # TODO make multi-agent
             logp_diff: torch.Tensor = logp_old - logp
             ratio = torch.exp(logp - logp_old)
 
@@ -667,21 +684,22 @@ class PPO:
         data: dict[str, torch.Tensor] = self.buf.get(self.logger)
 
         # Update function if using the PFGRU, fcn. performs multiple updates per call
-        self.ac.model.train() # TODO make multi-agent
+        self.ac.model.train() # PFGRU # TODO make multi-agent
         loss_mod = self.update_model(data, args)
 
         # Update function if using the regression GRU
         # loss_mod = update_loc_rnn(data,env,loss)
 
-        self.ac.model.eval() # TODO make multi-agent
+        self.ac.model.eval() # PFGRU # TODO make multi-agent
         min_iters = len(data["ep_form"])
         kk = 0
         term = False
 
-        # Train policy with multiple steps of gradient descent (mini batch)
+        # Train Actor-Critic policy with multiple steps of gradient descent (mini batch)
+        # TODO what is "term" for?
         while not term and kk < self.train_pi_iters:
             # Early stop training if KL-div above certain threshold
-            pi_l, pi_info, term, loc_loss = self.update_a2c(data, env, min_iters, kk)
+            pi_l, pi_info, term, loc_loss = self.update_a2c(data, env, min_iters, kk)  # pi_l = policy loss
             kk += 1
 
         # Reduce learning rate

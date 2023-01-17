@@ -72,20 +72,24 @@ def multi_plot(data,smooth=None,x_axis='Epoch', save_f=False, file_name="."):
     ref_DF = pd.DataFrame()
 
     #lst = ['AverageEpRet','StdEpRet','DoneCount','EpLen','Entropy','KL', 'LossModel', 'LossV']  # 'AverageEpRet' Missing from dataset
-    lst = ['MeanEpRet','StdEpRet','DoneCount','EpLen','Entropy','KL', 'LossModel', 'LossV'] 
+    lst = data.columns # ['MeanEpRet','StdEpRet','DoneCount','EpLen','Entropy','KL', 'LossModel', 'LossV'] 
+    exclude = ['Condition1', 'Condition2', 'AgentID', 'Time', 'Epoch']
+    print(len(lst))
     for lab in lst:
-        if np.any(lab == data.columns):
+        if lab not in exclude and np.any(lab == data.columns):
             ref_DF[lab] = data[data.columns[data.columns == lab][0]]
             if np.isnan(ref_DF[lab]).any():
                 ref_DF[np.isnan(ref_DF[lab])] = 0 
                 print('NAN found!')
     iters = ref_DF.iteritems()
-    if len(lst) % 2 == 0:
+    if (len(lst)-len(exclude)) % 2 == 0:
         div = 2
     else:
         div = 3
     
-    fig,axs = plt.subplots(len(lst)//div,len(lst)//(div+1),figsize=(12,8), constrained_layout=True)
+    #fig,axs = plt.subplots(len(lst)//div,len(lst)//(div+1),figsize=(12,8), constrained_layout=True)
+    plt.rc("font", size=26)
+    fig,axs = plt.subplots(div,(len(lst)-len(exclude))//(div+1),figsize=(50,16), constrained_layout=True)
     x = data[data.columns[data.columns == x_axis][0]].to_numpy()
     
     for ax, case in zip(axs.flatten(), iters):
@@ -100,7 +104,7 @@ def multi_plot(data,smooth=None,x_axis='Epoch', save_f=False, file_name="."):
     if save_f:
         if file_name[-1] != "/":
             file_name += "/"
-        plt.savefig(file_name+'results.eps')
+        fig.savefig(file_name+'results.eps')
     else:
         plt.show()
 
@@ -137,8 +141,8 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', type=str,help='Directory where results are saved. Ex: ../models/train/gru_8_acts/bpf/model_dir',
-                        default='../models/pre_train/gru_8_acts/bpf/loc32_hid32_pol32_val32_alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh_ep3000_steps4800_s1/')
-    parser.add_argument('--save', type=bool,default=False)
+                        default='../../models/pre_train/gru_8_acts/bpf/loc32_hid32_pol32_val32_alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh_ep3000_steps4800_s1/')
+    parser.add_argument('--save', type=bool,default=True)
     parser.add_argument('--smooth', type=int, default=-1,help='Moving average filter, if less than -1 than no averaging is applied')
     args = parser.parse_args()
     

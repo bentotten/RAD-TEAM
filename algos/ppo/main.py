@@ -31,6 +31,7 @@ class CliArgs:
     obstruct: Literal[-1, 0, 1]
     net_type: str
     alpha: float
+    render: bool
 
 
 def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
@@ -52,6 +53,7 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         obstruct=args.obstruct,
         net_type=args.net_type,
         alpha=args.alpha,
+        render=args.render,
     )
 
 
@@ -128,6 +130,9 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--alpha", type=float, default=0.1, help="Entropy reward term scaling"
     )
+    parser.add_argument(
+        "--render", type=bool, default=False, help="Render Gif"
+    )
     return parser
 
 
@@ -175,7 +180,7 @@ if __name__ == "__main__":
             [[0.0, 0.0], [dim_length, 0.0], [dim_length, dim_height], [0.0, dim_height]]
         ),
         observation_area=np.array(args.area_obs),  # type: ignore
-        obstruct=args.obstruct,
+        obstruction_count=args.obstruct,
         np_random=rng,
         number_agents = number_of_agents
     )
@@ -199,6 +204,6 @@ if __name__ == "__main__":
         steps_per_epoch=args.steps_per_epoch,
         epochs=args.epochs,
         number_of_agents=number_of_agents,
-        render=False,
+        render=args.render,
         save_gif=save_gif,
     )
