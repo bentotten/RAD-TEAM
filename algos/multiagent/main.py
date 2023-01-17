@@ -1,6 +1,7 @@
 import argparse
 from dataclasses import dataclass
 from typing import Literal
+import datetime
 
 import numpy as np
 import numpy.random as npr
@@ -54,7 +55,7 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         seed=args.seed,
         steps_per_epoch=args.steps_per_epoch,
         epochs=args.epochs,
-        exp_name=args.exp_name,
+        exp_name=args.exp_name+datetime.now().replace(microsecond=0),
         dims=args.dims,
         area_obs=args.area_obs,
         obstruct=args.obstruct,
@@ -87,7 +88,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--exp-name",
         type=str,
-        default="test",
+        default="test_datetime",
         help="Name of experiment for saving",
     )
     parser.add_argument(
