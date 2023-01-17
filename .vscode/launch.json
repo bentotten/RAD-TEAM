@@ -58,9 +58,24 @@
         // "0"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
-    }
+    },
+    {
+      "name": "PLOT MULTI",
+      "type": "python",
+      //"python": "${command:python.interpreterPath}/../multi_ppo_torch", # Specify which interpreter
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/multiagent/plot_results.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": [
+        "--data_dir",
+        "${workspaceFolder}/../../models/train/test/0_agents1_loc24_hid24_pol32_val32_test_ep3000_steps480_s2"
+      ],
+      "cwd": "${workspaceFolder}/algos/multiagent"
+    }    
   ]
 }
+
 
 // General parameters for multi-agent
 // help="Number of timesteps per epoch (before updating agent networks)"
