@@ -1,7 +1,7 @@
 import argparse
 from dataclasses import dataclass
 from typing import Literal
-import datetime
+from datetime import datetime
 
 import numpy as np
 import numpy.random as npr
@@ -55,7 +55,7 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         seed=args.seed,
         steps_per_epoch=args.steps_per_epoch,
         epochs=args.epochs,
-        exp_name=args.exp_name+datetime.now().replace(microsecond=0),
+        exp_name=args.exp_name,
         dims=args.dims,
         area_obs=args.area_obs,
         obstruct=args.obstruct,
@@ -88,7 +88,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--exp-name",
         type=str,
-        default="test_datetime",
+        default="test",
         help="Name of experiment for saving",
     )
     parser.add_argument(
@@ -181,26 +181,27 @@ if __name__ == "__main__":
     args = parse_args(create_parser())
 
     # Save directory and experiment name
-    save_dir_name: str = "test"  # Stands for bootstrap particle filter, one of the neat resampling methods used
+    save_dir_name: str = args.exp_name  # Stands for bootstrap particle filter, one of the neat resampling methods used
     exp_name: str = (
+        args.exp_name        
+        + "_"
         "agents"
         + str(args.agent_count)
-        + "_loc"
-        + str(args.hid_rec)
-        + "_hid"
-        + str(args.hid_gru)
-        + "_pol"
-        + str(args.hid_pol)
-        + "_val"
-        + str(args.hid_val)
-        + "_"
-        + args.exp_name
-        + f"_ep{args.epochs}"
-        + f"_steps{args.steps_per_epoch}"
+        # + "_loc"
+        # + str(args.hid_rec)
+        # + "_hid"
+        # + str(args.hid_gru)
+        # + "_pol"
+        # + str(args.hid_pol)
+        # + "_val"
+        # + str(args.hid_val)
+        # + f"_epochs{args.epochs}"
+        # + f"_steps{args.steps_per_epoch}"
     )
 
     # Generate a large random seed and random generator object for reproducibility
     robust_seed = _int_list_from_bigint(hash_seed(args.seed))[0]
+    exp_name = datetime.now().replace(microsecond=0).strftime('%Y-%m-%d-%H:%M:%S') + "_" + exp_name
     rng = npr.default_rng(robust_seed)
 
     # Set up logger args 

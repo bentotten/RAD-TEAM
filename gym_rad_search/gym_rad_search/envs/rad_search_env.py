@@ -1298,10 +1298,10 @@ class RadSearch(gym.Env):
         
             # Save
             if self.save_gif:
-                if os.path.isdir(str(path) + "/gifs/"):
+                if os.path.isdir(str(path) + ".." + "/gifs/"):
                     fig.savefig(str(path) + f"/gifs/environment.png")
                 else:
-                    os.mkdir(str(path) + "/gifs/")
+                    os.mkdir(str(path) + ".." + "/gifs/")
                     fig.savefig(str(path) + f"/gifs/environment.png")
             else:
                 plt.show()
