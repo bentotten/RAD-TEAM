@@ -1,3 +1,6 @@
+#    - github.com/nikhilbarhate99/PPO-PyTorch
+
+
 import torch
 import torch.nn as nn
 from torch.distributions import MultivariateNormal
@@ -41,7 +44,8 @@ class ActorCritic(nn.Module):
         super(ActorCritic, self).__init__()
 
         self.has_continuous_action_space = has_continuous_action_space
-        
+            #robust_seed = _int_list_from_bigint(hash_seed(seed))[0] # TODO get this to work
+
         if has_continuous_action_space:
             self.action_dim = action_dim
             self.action_var = torch.full((action_dim,), action_std_init * action_std_init).to(device)
@@ -71,6 +75,11 @@ class ActorCritic(nn.Module):
                         nn.Tanh(),
                         nn.Linear(64, 1)
                     )
+        
+        # TODO Delete me
+        # print(self.actor)
+        # print(self.actor[0].weight)
+        # print()
         
     def set_action_std(self, new_action_std):
         if self.has_continuous_action_space:
@@ -109,7 +118,8 @@ class ActorCritic(nn.Module):
             # For Single Action Environments.
             if self.action_dim == 1:
                 action = action.reshape(-1, self.action_dim)
-        else:
+        else:    #robust_seed = _int_list_from_bigint(hash_seed(seed))[0] # TODO get this to work
+
             action_probs = self.actor(state)
             dist = Categorical(action_probs)
         action_logprobs = dist.log_prob(action)
@@ -120,20 +130,20 @@ class ActorCritic(nn.Module):
 
 
 class PPO:
-    def __init__(self, state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, has_continuous_action_space, action_std_init=0.6):
+    def __init__(self, state_dim, action_dim, lr_actor, lr_critic, gamma, K_epochs, eps_clip, grid_bounds, has_continuous_action_space=False, action_std_init=0.6, resolution_accuracy=None, id=None):
 
         self.has_continuous_action_space = has_continuous_action_space
 
         if has_continuous_action_space:
             self.action_std = action_std_init
 
-        self.gamma = gamma
+        self.gamma = gamma  # Discount factor
         self.eps_clip = eps_clip
         self.K_epochs = K_epochs
         
         self.buffer = RolloutBuffer()
 
-        self.policy = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device)  # dims here ref nn?
+        self.policy = ActorCritic(state_dim, action_dim, has_continuous_action_space, action_std_init).to(device) 
         self.optimizer = torch.optim.Adam([
                         {'params': self.policy.actor.parameters(), 'lr': lr_actor},
                         {'params': self.policy.critic.parameters(), 'lr': lr_critic}
@@ -170,7 +180,7 @@ class PPO:
             print("WARNING : Calling PPO::decay_action_std() on discrete action space policy")
         print("--------------------------------------------------------------------------------------------")
 
-    def select_action(self, state):
+    def select_action(self, state, id=None):
 
         if self.has_continuous_action_space:
             with torch.no_grad():
@@ -195,14 +205,14 @@ class PPO:
 
     def update(self):
         # Monte Carlo estimate of returns
+        
         rewards = []
         discounted_reward = 0
         for reward, is_terminal in zip(reversed(self.buffer.rewards), reversed(self.buffer.is_terminals)):
             if is_terminal:
                 discounted_reward = 0
-            discounted_reward = reward + (self.gamma * discounted_reward)  # TODO I think the discounted_reward and reward are reversed here, doublecheck; also should lamda be increasing in powers?
-                                                                            # https://towardsdatascience.com/generalized-advantage-estimate-maths-and-code-b5d5bd3ce737
-            rewards.insert(0, discounted_reward)
+            discounted_reward = reward + (self.gamma * discounted_reward) # TODO I think the discounted_reward and reward are reversed here, doublecheck
+            rewards.insert(0, discounted_reward) # Puts back in correct order
             
         # Normalizing the rewards
         rewards = torch.tensor(rewards, dtype=torch.float32).to(device)

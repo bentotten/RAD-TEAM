@@ -21,7 +21,7 @@ from matplotlib.ticker import FormatStrFormatter
 from matplotlib.animation import PillowWriter
 from matplotlib.patches import Polygon as PolygonPatches
 
-from typing import Any, List, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict
+from typing import Any, List, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, NamedTuple
 from typing_extensions import TypeAlias
 
 
@@ -31,6 +31,42 @@ Interval: TypeAlias = NewType("Interval", tuple[float, float])
 BBox: TypeAlias = NewType("BBox", tuple[Point, Point, Point, Point])
 Colorcode: TypeAlias = NewType("Colorcode", list[int])
 Color: TypeAlias = NewType("Color", npt.NDArray[np.float64])
+
+Metadata: TypeAlias = TypedDict(
+    "Metadata", {"render.modes": list[str], "video.frames_per_second": int}
+)
+
+# BT
+# These actions correspond to:
+# -1: stay idle
+# 0: left
+# 1: up and left
+# 2: up
+# 3: up and right
+# 4: right
+# 5: down and right
+# 6: down
+# 7: down and left
+Action: TypeAlias = Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7]
+Directions: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7]
+
+A_SIZE = len(get_args(Action))
+DETECTABLE_DIRECTIONS = len(get_args(Directions)) # Ignores -1 idle state
+MAX_CREATION_TRIES = 1000
+FPS = 50
+DET_STEP = 100.0  # detector step size at each timestep in cm/s
+DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
+DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
+DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm #TODO unused
+EPSILON = 0.0000001
+COLORS = [
+    #Colorcode([148, 0, 211]), # Violet (Removed due to being too similar to indigo)
+    Colorcode([255, 105, 180]), # Pink
+    Colorcode([75, 0, 130]), # Indigo
+    Colorcode([0, 0, 255]), # Blue
+    Colorcode([0, 255, 0]), # Green
+    Colorcode([255, 127, 0]) # Orange
+    ]
 
 Metadata: TypeAlias = TypedDict(
     "Metadata", {"render.modes": list[str], "video.frames_per_second": int}
@@ -199,23 +235,23 @@ def create_color(id: int) -> Color:
     return Color(np.array(specific_color) / 255)
 
 
-@dataclass()
-class StepResult():
-    id: int = field(init=False)
-    state: npt.NDArray[np.float32] = field(init=False)
-    reward: float = field(init=False)
-    done: bool = field(default=False)
-    error: dict[Any, Any] = field(default_factory=dict)
-
+class StepResult(NamedTuple):
+    observation: dict[int, npt.NDArray[np.float32]]
+    reward: dict[int, float]
+    terminal: dict[int, bool] 
+    info: dict[dict[Any, Any]] 
+    
 
 @dataclass
 class Agent():
     sp_dist: float = field(init=False) # Shortest path distance between agent and source
     euc_dist: float =  field(init=False) # Crow-Flies distance between agent and source
     det_coords: Point = field(init=False) # Detector Coordinates
-    out_of_bounds: bool = field(init=False) # Artifact from rad_ppo; TODO remove from rad_ppo and have as a part of state return instead?
-    out_of_bounds_count: int = field(init=False)  # Artifact - TODO decouple from rad_ppo agent?
+    out_of_bounds: bool = field(init=False) 
+    out_of_bounds_count: int = field(init=False)
+    collision: bool = field(init=False)
     intersect: bool = field(default=False)  # Check if line of sight is blocked by obstacle 
+    obstacle_blocking: bool = field(default=False) # For position assertions and testing
     detector: vis.Point = field(init=False) # Visilibity graph detector coordinates 
     prev_det_dist: float = field(init=False)
     id: int = field(default=0)
@@ -232,6 +268,7 @@ class Agent():
         self.reset()
     
     def reset(self):
+        self.obstacle_blocking = False
         self.out_of_bounds = False  
         self.out_of_bounds_count = 0
         self.det_sto: list[Point] = []  # Coordinate history for episdoe
@@ -247,29 +284,28 @@ class RadSearch(gym.Env):
         # Dimensions of radiation source search area in cm, decreased by observation_area param. to ensure visilibity graph setup is valid.
         #
         # observation_area
-        # Interval for each obstruction area in cm aka observation area
+        # Interval for each obstruction area in cm. The actual search area will be the bounds box decreased by this amount. This is also used to offset obstacles from one another
         #
-        # seed
+        # np_random
         # A random number generator
         #
-        # obstruct
+        # obstruction_count
         # Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions
     """ 
-    # Backwards compatiblility with single-agent step returns
-    backwards_compatible: Union[Literal[1], None] = field(default=None)
     # Environment
     bbox: BBox = field(default_factory=lambda: BBox(
             tuple((Point((0.0, 0.0)), Point((2700.0, 0.0)), Point((2700.0, 2700.0)), Point((0.0, 2700.0))))
             ))
     observation_area: Interval = field(default_factory=lambda: Interval((200.0, 500.0)))
     np_random: npr.Generator = field(default_factory=lambda: npr.default_rng(0))
-    obstruct: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
-
+    obstruction_count: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
+    enforce_grid_boundaries: bool = field(default=False)
+    save_gif: bool = field(default=False)    
     env_ls: list[Polygon] = field(init=False)
     max_dist: float = field(init=False)
     line_segs: list[list[vis.Line_Segment]] = field(init=False)
     poly: list[Polygon] = field(init=False)
-    search_area: BBox = field(init=False)
+    search_area: BBox = field(init=False)  # Area Detector and Source will spawn in - each must be 1000 cm apart from the source
     walls: Polygon = field(init=False)
     world: vis.Environment = field(init=False)
     vis_graph: vis.Visibility_Graph = field(init=False)
@@ -298,9 +334,17 @@ class RadSearch(gym.Env):
     observation_space: spaces.Box = spaces.Box(0, np.inf, shape=(11,), dtype=np.float32)
     coord_noise: bool = False
     seed: Union[int, None] = field(default=None)  # TODO make env generation work with this
+    scale: float = field(init=False)
     
     # Rendering
     iter_count: int = field(default=0)   # For render function, believe it counts timesteps
+    
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    # For debugging
+    DEBUG: bool = field(default=False)
+    DEBUG_SOURCE_LOCATION: Point = field(default=Point((1.0, 1.0)))
+    DEBUG_DETECTOR_LOCATION: Point = Point((1000.0, 1000.0))  
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     def __post_init__(self):
         self.search_area: BBox = BBox(
@@ -333,14 +377,19 @@ class RadSearch(gym.Env):
         )
         self.epoch_end = True
         self.agents = {i: Agent(id=i) for i in range(self.number_agents)}
-        self.max_dist: float = dist_p(self.search_area[2], self.search_area[1])
+        self.max_dist: float = dist_p(self.search_area[2], self.search_area[1])  # Maximum distance between two points within search area
         if self.seed != None:
             np.random.seed(self.seed) # TODO Fix to work with rng arg?
+            self.np_random: npr.Generator = npr.default_rng(self.seed)     
+        # Sanity Check
+        # Assure there is room to spawn detectors and source with proper spacing
+        assert self.max_dist > 1000, "Maximum distance available is too small, unable to spawn source and detector 1000 cm apart" 
+        
+        self.scale = 1 / self.search_area[2][1]  # Needed for CNN network scaling
+        
         self.reset()
 
-    def step(
-        self, action: Optional[Action] = None, action_list: Optional[dict] = None 
-    ) -> dict[int, StepResult]:
+    def step( self, action: Optional[Union[Action, dict]] = None ) -> StepResult:
         """
         Wrapper that captures gymAI env.step() and expands to include multiple agents for one "timestep". 
         Accepts literal action for single agent, or a dict of agent-IDs and actions.
@@ -371,7 +420,9 @@ class RadSearch(gym.Env):
             Proposed Coordinates:
             A list of all resulting coordinates if all agents successfully take their actions. Used for collision prevention.
             """
-            
+            agent.out_of_bounds = False
+            agent.collision = False
+                     
             if self.take_action(agent, action, proposed_coordinates):
                 # Check if out of bounds
                 if (
@@ -435,7 +486,13 @@ class RadSearch(gym.Env):
                     else:
                         reward = -0.5 * agent.sp_dist / self.max_dist
 
-            # If detector coordinate noise is desired, will be added to the detector coordinates
+                if action == -1 and not agent.collision:
+                    reward = -0.5 * agent.sp_dist / self.max_dist
+                    raise ValueError("Agent should not return false if the tentative step is an idle step")
+                else:
+                    reward = -0.5 * agent.sp_dist / self.max_dist
+
+            # If detector coordinate noise is desired
             noise: Point = Point(
                 tuple(self.np_random.normal(scale=5, size=2))
                 if self.coord_noise
@@ -451,50 +508,83 @@ class RadSearch(gym.Env):
             # TODO: State should really be better organized. If there are distinct components to it, why not make it
             # a named tuple?
 
-            # Sensor measurement for in obstacles?
+            # Sensor measurement for obstacles directly around agent
             sensor_meas: npt.NDArray[np.float64] = self.dist_sensors(agent=agent) if self.num_obs > 0 else np.zeros(DETECTABLE_DIRECTIONS)  # type: ignore
             # State is an 11-tuple ndarray
+            # [intensity, x-coord, y-coord, 8 directions of obstacle detection]
             state: npt.NDArray[np.float32] = np.array([meas, *det_coord_scaled, *sensor_meas])  # type: ignore
-            agent.out_of_bounds = False  # Artifact - TODO decouple from rad_ppo agent?
+            
             agent.det_sto.append(agent.det_coords)
             agent.meas_sto.append(meas)
             agent.reward_sto.append(reward)
             agent.cum_reward_sto.append(reward + agent.cum_reward_sto[-1] if len(agent.cum_reward_sto) > 0 else reward)
-            return state, round(reward, 2), self.done, {'out_of_bounds': agent.out_of_bounds, 'out_of_bounds_count': agent.out_of_bounds_count}
+            info = {'out_of_bounds': agent.out_of_bounds, 'out_of_bounds_count': agent.out_of_bounds_count, 'blocked': agent.obstacle_blocking, 'scale': 1 / self.search_area[2][1]}
+            return state, round(reward, 2), self.done, info
             #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 
-        aggregate_step_result: dict[int, StepResult] = {_: StepResult() for _ in self.agents}
+        assert action is None or type(action) == int or  type(action) == dict, 'Action not integer or a dictionary of actions.'
+        if type(action) is int: 
+            assert action in [-1, 0, 1, 2, 3, 4, 5, 6, 7]
+        elif type(action) is dict:
+            for a in action.values(): assert a in [-1, 0, 1, 2, 3, 4, 5, 6, 7]
+        action_list = action if type(action) is dict else None
+
+        # TODO implement this natively to meet Gym environment requirements
+        aggregate_observation_result: dict = {_: None for _ in self.agents}
+        aggregate_reward_result: dict = {_: None for _ in self.agents}
+        aggregate_success_result: dict = {_: None for _ in self.agents}
+        aggregate_info_result: dict = {_: None for _ in self.agents}
         
         if action_list:
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            if self.DEBUG:  
+                test_step = get_step(action_list[0])
+                print("test step: ", test_step)
+                test = sum_p(self.agents[0].det_coords, test_step)
+                print("tentative coordinates: ", test)
+                test_scaled = scale_p(self.agents[0].det_coords, 1 / self.search_area[2][1])
+                print("Tentative scaled return coords: ", test_scaled)
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
             proposed_coordinates = [sum_p(self.agents[agent_id].det_coords, get_step(action)) for agent_id, action in action_list.items()]
             for agent_id, action in action_list.items():
-                aggregate_step_result[agent_id].id = agent_id
                 (
-                    aggregate_step_result[agent_id].state, 
-                    aggregate_step_result[agent_id].reward, 
-                    aggregate_step_result[agent_id].done,
-                    aggregate_step_result[agent_id].error,
+                    aggregate_observation_result[agent_id], 
+                    aggregate_reward_result[agent_id], 
+                    aggregate_success_result[agent_id],
+                    aggregate_info_result[agent_id],
                 ) = agent_step(agent=self.agents[agent_id], action=action, proposed_coordinates=proposed_coordinates)   
             self.iter_count += 1
             #return {k: asdict(v) for k, v in aggregate_step_result.items()}       
         else:
             # Provides backwards compatability for single actions instead of action lists for single agents.
-            if action and len(self.agents) > 1:
-                print("WARNING: Passing single action to mutliple agents during step.", file=sys.stderr)
+            if type(action) == int and len(self.agents) > 1:
+                print("WARNING: Passing single action to mutliple agents during step! Collision avoidance has been disabled!", file=sys.stderr)
             # Used during reset to get initial state or during single-agent move
-            for agent_id, agent in self.agents.items():
-                aggregate_step_result[agent_id].id = agent_id
-                
+            for agent_id, agent in self.agents.items():                
                 (
-                    aggregate_step_result[agent_id].state, 
-                    aggregate_step_result[agent_id].reward, 
-                    aggregate_step_result[agent_id].done,
-                    aggregate_step_result[agent_id].error,
+                    aggregate_observation_result[agent_id], 
+                    aggregate_reward_result[agent_id], 
+                    aggregate_success_result[agent_id],
+                    aggregate_info_result[agent_id],
                 ) = agent_step(action=action, agent=agent)
             self.iter_count += 1
-        return aggregate_step_result
+            
+        if self.DEBUG:
+            print()
+            print("Step result [state]: ", aggregate_observation_result)
+            #print("Step result [reward]: ", aggregate_step_result[0].reward)
+            #print("Step result [error]: ", aggregate_step_result[0].error)
+            #print("Step result [success]: ", aggregate_step_result[0].done)
+            print()
+        
+        # To meet Gym compliance, must be in form observation, reward, done, info
+        #return aggregate_step_result
+        #return StepResult(observation=aggregate_observation_result, reward=aggregate_reward_result, success=aggregate_success_result, info=aggregate_info_result)
+        return aggregate_observation_result, aggregate_reward_result, aggregate_success_result, aggregate_info_result
 
-    def reset(self) -> dict[int, StepResult]:
+    def reset(self) -> StepResult:
         """
         Method to reset the environment.
         """
@@ -506,12 +596,12 @@ class RadSearch(gym.Env):
         self.dwell_time = 1
 
         if self.epoch_end:
-            if self.obstruct == -1:
+            if self.obstruction_count == -1:
                 self.num_obs = self.np_random.integers(1, 6)  # type: ignore
-            elif self.obstruct == 0:
+            elif self.obstruction_count == 0:
                 self.num_obs = 0
             else:
-                self.num_obs = self.obstruct
+                self.num_obs = self.obstruction_count
 
             self.create_obs()
             self.walls = Polygon(list(self.bbox))
@@ -538,9 +628,18 @@ class RadSearch(gym.Env):
             agent.prev_det_dist: float = self.world.shortest_path(  # type: ignore
                 self.source, agent.detector, self.vis_graph, EPSILON
             ).length()
+            
+            ##### TEST
+            assert agent.det_coords[0] > 0 and agent.det_coords[1] > 0   # TODO DELETE ME
         
         self.intensity = self.np_random.integers(self.radiation_intensity_bounds[0], self.radiation_intensity_bounds[1])  # type: ignore
         self.bkg_intensity = self.np_random.integers(self.background_radiation_bounds[0], self.background_radiation_bounds[1])  # type: ignore
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        if self.DEBUG:  
+            self.intensity = np.int_(1000000)
+            self.bkg_intensity = np.int_(0)
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
         # Check if the environment is valid
         if not (self.world.is_valid(EPSILON)):
@@ -549,7 +648,7 @@ class RadSearch(gym.Env):
             self.reset()
 
         # Get current states
-        step = self.step(action=None, action_list=None)
+        step = self.step(action=None)
         # Reclear iteration count 
         self.iter_count = 0
         return step
@@ -577,24 +676,42 @@ class RadSearch(gym.Env):
 
         roll_back_action: bool = False
         step = get_step(action)
-        
-        tentative_coordinates = sum_p(agent.det_coords, step)         # TODO can delete and use value from proposed coords
+        tentative_coordinates = sum_p(agent.det_coords, step)  # TODO can delete and use value from proposed coords
         
         # If proposed move will collide with another agents proposed move, 
         if count_matching_p(tentative_coordinates, proposed_coordinates) > 1:
+            agent.collision = True
             return False
+        
+        # If boundaries are being enforced, do not take action        
+        if self.enforce_grid_boundaries:
+            if (
+                (tentative_coordinates[0] < self.search_area[0][0]
+                or tentative_coordinates[1] < self.search_area[0][1])
+                or 
+                (self.search_area[2][0] <= tentative_coordinates[0] 
+                or self.search_area[2][1] <= tentative_coordinates[1])
+            ):
+                agent.out_of_bounds = True  
+                agent.out_of_bounds_count += 1
+                return False              
         
         agent.detector = to_vis_p(tentative_coordinates)
 
         if self.in_obstruction(agent=agent):
             roll_back_action = True
+            agent.obstacle_blocking = True
                         
         if roll_back_action:
-            # If we're in an obsticle, roll back
+            # If we're in an obstacle, roll back
             agent.detector = to_vis_p(agent.det_coords)
         else:
-            # If we're not in an obsticle, update the detector coordinates
+            # If we're not in an obstacle, update the detector coordinates
             agent.det_coords = from_vis_p(agent.detector)
+            
+        ##### TEST
+        if self.enforce_grid_boundaries:
+            assert agent.det_coords[0] > 0 and agent.det_coords[1] > 0   # TODO DELETE ME
 
         return False if roll_back_action else True
 
@@ -617,12 +734,14 @@ class RadSearch(gym.Env):
             seed_y: float = self.np_random.integers(  # type: ignore
                 self.search_area[0][1], self.search_area[2][1] * 0.9  # type: ignore
             ).astype(np.float64)
+            
             ext_x: float = self.np_random.integers(  # type: ignore
                 self.observation_area[0], self.observation_area[1]  # type: ignore
             ).astype(np.float64)
             ext_y: float = self.np_random.integers(  # type: ignore
                 self.observation_area[0], self.observation_area[1]  # type: ignore
             ).astype(np.float64)
+            
             obs_coord = [
                 Point(t)
                 for t in (
@@ -685,15 +804,27 @@ class RadSearch(gym.Env):
             )
 
         # Generate initial point values
-        source = rand_point()
+        source: Point = rand_point()
+
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        if self.DEBUG:        
+            source = self.DEBUG_SOURCE_LOCATION
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!        
+        
         src_point = to_vis_p(source)
         
         detector = rand_point()
-        
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  
+        if self.DEBUG:              
+            detector = self.DEBUG_DETECTOR_LOCATION 
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!          
         det_point = to_vis_p(detector)
 
         # Check if detectors starting location is in an object
-        while not det_clear:
+        test_count = 0
+        while not det_clear and test_count < MAX_CREATION_TRIES:
             while not resamp and obstacle_index < self.num_obs:
                 if det_point._in(to_vis_poly(self.poly[obstacle_index]), EPSILON):  # type: ignore
                     resamp = True
@@ -705,6 +836,10 @@ class RadSearch(gym.Env):
                 resamp = False
             else:
                 det_clear = True
+            
+            test_count += 1
+            if test_count == MAX_CREATION_TRIES:
+                raise ValueError('Creating Environment Failed - Maximum tries exceeded to clear Detector. Check bounds and observation area to ensure source and detector can spawn 10 meters apart (1000 cm).')
         
         # Check if source starting location is in object and is far enough away from detector
         # TODO change to multi-source
@@ -712,29 +847,45 @@ class RadSearch(gym.Env):
         inter = False
         obstacle_index = 0
         num_retry = 0
-        while not src_clear:
-            while dist_p(detector, source) < 1000:
-                source = rand_point()
-            src_point = to_vis_p(source)
-            L: vis.Line_Segment = vis.Line_Segment(det_point, src_point)
-            while not resamp and obstacle_index < self.num_obs:
-                poly_p: vis.Polygon = to_vis_poly(self.poly[obstacle_index])
-                if src_point._in(poly_p, EPSILON):  # type: ignore
-                    resamp = True
-                if not resamp and vis.boundary_distance(L, poly_p) < 0.001:  # type: ignore
-                    inter = True
-                obstacle_index += 1
-            if self.num_obs == 0 or (num_retry > 20 and not resamp):
-                src_clear = True
-            elif resamp or not inter:
-                source = rand_point()
+
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!  
+        if self.DEBUG:   
+            pass
+        else:
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            test_count = 0          
+            while not src_clear and test_count < MAX_CREATION_TRIES:
+                subtest_count = 0
+                while dist_p(detector, source) < 1000 and subtest_count < MAX_CREATION_TRIES:
+                    source = rand_point()
+                    subtest_count += 1
+                    if subtest_count == MAX_CREATION_TRIES:
+                        raise ValueError('Creating Environment Failed - Maximum tries exceeded to clear Detector. Check bounds and observation area to ensure source and detector can spawn 10 meters apart (1000 cm).')
                 src_point = to_vis_p(source)
-                obstacle_index = 0
-                resamp = False
-                inter = False
-                num_retry += 1
-            elif inter:
-                src_clear = True
+                L: vis.Line_Segment = vis.Line_Segment(det_point, src_point)
+                while not resamp and obstacle_index < self.num_obs:
+                    poly_p: vis.Polygon = to_vis_poly(self.poly[obstacle_index])
+                    if src_point._in(poly_p, EPSILON):  # type: ignore
+                        resamp = True
+                    if not resamp and vis.boundary_distance(L, poly_p) < 0.001:  # type: ignore
+                        inter = True
+                    obstacle_index += 1
+                if self.num_obs == 0 or (num_retry > 20 and not resamp):
+                    src_clear = True
+                elif resamp or not inter:
+                    source = rand_point()
+                    src_point = to_vis_p(source)
+                    obstacle_index = 0
+                    resamp = False
+                    inter = False
+                    num_retry += 1
+                elif inter:
+                    src_clear = True
+                    
+                test_count += 1
+                if test_count == MAX_CREATION_TRIES:
+                    raise ValueError('Creating Environment Failed - Maximum tries exceeded to clear Detector. Check bounds and observation area to ensure source and detector can spawn 10 meters apart (1000 cm).')
 
         return src_point, det_point, detector, source
 
@@ -882,7 +1033,7 @@ class RadSearch(gym.Env):
         """
         Method that produces a gif of the agent interacting in the environment. Only renders one episode at a time.
         """       
-        reward_length = field(init=False) 
+        reward_length = field(init=False) # Prevent from being unbound
         # global location_estimate 
         # location_estimate = None # TODO Trying to get out of global scope; this is for source prediction
 
@@ -998,7 +1149,7 @@ class RadSearch(gym.Env):
                 ax1.yaxis.set_major_formatter(FormatStrFormatter("%d"))
                 ax1.set_xlabel("X[m]")
                 ax1.set_ylabel("Y[m]")
-                ax1.legend(loc="lower left", fontsize=8)
+                ax1.legend(loc="lower right", fontsize=8)
 
                 # Set up radiation graph
                 # TODO make this less terrible
@@ -1030,6 +1181,7 @@ class RadSearch(gym.Env):
                 ax3.plot()
                     
             else: # If not first frame
+                # TODO add this back now that multi-agent radppo is up
                 # if location_estimate:
                 #     location_estimate.remove()
                     
@@ -1130,16 +1282,6 @@ class RadSearch(gym.Env):
 
         if obstacles == []:
             obstacles = self.obs_coord
-
-        # Check only rendering one episode aka data readings available match number of rewards 
-        # (+1 as rewards dont include the first position). 
-        #reward_length = len(ep_rew)
-        # if data.shape[0] != len(ep_rew)+1:
-        #     print(f"Error: episode reward array length: {reward_length} does not match existing detector locations array length, \
-        #     minus initial start position: {data.shape[0]}. \
-        #     Check: Are you trying to render more than one episode?")
-        #     return 1
-
         if just_env:
             # Setup Graph
             plt.rc("font", size=12)
@@ -1189,14 +1331,14 @@ class RadSearch(gym.Env):
             ax1.set_ylim(0, self.search_area[2][1] / 100)
             ax1.set_xlabel("X[m]")
             ax1.set_ylabel("Y[m]")
-            ax1.legend(loc="lower left", fontsize=8)
+            ax1.legend(loc="lower right", fontsize=8)
         
             # Save
-            if save_gif:
-                if os.path.isdir(str(path) + "/gifs/"):
+            if self.save_gif:
+                if os.path.isdir(str(path) + ".." + "/gifs/"):
                     fig.savefig(str(path) + f"/gifs/environment.png")
                 else:
-                    os.mkdir(str(path) + "/gifs/")
+                    os.mkdir(str(path) + ".." + "/gifs/")
                     fig.savefig(str(path) + f"/gifs/environment.png")
             else:
                 plt.show()
@@ -1222,14 +1364,14 @@ class RadSearch(gym.Env):
                 frames=data_length,
                 fargs=(ax1, ax2, ax3, self.src_coords, self.search_area, measurements, flattened_rewards),
             )
-            if save_gif:
+            if self.save_gif:
                 writer = PillowWriter(fps=5)
                 if os.path.isdir(str(path) + "/gifs/"):
-                    ani.save(str(path) + f"/gifs/test_{epoch_count}.gif", writer=writer)
+                    ani.save(str(path) + f"/gifs/test_epoch{epoch_count}.gif", writer=writer)
                     print("")
                 else:
                     os.mkdir(str(path) + "/gifs/")
-                    ani.save(str(path) + f"/gifs/test_{epoch_count}.gif", writer=writer)
+                    ani.save(str(path) + f"/gifs/test_epoch{epoch_count}.gif", writer=writer)
             else:
                 plt.show()
             return
