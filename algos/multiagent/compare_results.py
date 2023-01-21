@@ -138,14 +138,36 @@ def plot(data,type_=None, smooth = True):
     plt.show()
 
 
-def compare(datasets,type_=None, smooth = None, x_axis='Epoch', save_f=False, file_name=".", sample_range: int = 100):
+def compare(datasets,type_=None, smooth = None, x_axis='Epoch', save_f=False, file_name=".", average_window: int = 100):
+    assert len(datasets) == 2, 'Data comparison beyond two datasets not supported'
     ref_DF = pd.DataFrame()
     headers = {id: datasets[id].columns for id in range(len(datasets))}
     exclude = ['Condition1', 'Condition2', 'AgentID', 'Time', 'Epoch']
     min_headers = min(headers.values(), key=len)
     result = pd.DataFrame()
     
-    # Get difference
+    # Get mean
+    for lab in min_headers:
+        for index, df in enumerate(datasets):
+            if lab not in exclude and np.any(lab == df.columns):                    
+                print('Caclulating ', lab)
+                index = 0
+                averaged = []
+                holder = pd.DataFrame()
+                print(len(df))
+                while index < len(df):
+                    averaged.append(df[lab][index:index+average_window].mean())
+                    index += average_window       
+                print(len(averaged))
+                averaged_np = np.array(averaged)        
+                holder[lab] = averaged_np
+                result[lab] = result[lab].subtract(holder[lab], fill_value=0)
+                ref_DF[lab] = result[result.columns[result.columns == lab][0]]
+                if np.isnan(ref_DF[lab]).any():
+                    ref_DF[np.isnan(ref_DF[lab])] = 0 
+                    print('NAN found!')
+    
+    #Get difference
     for lab in min_headers:
         for index, df in enumerate(datasets):
             if index == 0 and lab not in exclude:
@@ -153,18 +175,26 @@ def compare(datasets,type_=None, smooth = None, x_axis='Epoch', save_f=False, fi
             else:
                 if lab == x_axis:
                     result[lab] = df[lab]
-                elif lab not in exclude and np.any(lab == df.columns):
+                elif lab not in exclude and np.any(lab == df.columns):                    
                     print('Caclulating ', lab)
-        
-                    result[lab] = result[lab].subtract(df[lab], fill_value=0)
+                    index = 0
+                    averaged = []
+                    holder = pd.DataFrame()
+                    print(len(df))
+                    while index < len(df):
+                        averaged.append(df[lab][index:index+average_window].mean())
+                        index += average_window       
+                    print(len(averaged))
+                    averaged_np = np.array(averaged)        
+                    holder[lab] = averaged_np
+                    result[lab] = result[lab].subtract(holder[lab], fill_value=0)
                     ref_DF[lab] = result[result.columns[result.columns == lab][0]]
                     if np.isnan(ref_DF[lab]).any():
                         ref_DF[np.isnan(ref_DF[lab])] = 0 
                         print('NAN found!')
                                         
-
-    print(result.columns)
     #iters = result.items()
+    print(len(result[lab]))
     iters = datasets[0].items()
     if (len(min_headers) -len(exclude)) % 2 == 0:
         div = 2
@@ -200,12 +230,12 @@ if __name__ == '__main__':
                         default='../../models/pre_train/gru_8_acts/bpf/loc32_hid32_pol32_val32_alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh_ep3000_steps4800_s1/')
     parser.add_argument('--save', type=bool,default=True)
     parser.add_argument('--smooth', type=int, default=-1,help='Moving average filter, if less than -1 than no averaging is applied')
-    parser.add_argument('--sample_range', type=int,default=100, help='Number of epochs to average over for comparison')
+    parser.add_argument('--average_window', type=int,default=100, help='Number of epochs to average over for comparison')
     args = parser.parse_args()
     
     datasets = get_datasets(args.data_dir) #np.load(data_dir)
     
-    compare(datasets, smooth=args.smooth, x_axis='Epoch', save_f=args.save,file_name=args.data_dir, sample_range=args.sample_range)
+    compare(datasets, smooth=args.smooth, x_axis='Epoch', save_f=args.save,file_name=args.data_dir, average_window=args.average_window)
     
-    multi_plot(datasets[0],smooth=args.smooth, x_axis='Epoch',save_f=args.save,file_name=args.data_dir)
+    #multi_plot(datasets[0],smooth=args.smooth, x_axis='Epoch',save_f=args.save,file_name=args.data_dir)
 
