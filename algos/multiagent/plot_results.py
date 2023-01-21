@@ -1,9 +1,9 @@
-import numpy as np 
+import numpy as np
 import matplotlib.pyplot as plt
 import scipy.signal as signal
 import json
 import os
-import os.path as osp   
+import os.path as osp
 import pandas as pd
 
 # Global vars for tracking and labeling data at load time.
@@ -13,9 +13,9 @@ units = dict()
 def get_datasets(logdir, condition=None):
     """
     Recursively look through logdir for output files produced by
-    spinup.logx.Logger. 
+    spinup.logx.Logger.
 
-    Assumes that any file "progress.txt" is a valid hit. 
+    Assumes that any file "progress.txt" is a valid hit.
     """
     global exp_idx
     global units
@@ -48,7 +48,7 @@ def get_datasets(logdir, condition=None):
             #exp_data.insert(len(exp_data.columns),'Unit',unit)
             exp_data.insert(len(exp_data.columns),'Condition1',condition1)
             exp_data.insert(len(exp_data.columns),'Condition2',condition2)
-            exp_data.insert(len(exp_data.columns),'Performance',exp_data[performance])  
+            exp_data.insert(len(exp_data.columns),'Performance',exp_data[performance])
             datasets.append(exp_data)
     return datasets
 
@@ -72,26 +72,24 @@ def multi_plot(data,smooth=None,x_axis='Epoch', save_f=False, file_name="."):
     ref_DF = pd.DataFrame()
 
     #lst = ['AverageEpRet','StdEpRet','DoneCount','EpLen','Entropy','KL', 'LossModel', 'LossV']  # 'AverageEpRet' Missing from dataset
-    lst = data.columns # ['MeanEpRet','StdEpRet','DoneCount','EpLen','Entropy','KL', 'LossModel', 'LossV'] 
+    lst = data.columns # ['MeanEpRet','StdEpRet','DoneCount','EpLen','Entropy','KL', 'LossModel', 'LossV']
     exclude = ['Condition1', 'Condition2', 'AgentID', 'Time', 'Epoch']
     print(len(lst))
     for lab in lst:
         if lab not in exclude and np.any(lab == data.columns):
             ref_DF[lab] = data[data.columns[data.columns == lab][0]]
             if np.isnan(ref_DF[lab]).any():
-                ref_DF[np.isnan(ref_DF[lab])] = 0 
+                ref_DF[np.isnan(ref_DF[lab])] = 0
                 print('NAN found!')
     iters = ref_DF.iteritems()
     if (len(lst)-len(exclude)) % 2 == 0:
         div = 2
     else:
         div = 3
-    
     #fig,axs = plt.subplots(len(lst)//div,len(lst)//(div+1),figsize=(12,8), constrained_layout=True)
     plt.rc("font", size=26)
     fig,axs = plt.subplots(div,(len(lst)-len(exclude))//(div+1),figsize=(50,16), constrained_layout=True)
     x = data[data.columns[data.columns == x_axis][0]].to_numpy()
-    
     for ax, case in zip(axs.flatten(), iters):
         if smooth < 0:
             d_filt = case[1]
@@ -104,6 +102,7 @@ def multi_plot(data,smooth=None,x_axis='Epoch', save_f=False, file_name="."):
     if save_f:
         if file_name[-1] != "/":
             file_name += "/"
+        fig.savefig(file_name+'results.png')
         fig.savefig(file_name+'results.eps')
     else:
         plt.show()
@@ -128,7 +127,6 @@ def plot(data,type_=None, smooth = True):
 
     if smooth:
         data = filt(data,3)
-        
     n = range(len(data))
     plt.figure()
     plt.plot(n,data)
@@ -145,7 +143,6 @@ if __name__ == '__main__':
     parser.add_argument('--save', type=bool,default=True)
     parser.add_argument('--smooth', type=int, default=-1,help='Moving average filter, if less than -1 than no averaging is applied')
     args = parser.parse_args()
-    
     dataset = get_datasets(args.data_dir)#np.load(data_dir)
     multi_plot(dataset[0],smooth=args.smooth, x_axis='Epoch',save_f=args.save,file_name=args.data_dir)
 

@@ -68,40 +68,6 @@ COLORS = [
     Colorcode([255, 127, 0]) # Orange
     ]
 
-Metadata: TypeAlias = TypedDict(
-    "Metadata", {"render.modes": list[str], "video.frames_per_second": int}
-)
-
-# BT
-# These actions correspond to:
-# -1: stay idle
-# 0: left
-# 1: up and left
-# 2: up
-# 3: up and right
-# 4: right
-# 5: down and right
-# 6: down
-# 7: down and left
-Action: TypeAlias = Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7]
-Directions: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7]
-
-A_SIZE = len(get_args(Action))
-DETECTABLE_DIRECTIONS = len(get_args(Directions)) # Ignores -1 idle state
-FPS = 50
-DET_STEP = 100.0  # detector step size at each timestep in cm/s
-DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
-DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
-DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm
-EPSILON = 0.0000001
-COLORS = [
-    #Colorcode([148, 0, 211]), # Violet (Removed due to being too similar to indigo)
-    Colorcode([255, 105, 180]), # Pink
-    Colorcode([75, 0, 130]), # Indigo
-    Colorcode([0, 0, 255]), # Blue
-    Colorcode([0, 255, 0]), # Green
-    Colorcode([255, 127, 0]) # Orange
-    ]
 
 def sum_p(p1: Point, p2: Point) -> Point:
     """
