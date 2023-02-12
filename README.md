@@ -48,3 +48,9 @@ In VSCode, you can run the specific algorithm and environment configuration thro
 - `/demo`: contains demonstrations.
 - `/gym_rad_search`: contains the radiation source search OpenAI gym environment
 - `/unit_testing`: contains unit tests. This functionality is under development
+
+## Documentation
+
+Documentation generated with [Sphinx](https://www.sphinx-doc.org/en/master/usage/quickstart.html).
+
+Generate documentation with `sphinx-build -b html sourcedir builddir` from root directory
