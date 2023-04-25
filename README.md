@@ -1,6 +1,6 @@
 # Radiation Source Search Environment
 
-This contains the multi-agent radiation localization architecture created by Ben Totten, loosely based on 
+This contains the multi-agent radiation localization prototype architecture created by Ben Totten, loosely based on 
 - The multi-agent architecture created by Alagha et al. and their published [paper](https://www.sciencedirect.com/science/article/abs/pii/S0167739X22002266)
 - The single-agent architecture created by Liu et al. and their published [paper](https://www.mdpi.com/1424-8220/19/4/960)
 - The aingle-agent radiation source search environment created by Proctor et al. and their published [paper](https://www.mdpi.com/2673-4362/2/4/29).
