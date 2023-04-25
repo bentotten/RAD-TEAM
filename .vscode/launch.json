@@ -48,18 +48,17 @@
         "--obstruct",
         "0",
         "--agent-count",
-        "1",
+        "2",
         "--net-type",
-        "cnn",
+        "rnn",
         // "--seed",
         // "2",
-        "--enforce-boundaries",
-        "True", // NOTE: DELETE ENTIRELY OTHERWISE WILL BE TRUE, EVEN IF FALSE WRITTEN HERE,
-        //"--no-global-critic",
-        "--render",
-        "True",
-        "--save-gif-freq",
-        "20"
+        "--no-enforce-boundaries",
+        "--no-global-critic"
+        // "--render",
+        // "True",
+        // "--save-gif-freq",
+        // "20"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     },
@@ -91,6 +90,7 @@
         // "TEAM-RAD",
         "--net-type",
         "cnn",
+        "--no-enforce-boundaries"
         // "--DEBUG",
         // "True",
         // "--save-freq",
@@ -104,6 +104,52 @@
         // "0.0"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
-    }
+    },
+    {
+      "name": "Hail Mary - Train OG project w/MARL PPO",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/test_ppo/train.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      //"args": ["--steps_per_epoch", "3"],
+      "args": [],
+      "cwd": "${workspaceFolder}/algos/test_ppo"
+    },
+    {
+      "name": "Hail Mary - Train OG project w/MARL Env",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/test_environment/ppo.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      //"args": ["--steps_per_epoch", "3"],
+      "args": [],
+      "cwd": "${workspaceFolder}/algos/test_ppo"
+    },
+    {
+      "name": "Hail Mary - Train OG project w/CNN ",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/test_cnn/train.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      //"args": ["--steps_per_epoch", "2", "--steps_per_episode", "1"],
+      //"args": ["--render", "True"],
+      "args": ["--obstruct", "1"],
+      "cwd": "${workspaceFolder}/algos/test_ppo"
+    },
+    {
+      "name": "Hail Mary - Original Goal ",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/original_goal/ppo/ppo.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      //"args": ["--steps_per_epoch", "2", "--steps_per_episode", "1"],
+      //"args": ["--render", "True"],
+      //"args": ["--obstruct", "1"],
+      "cwd": "${workspaceFolder}/algos/test_ppo"
+    }    
   ]
 }
