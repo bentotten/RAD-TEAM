@@ -1,4 +1,3 @@
-# type: ignore
 import numpy as np
 import torch
 from torch.optim import Adam
@@ -7,7 +6,6 @@ import time
 import os
 import core # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed # type: ignore
-
 from rl_tools.logx import EpochLogger # type: ignore
 from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params,synchronize, mpi_avg_grads, sync_params_stats # type: ignore
 from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar,mpi_statistics_vector, num_procs, mpi_min_max_scalar # type: ignore
@@ -122,111 +120,6 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
         vf_lr=5e-3, train_pi_iters=40, train_v_iters=15, lam=0.9, max_ep_len=120, save_gif=False,
         target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None):
-    """
-    Proximal Policy Optimization (by clipping), 
-
-    with early stopping based on approximate KL
-
-    Base code from OpenAI: 
-    https://github.com/openai/spinningup/blob/master/spinup/algos/pytorch/ppo/ppo.py
-
-    Args:
-        env_fn : A function which creates a copy of the environment.
-            The environment must satisfy the OpenAI Gym API.
-
-        actor_critic: The constructor method for a PyTorch Module with a 
-            ``step`` method, an ``act`` method, a ``pi`` module, and a ``v`` 
-            module. The ``step`` method should accept a batch of observations 
-            and return:
-
-            ===========  ================  ======================================
-            Symbol       Shape             Description
-            ===========  ================  ======================================
-            ``a``        (batch, act_dim)  | Numpy array of actions for each 
-                                           | observation.
-            ``v``        (batch,)          | Numpy array of value estimates
-                                           | for the provided observations.
-            ``logp_a``   (batch,)          | Numpy array of log probs for the
-                                           | actions in ``a``.
-            ===========  ================  ======================================
-
-            The ``act`` method behaves the same as ``step`` but only returns ``a``.
-
-            The ``pi`` module's forward call should accept a batch of 
-            observations and optionally a batch of actions, and return:
-
-            ===========  ================  ======================================
-            Symbol       Shape             Description
-            ===========  ================  ======================================
-            ``pi``       N/A               | Torch Distribution object, containing
-                                           | a batch of distributions describing
-                                           | the policy for the provided observations.
-            ``logp_a``   (batch,)          | Optional (only returned if batch of
-                                           | actions is given). Tensor containing 
-                                           | the log probability, according to 
-                                           | the policy, of the provided actions.
-                                           | If actions not given, will contain
-                                           | ``None``.
-            ===========  ================  ======================================
-
-            The ``v`` module's forward call should accept a batch of observations
-            and return:
-
-            ===========  ================  ======================================
-            Symbol       Shape             Description
-            ===========  ================  ======================================
-            ``v``        (batch,)          | Tensor containing the value estimates
-                                           | for the provided observations. (Critical: 
-                                           | make sure to flatten this!)
-            ===========  ================  ======================================
-
-
-        ac_kwargs (dict): Any kwargs appropriate for the ActorCritic object 
-            you provided to PPO.
-
-        seed (int): Seed for random number generators.
-
-        steps_per_epoch (int): Number of steps of interaction (state-action pairs) 
-            for the agent and the environment in each epoch.
-
-        epochs (int): Number of epochs of interaction (equivalent to
-            number of policy updates) to perform.
-
-        gamma (float): Discount factor. (Always between 0 and 1.)
-
-        clip_ratio (float): Hyperparameter for clipping in the policy objective.
-            Roughly: how far can the new policy go from the old policy while 
-            still profiting (improving the objective function)? The new policy 
-            can still go farther than the clip_ratio says, but it doesn't help
-            on the objective anymore. (Usually small, 0.1 to 0.3.) Typically
-            denoted by :math:`\epsilon`. 
-
-        pi_lr (float): Learning rate for policy optimizer.
-
-        vf_lr (float): Learning rate for value function optimizer.
-
-        train_pi_iters (int): Maximum number of gradient descent steps to take 
-            on policy loss per epoch. (Early stopping may cause optimizer
-            to take fewer than this.)
-
-        train_v_iters (int): Number of gradient descent steps to take on 
-            value function per epoch.
-
-        lam (float): Lambda for GAE-Lambda. (Always between 0 and 1,
-            close to 1.)
-
-        max_ep_len (int): Maximum length of trajectory / episode / rollout.
-
-        target_kl (float): Roughly what KL divergence we think is appropriate
-            between new and old policies after an update. This will get used 
-            for early stopping. (Usually small, 0.01 or 0.05.)
-
-        logger_kwargs (dict): Keyword args for EpochLogger.
-
-        save_freq (int): How often (in terms of gap between epochs) to save
-            the current policy and value function.
-
-    """
 
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
     setup_pytorch_for_mpi()
@@ -547,12 +440,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1 ) == epochs)):
                     #Check agent progress during training
                     if proc_id() == 0 and epoch != 0:
-                        env.render(
-                            save_gif=save_gif,
-                            path=logger.output_dir,
-                            epoch_count=epoch,
-                            episode_rewards=ep_ret_ls
-                            )                
+                        env.render(save_gif=save_gif,path=logger.output_dir,epoch_count=epoch,
+                                   ep_rew=ep_ret_ls)
+                
                 ep_ret_ls = []
                 stat_buff.reset()
                 if not env.epoch_end:
@@ -560,7 +450,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                     hidden = ac.reset_hidden()
                     o, _, _, _ = env.reset()
                     o = o[0]
-                    ep_ret, ep_len, a = 0, 0, -1                    
+                    ep_ret, ep_len, a = 0, 0, -1    
                 else:
                     #Sample new environment parameters, log epoch results
                     oob += env.get_agent_outOfBounds_count(id=0)
@@ -619,12 +509,12 @@ if __name__ == '__main__':
     parser.add_argument('--seed', '-s', type=int, default=2,help='Random seed control')
     parser.add_argument('--cpu', type=int, default=1,help='Number of cores/environments to train the agent with')
     parser.add_argument('--steps_per_epoch', type=int, default=480,help='Number of timesteps per epoch per cpu. Default is equal to 4 episodes per cpu per epoch.')      
-    parser.add_argument('--epochs', type=int, default=3000,help='Number of epochs to train the agent')
+    parser.add_argument('--epochs', type=int, default=100,help='Number of epochs to train the agent')
     parser.add_argument('--exp_name', type=str,default='alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh',help='Name of experiment for saving')
-    parser.add_argument('--dims', type=list, default=[[0.0,0.0],[2700.0,0.0],[2700.0,2700.0],[0.0,2700.0]],
+    parser.add_argument('--dims', type=list, default=[[0.0,0.0],[1500.0,0.0],[1500.0,1500.0],[0.0,1500.0]],
                         help='Dimensions of radiation source search area in cm, decreased by area_obs param. to ensure visilibity graph setup is valid.')
-    parser.add_argument('--area_obs', type=list, default=[200.0,500.0], help='Interval for each obstruction area in cm')
-    parser.add_argument('--obstruct', type=int, default=-1, 
+    parser.add_argument('--area_obs', type=list, default=[100.0,100.0], help='Interval for each obstruction area in cm')
+    parser.add_argument('--obstruct', type=int, default=0, 
                         help='Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions')
     parser.add_argument('--net_type',type=str, default='rnn', help='Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp') 
     parser.add_argument('--alpha',type=float,default=0.1, help='Entropy reward term scaling') 
@@ -634,17 +524,17 @@ if __name__ == '__main__':
     args.batch = 1
 
     #Save directory and experiment name
-    args.env_name = 'bpf'
-    args.exp_name = ('loc'+str(args.hid_rec[0])+'_hid' + str(args.hid_gru[0]) + '_pol'+str(args.hid_pol[0]) +'_val'
-                    +str(args.hid_val[0])+'_'+args.exp_name + f'_ep{args.epochs}'+f'_steps{args.steps_per_epoch}')
+    args.env_name = 'stage_1'
+    args.exp_name = (f'{args.exp_name}')
+
     init_dims = {
         'bbox':args.dims,
         'observation_area':args.area_obs, 
         'obstruction_count':args.obstruct,
-        "number_agents": 1, # TODO change for MARL
-        "enforce_grid_boundaries": False
+        "number_agents": 1, 
+        "enforce_grid_boundaries": True,
+        "DEBUG": True
         }
-
     max_ep_step = 120
     if args.cpu > 1:
         #max cpus, steps in batch must be greater than the max eps steps times num. of cpu
@@ -659,7 +549,7 @@ if __name__ == '__main__':
     init_dims['np_random'] = rng
 
     #Setup logger for tracking training metrics
-    from rl_tools.run_utils import setup_logger_kwargs
+    from rl_tools.run_utils import setup_logger_kwargs # type: ignore
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed,data_dir='../../models/train',env_name=args.env_name)
     
     #Run ppo training function

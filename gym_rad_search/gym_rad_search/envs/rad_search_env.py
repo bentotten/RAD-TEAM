@@ -49,7 +49,7 @@ Metadata = TypedDict(
     "Metadata", {"render.modes": List[str], "video.frames_per_second": int}
 )
 
-MIN_STARTING_DISTANCE = 1000
+MIN_STARTING_DISTANCE = 1000 # cm
 MAX_CREATION_TRIES = 1000000000
 
 # These actions correspond to:
@@ -383,10 +383,10 @@ class RadSearch(gym.Env):
     silent: bool = field(init=False)
 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    # For debugging
+    # Stage 1
     DEBUG: bool = field(default=False)
-    DEBUG_SOURCE_LOCATION: Point = field(default=Point((500.0, 500.0)))
-    DEBUG_DETECTOR_LOCATION: Point = Point((1000.0, 1000.0))
+    DEBUG_SOURCE_LOCATION: Point = field(default=Point((1, 1)))
+    DEBUG_DETECTOR_LOCATION: Point = Point((1499.0, 1499.0))
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     def __post_init__(self) -> None:
@@ -429,7 +429,7 @@ class RadSearch(gym.Env):
         # Sanity Check
         # Assure there is room to spawn detectors and source with proper spacing
         assert (
-            self.max_dist > 1000
+            self.max_dist > MIN_STARTING_DISTANCE
         ), "Maximum distance available is too small, unable to spawn source and detector 1000 cm apart"
 
         self.scale = 1 / self.search_area[2][1]  # Needed for CNN network scaling
@@ -720,6 +720,7 @@ class RadSearch(gym.Env):
         #         print('out of bounds')
         #     print()
 
+        # TODO use arrays not dicts for faster processing
         return (
             aggregate_observation_result,
             {"team_reward": max_reward, "individual_reward": aggregate_reward_result},
@@ -811,9 +812,7 @@ class RadSearch(gym.Env):
         self.iter_count = 0
 
         key = "env_" + str(id)
-        self.src_coords = env_dict[key][
-            0
-        ]  # TODO save these in JSON format with labels instead
+        self.src_coords = env_dict[key][0]  # TODO save these in JSON format with labels instead
         self.intensity = env_dict[key][2]
         self.bkg_intensity = env_dict[key][3]
         self.source = to_vis_p(self.src_coords)
