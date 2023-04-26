@@ -442,7 +442,7 @@ class evaluate_PPO:
 
         pass
     
-    def calc_stats(results, mc=None, plot=False, snr=None, control=None, obs=None):
+    def calc_stats(self, results, mc=None, plot=False, snr=None, control=None, obs=None):
         """Calculate results from the evaluation"""
         # Per episode run:
         # [int] Completed runs count
@@ -457,13 +457,14 @@ class evaluate_PPO:
         episode_return_medians = np.zeros(len(results))
 
         for ep_index, episode in enumerate(results):
-            success_counts[ep_index] = episode['success_counter']
-            
-            episode_length_medians[ep_index] = np.median(np.argsort(episode['total_episode_length']))
-            episode_return_medians[ep_index] = np.median(np.argsort(episode['total_episode_return']))
+            success_counts[ep_index] = episode.success_counter
+            sorted_len = sorted(episode.total_episode_length)
+            episode_length_medians[ep_index] = np.median(sorted_len)
+            sorted_ret = sorted(episode.total_episode_return)
+            episode_return_medians[ep_index] = np.median(sorted_ret)
                 
-        final_eplen_median = np.median(np.argsort(episode_length_medians))
-        final_epret_median  = np.median(np.argsort(episode_return_medians))
+        final_eplen_median = np.median(sorted(episode_length_medians))
+        final_epret_median  = np.median(sorted(episode_return_medians))
         
         print(f"Median Episode Length: {final_eplen_median}")
         print(f"Median Episode Return: {final_epret_median}")
