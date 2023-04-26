@@ -387,7 +387,7 @@ class RadSearch(gym.Env):
     DEBUG: bool = field(default=False)
     DEBUG_SOURCE_LOCATION: Point = field(default=Point((1, 1)))
     DEBUG_DETECTOR_LOCATION: Point = Point((1499.0, 1499.0))
-    MIN_STARTING_DISTANCE = field(default=1000) # cm
+    MIN_STARTING_DISTANCE: float = field(default=1000) # cm
 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
