@@ -454,7 +454,11 @@ class evaluate_PPO:
         
         success_counts = np.zeros(len(results))
         episode_length_medians = np.zeros(len(results))
+        
         episode_return_medians = np.zeros(len(results))
+        # TODO make less terrible
+        total_lengths = []
+        total_rets = []
 
         for ep_index, episode in enumerate(results):
             success_counts[ep_index] = episode.success_counter
@@ -462,12 +466,18 @@ class evaluate_PPO:
             episode_length_medians[ep_index] = np.median(sorted_len)
             sorted_ret = sorted(episode.total_episode_return)
             episode_return_medians[ep_index] = np.median(sorted_ret)
+            
+            total_lengths.append(episode.total_episode_length)
+            total_rets.append(episode.total_episode_return)
+            
                 
         final_eplen_median = np.median(sorted(episode_length_medians))
         final_epret_median  = np.median(sorted(episode_return_medians))
         
-        print(f"Median Episode Length: {final_eplen_median}")
-        print(f"Median Episode Return: {final_epret_median}")
+        len_std = np.std(total_lengths)
+        ret_std = np.std(total_rets)
+        print(f"Median Episode Length: {final_eplen_median} with std {len_std}")
+        print(f"Median Episode Return: {final_epret_median} with std {ret_std}")
         
     
 if __name__ == "__main__":
