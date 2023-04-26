@@ -411,14 +411,22 @@ class RadSearch(gym.Env):
             self.DEBUG = True
             self.DEBUG_SOURCE_LOCATION = Point((1, 1))
             
-        # Test 2: 15x15 grid, no obstructions          
+        # Test 3: 15x15 grid, no obstructions, fixed start point       
         elif self.TEST == 3:
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 2 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 3 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0,1500.0)), Point((0.0,1500.0))))
             self.observation_area = Interval((100.0,100.0))
             self.obstruction_count = 0
             self.DEBUG = True
-            self.DEBUG_DETECTOR_LOCATION = Point((1499.0, 1499.0))                   
+            self.DEBUG_DETECTOR_LOCATION = Point((1499.0, 1499.0))
+            
+        # Test 2: 15x15 grid, no obstructions          
+        elif self.TEST == 4:
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 4 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0,1500.0)), Point((0.0,1500.0))))
+            self.observation_area = Interval((100.0,100.0))
+            self.obstruction_count = 0
+            self.DEBUG = False
     
         self.search_area: BBox = BBox(
             (
