@@ -124,8 +124,8 @@ class OptimizationStorage:
     """
     critic_flag: bool
     pi_optimizer: torch.optim.Optimizer
-    critic_optimizer: Union[torch.optim.Optimizer, None]
     model_optimizer: torch.optim.Optimizer
+    critic_optimizer: Union[torch.optim.Optimizer, None] = field(default=None)    
 
     # Initialized elsewhere
     #: Schedules gradient steps for actor

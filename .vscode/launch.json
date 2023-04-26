@@ -200,6 +200,16 @@
       "justMyCode": false,
 
       "cwd": "${workspaceFolder}/integration_tests/PPO_buffer/test1"
-    },    
+    },
+    {
+      "name": "Test Optimizer Stage 1 - Test 1",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/integration_tests/Optimizer/test1/ppo.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+
+      "cwd": "${workspaceFolder}/integration_tests/Optimizer/test1"
+    },      
   ]
 }

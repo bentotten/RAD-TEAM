@@ -102,9 +102,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             ent = pi.entropy().detach().mean().item()
             
             #val_loss = loss(val,ret)
-            val_loss = optimization.MSELoss(value, ret)
+            val_loss = optimization.MSELoss(val, ret)
 
-            
             loss_arr[ii] = -(torch.min(ratio * adv, clip_adv).mean() - 0.01*val_loss + alpha * ent)
             loss_sto[ii,0] = approx_kl; loss_sto[ii,1] = ent; loss_sto[ii,2] = clipfrac; loss_sto[ii,3] = val_loss.detach()
             
@@ -225,14 +224,10 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     
     optimization = ppo_tools.OptimizationStorage(
         pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
-        critic_optimizer=Adam(
-            ac.critic.parameters(), lr=pi_lr
-        ),  # TODO change this to own learning rate
-        model_optimizer=Adam(
-            ac.model.parameters(), lr=vf_lr
-        ),  # TODO change this to correct name (for PFGRU)
+        #critic_optimizer= Adam(ac.critic.parameters(), lr=pi_lr),  # TODO change this to own learning rate
+        model_optimizer=Adam(ac.model.parameters(), lr=vf_lr),  # TODO change this to correct name (for PFGRU)
         MSELoss=torch.nn.MSELoss(reduction="mean"),
-        critic_flag=True,
+        critic_flag=False,
     )    
 
     # Set up model saving
