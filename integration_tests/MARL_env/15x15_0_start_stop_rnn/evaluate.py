@@ -81,6 +81,7 @@ class MonteCarloResults:
     unsuccessful: Results = field(default_factory=lambda: Results())
     total_episode_length: List[int] = field(default_factory=lambda: list())
     success_counter: int = field(default=0)
+    total_episode_return: List[float] = field(default_factory=lambda: list())
 
 
 @dataclass
@@ -298,10 +299,12 @@ class EpisodeRunner:
                 if terminal_reached_flag:
                     results.success_counter += 1
                     results.successful.episode_length.append(steps_in_episode)
-                    results.successful.episode_return.append(episode_return[0])  # TODO change for individual mode
+                    results.successful.episode_return.append(episode_return[0])  # TODO change for individual mode                    
                 else:
                     results.unsuccessful.episode_length.append(steps_in_episode)
                     results.unsuccessful.episode_return.append(episode_return[0])  # TODO change for individual mode
+
+                results.total_episode_return.append(episode_return[0])  # TODO change for individual mode
 
                 # Incremenet run counter
                 run_counter += 1
@@ -435,11 +438,37 @@ class evaluate_PPO:
 
         print("Runtime: {}", time.time() - start_time)
 
-        print(full_results)
+        self.calc_stats(results=full_results)
 
         pass
+    
+    def calc_stats(results, mc=None, plot=False, snr=None, control=None, obs=None):
+        """Calculate results from the evaluation"""
+        # Per episode run:
+        # [int] Completed runs count
+        # [int] Success Counter
+        # [list] Successful episode lengths
+        # [List] Successful epsiode returns
+        # Intensity Measurement
+        
+        
+        success_counts = np.zeros(len(results))
+        episode_length_medians = np.zeros(len(results))
+        episode_return_medians = np.zeros(len(results))
 
-
+        for ep_index, episode in enumerate(results):
+            success_counts[ep_index] = episode['success_counter']
+            
+            episode_length_medians[ep_index] = np.median(np.argsort(episode['total_episode_length']))
+            episode_return_medians[ep_index] = np.median(np.argsort(episode['total_episode_return']))
+                
+        final_eplen_median = np.median(np.argsort(episode_length_medians))
+        final_epret_median  = np.median(np.argsort(episode_return_medians))
+        
+        print(f"Median Episode Length: {final_eplen_median}")
+        print(f"Median Episode Return: {final_epret_median}")
+        
+    
 if __name__ == "__main__":
     env_kwargs = {
         'bbox': [[0.0,0.0],[1500.0,0.0],[1500.0,1500.0],[0.0,1500.0]],
