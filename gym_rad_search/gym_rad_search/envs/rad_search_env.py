@@ -426,7 +426,7 @@ class RadSearch(gym.Env):
             self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0,1500.0)), Point((0.0,1500.0))))
             self.observation_area = Interval((100.0,100.0))
             self.obstruction_count = 0
-            self.DEBUG = False
+            self.DEBUG = True
     
         self.search_area: BBox = BBox(
             (

@@ -152,7 +152,7 @@
       "cwd": "${workspaceFolder}/algos/test_ppo"
     },
     {
-      "name": "Stage 1 - Test 1: Test Environment ",
+      "name": "Test Environment Stage 1 - Test 1",
       "type": "python",
       "request": "launch",
       "program": "${workspaceFolder}/integration_tests/MARL_env/test1/evaluate.py",
@@ -162,7 +162,7 @@
       "cwd": "${workspaceFolder}/integration_tests/MARL_env/test1"
     },
     {
-      "name": "Stage 1 - Test 2: Test Environment ",
+      "name": "Test Environment Stage 1 - Test 2 ",
       "type": "python",
       "request": "launch",
       "program": "${workspaceFolder}/integration_tests/MARL_env/test2/evaluate.py",
@@ -170,6 +170,27 @@
       "justMyCode": false,
 
       "cwd": "${workspaceFolder}/integration_tests/MARL_env/test2"
-    }        
+    },    
+    {
+      "name": "Test Environment Stage 1 - Test 3",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/integration_tests/MARL_env/test3/evaluate.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+
+      "cwd": "${workspaceFolder}/integration_tests/MARL_env/test3"
+    },
+    {
+      "name": "Test Environment Stage 1 - Test 4",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/integration_tests/MARL_env/test3/evaluate.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+
+      "cwd": "${workspaceFolder}/integration_tests/MARL_env/test4"
+    },
+    
   ]
 }
