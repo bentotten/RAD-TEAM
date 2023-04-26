@@ -49,7 +49,6 @@ Metadata = TypedDict(
     "Metadata", {"render.modes": List[str], "video.frames_per_second": int}
 )
 
-MIN_STARTING_DISTANCE = 1000 # cm
 MAX_CREATION_TRIES = 1000000000
 
 # These actions correspond to:
@@ -388,6 +387,8 @@ class RadSearch(gym.Env):
     DEBUG: bool = field(default=False)
     DEBUG_SOURCE_LOCATION: Point = field(default=Point((1, 1)))
     DEBUG_DETECTOR_LOCATION: Point = Point((1499.0, 1499.0))
+    MIN_STARTING_DISTANCE = field(default=1000) # cm
+
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     def __post_init__(self) -> None:
@@ -400,7 +401,7 @@ class RadSearch(gym.Env):
             self.obstruction_count = 0
             self.DEBUG = True
             self.DEBUG_SOURCE_LOCATION = Point((1, 1))
-            self.DEBUG_DETECTOR_LOCATION = Point((1499.0, 1499.0))       
+            self.DEBUG_DETECTOR_LOCATION = Point((1499.0, 1499.0))
             
         # Test 2: 15x15 grid, no obstructions, fixed stop point          
         elif self.TEST == 2:
@@ -419,6 +420,7 @@ class RadSearch(gym.Env):
             self.obstruction_count = 0
             self.DEBUG = True
             self.DEBUG_DETECTOR_LOCATION = Point((1499.0, 1499.0))
+            self.MIN_STARTING_DISTANCE = 500 # cm
             
         # Test 2: 15x15 grid, no obstructions          
         elif self.TEST == 4:
@@ -427,6 +429,7 @@ class RadSearch(gym.Env):
             self.observation_area = Interval((100.0,100.0))
             self.obstruction_count = 0
             self.DEBUG = True
+            self.MIN_STARTING_DISTANCE = 500 # cm            
     
         self.search_area: BBox = BBox(
             (
@@ -466,9 +469,7 @@ class RadSearch(gym.Env):
         #     self.np_random: npr.Generator = npr.default_rng(self.seed)
         # Sanity Check
         # Assure there is room to spawn detectors and source with proper spacing
-        assert (
-            self.max_dist > MIN_STARTING_DISTANCE
-        ), "Maximum distance available is too small, unable to spawn source and detector 1000 cm apart"
+        assert (self.max_dist > self.MIN_STARTING_DISTANCE), "Maximum distance available is too small, unable to spawn source and detector 1000 cm apart"
 
         self.scale = 1 / self.search_area[2][1]  # Needed for CNN network scaling
 
@@ -1135,7 +1136,7 @@ class RadSearch(gym.Env):
             while not src_clear and test_count < MAX_CREATION_TRIES:
                 subtest_count = 0
                 while (
-                    dist_p(detector, source) < MIN_STARTING_DISTANCE
+                    dist_p(detector, source) < self.MIN_STARTING_DISTANCE
                     and subtest_count < MAX_CREATION_TRIES
                 ):
                     source = rand_point()
