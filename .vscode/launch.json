@@ -175,7 +175,7 @@
       "name": "Test Environment Stage 1 - Test 3",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/integration_tests/MARL_env/test3/ppo.py",
+      "program": "${workspaceFolder}/integration_tests/MARL_env/test3/evaluate.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       // "args": ["--load_model", "1"],
@@ -205,7 +205,7 @@
       "name": "Test Optimizer Stage 1 - Test 1",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/integration_tests/Optimizer/test1/ppo.py",
+      "program": "${workspaceFolder}/integration_tests/Optimizer/test1/evaluate.py",
       "console": "integratedTerminal",
       "justMyCode": false,
 

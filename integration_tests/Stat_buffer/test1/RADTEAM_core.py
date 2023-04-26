@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt  # type: ignore
 import warnings
 import json
 
-PFGRU = True  # If wanting to use the PFGRU TODO turn this into a parameter
+PFGRU = True # If wanting to use the PFGRU TODO turn this into a parameter
 
 # Maps
 #: [New Type] Array indicies to access a GridSquare (x, y). Type: Tuple[float, float]
@@ -87,15 +87,14 @@ class ActionChoice(NamedTuple):
     action_logprob: float  # size (1)
     #: The estimated value of being in this state. Note: Using GAE for advantage, this is the state-value, not the q-value
     state_value: Union[float, None]  # size(1)
+    #: Coordinates predicted by the location prediction model (PFGRU).
+    loc_pred: Union[torch.Tensor, None]
     #: Hidden state (for compatibility with RAD-PPO)
     hidden: torch.Tensor
-    #: Coordinates predicted by the location prediction model (PFGRU).
-    loc_pred: Union[torch.Tensor, None] = None
 
 
 class HeatMaps(NamedTuple):
     """Named Tuple - Stores actor and critic heatmaps for a step"""
-
     actor: torch.Tensor
     critic: torch.Tensor
 
@@ -370,19 +369,13 @@ class ConversionTools:
     """
 
     #: Stores last coordinates for all agents. This is used to update current-locations heatmaps.
-    last_coords: Dict[int, Tuple[int, int]] = field(
-        init=False, default_factory=lambda: dict()
-    )
+    last_coords: Dict[int, Tuple[int, int]] = field(init=False, default_factory=lambda: dict())
     #: Stores coordinates of last predicted source location
     last_prediction: Tuple = field(init=False, default_factory=lambda: tuple())
     #: An intensity estimator class that samples every reading and estimates what the true intensity value is
-    readings: IntensityEstimator = field(
-        init=False, default_factory=lambda: IntensityEstimator()
-    )
+    readings: IntensityEstimator = field(init=False, default_factory=lambda: IntensityEstimator())
     #: Statistics class for standardizing intensity readings from samples from the environment
-    standardizer: StatisticStandardization = field(
-        init=False, default_factory=lambda: StatisticStandardization()
-    )
+    standardizer: StatisticStandardization = field(init=False, default_factory=lambda: StatisticStandardization())
     #: Normalization class for adjusting data to be between 0 and 1
     normalizer: Normalizer = field(init=False, default_factory=lambda: Normalizer())
 
@@ -502,9 +495,7 @@ class MapsBuffer:
 
     def __post_init__(self) -> None:
         # Set logrithmic base for visits counts normalization
-        self.base = (
-            self.steps_per_episode + 1
-        ) * self.number_of_agents  # Extra observation is for the "last step" where the next state value is used to bootstrap rewards
+        self.base = (self.steps_per_episode + 1) * self.number_of_agents  # Extra observation is for the "last step" where the next state value is used to bootstrap rewards
 
         # Calculate map x and y bounds for observation maps
         self.map_dimensions = calculate_map_dimensions(
@@ -538,9 +529,7 @@ class MapsBuffer:
         self.visit_counts_shadow.clear()
         self.tools.reset()
 
-    def observation_to_map(
-        self, observation: Dict[int, npt.NDArray], id: int, loc_prediciton: Point
-    ) -> MapStack:
+    def observation_to_map(self, observation: Dict[int, npt.NDArray], id: int, loc_prediciton: Tuple[float, float]) -> MapStack:
         """
         Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation. Also updates tools.
 
@@ -557,34 +546,25 @@ class MapsBuffer:
 
         for agent_id in observation:
             # Fetch scaled coordinates
-            inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(
-                single_observation=observation[agent_id]
-            )
-            inflated_prediction: Tuple[int, int] = self._inflate_coordinates(
-                single_observation=loc_prediciton
-            )
+            inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[agent_id])
+            inflated_prediction: Tuple[int, int] = self._inflate_coordinates(single_observation=loc_prediciton)
 
             last_coordinates: Union[Tuple[int, int], None] = (
                 self.tools.last_coords[agent_id]
                 if agent_id in self.tools.last_coords.keys()
                 else None
             )
-
+            
             self.locations_matrix.append(inflated_agent_coordinates)
-
-            last_prediction: Tuple = self.tools.last_prediction
+            
+            last_prediction: Tuple = self.tools.last_prediction        
 
             # Update Prediction maps
             if PFGRU:
-                # Prediction can be outside of grid; if so, leave previous
-                if (
-                    inflated_prediction[0] <= self.map_dimensions[0]
-                    and inflated_prediction[1] <= self.map_dimensions[1]
-                ):
-                    self._update_prediction_map(
-                        current_prediction=inflated_prediction,
-                        last_prediction=last_prediction,
-                    )
+                self._update_prediction_map(
+                    current_prediction=inflated_prediction,
+                    last_prediction=last_prediction,
+                )
             # Update Locations maps
             if id == agent_id:
                 self._update_current_agent_location_map(
@@ -646,7 +626,7 @@ class MapsBuffer:
                 self.combined_location_map[inflated_last_coordinates] = 0
                 self.location_map[inflated_last_coordinates] = 0
                 self.others_locations_map[inflated_last_coordinates] = 0
-
+            
             # Reinitialize non-sparse matrices
             self.readings_map: Map = Map(
                 np.zeros(
@@ -672,20 +652,15 @@ class MapsBuffer:
                 self.readings_map[k] = 0
                 self.obstacles_map[k] = 0
                 self.visit_counts_map[k] = 0
-
+                
         self.prediction_map[self.tools.last_prediction] = 0
+                
 
         assert self.obstacles_map.max() == 0 and self.obstacles_map.min() == 0
         assert self.readings_map.max() == 0 and self.readings_map.min() == 0
-        assert (
-            self.others_locations_map.max() == 0
-            and self.others_locations_map.min() == 0
-        )
+        assert (self.others_locations_map.max() == 0 and self.others_locations_map.min() == 0)
         assert self.location_map.max() == 0 and self.location_map.min() == 0
-        assert (
-            self.combined_location_map.max() == 0
-            and self.combined_location_map.min() == 0
-        )
+        assert (self.combined_location_map.max() == 0 and self.combined_location_map.min() == 0)
         assert self.visit_counts_map.max() == 0 and self.visit_counts_map.min() == 0
         assert self.prediction_map.max() == 0 and self.prediction_map.min() == 0
 
@@ -693,7 +668,7 @@ class MapsBuffer:
         """Fully reinstatiate maps"""
         self.prediction_map: Map = Map(
             np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)
-        )
+        )        
         self.combined_location_map: Map = Map(
             np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)
         )
@@ -715,7 +690,7 @@ class MapsBuffer:
         self.visit_counts_shadow.clear()
 
     def _inflate_coordinates(
-        self, single_observation: Union[np.ndarray, Point]
+        self, single_observation: Union[np.ndarray, Point, Tuple[float, float]]
     ) -> Tuple[int, int]:
         """
         Method to take a single observation state, extracts the coordinates, then inflates them to the resolution accuracy specified during initialization. Also works with tuple of deflated coordinates.
@@ -770,9 +745,9 @@ class MapsBuffer:
         return result
 
     def _update_prediction_map(
-        self,
+        self,  
         current_prediction: Tuple[int, int],
-        last_prediction: Tuple,
+        last_prediction:Tuple,
     ) -> None:
         """
         Method to update the current agents location observation map. If prior location exists, this is reset to zero.
@@ -785,14 +760,10 @@ class MapsBuffer:
             self.prediction_map[last_prediction[0]][last_prediction[1]] -= 1
             assert self.prediction_map[last_prediction[0]][last_prediction[1]] > -1, "source prediction grid coordinate reset where nothing present. The map location that was reset was already at 0."  # type: ignore # Type will already be a float
         else:
-            assert (
-                self.prediction_map.max() == 0.0
-            ), "Location exists on map however no last coordinates buffer passed for processing."
+            assert (self.prediction_map.max() == 0.0), "Location exists on map however no last coordinates buffer passed for processing."
 
         self.prediction_map[current_prediction[0]][current_prediction[1]] = 1
-        assert (
-            self.prediction_map.max() == 1
-        ), "Location was updated twice for single coordinate"
+        assert (self.prediction_map.max() == 1), "Location was updated twice for single coordinate"
 
     def _update_combined_agent_locations_map(
         self,
@@ -1019,8 +990,7 @@ class Actor(nn.Module):
             in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1
         )
         self.step4 = nn.Flatten(start_dim=0, end_dim=-1)
-        self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=64)
-        self.step6 = nn.Linear(in_features=64, out_features=32)
+        self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32)
         self.step6 = nn.Linear(in_features=32, out_features=16)
         self.step7 = nn.Linear(in_features=16, out_features=action_dim)
         self.softmax = nn.Softmax(dim=0)  # Put in range [0,1]
@@ -1032,11 +1002,9 @@ class Actor(nn.Module):
             nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (4, 16, 2, 2)
             nn.ReLU(),
             nn.Flatten(start_dim=0, end_dim=-1),  # output tensor with shape (1, x)
-            nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=64),  # output tensor with shape (32)
+            nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32),  # output tensor with shape (32)
             nn.ReLU(),
-            nn.Linear(in_features=64, out_features=32),  # output tensor with shape)
-            nn.ReLU(),
-            nn.Linear(in_features=32, out_features=16),  # output tensor with shape ()
+            nn.Linear(in_features=32, out_features=16),  # output tensor with shape (16)
             nn.ReLU(),
             nn.Linear(in_features=16, out_features=action_dim),  # output tensor with shape (8)
             nn.Softmax(dim=0),  # Put in range [0,1]
@@ -1256,9 +1224,8 @@ class Critic(nn.Module):
         self.step4 = nn.Flatten(
             start_dim=0, end_dim=-1
         )  # output tensor with shape (1, x)
-        self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=64)
+        self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32)
         # nn.ReLU()
-        self.step6 = nn.Linear(in_features=64, out_features=32)
         self.step6 = nn.Linear(in_features=32, out_features=16)
         # nn.ReLU()
         self.step7 = nn.Linear(in_features=16, out_features=1)  # output tensor with shape (1)
@@ -1278,11 +1245,7 @@ class Critic(nn.Module):
             ),  # output tensor with shape (batch_size, 16, 2, 2)
             nn.ReLU(),
             nn.Flatten(start_dim=0, end_dim=-1),  # output tensor with shape (1, x)
-            nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=128),  # output tensor with shape (32)
-            nn.ReLU(),
-            nn.Linear(in_features=128, out_features=64),  # output tensor with shape (16)
-            nn.ReLU(),
-            nn.Linear(in_features=64, out_features=32),  # output tensor with shape (16)
+            nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32),  # output tensor with shape (32)
             nn.ReLU(),
             nn.Linear(in_features=32, out_features=16),  # output tensor with shape (16)
             nn.ReLU(),
@@ -1791,7 +1754,7 @@ class CNNBase:
             input_size=self.observation_space - 8,
             obs_size=self.observation_space - 8,
             activation="tanh",
-            hidden_size=self.predictor_hidden_size # (bpf_hsize) (hid_rec in cli)
+            hidden_size= self.predictor_hidden_size # (bpf_hsize) (hid_rec in cli)
         )
 
     def set_mode(self, mode: str) -> None:
@@ -1813,12 +1776,7 @@ class CNNBase:
                 "Invalid mode set for Agent. Agent remains in their original training mode"
             )
 
-    def get_map_stack(
-        self,
-        state_observation: Dict[int, npt.NDArray],
-        id: int,
-        location_prediction: Point,
-    ):
+    def get_map_stack(self, state_observation: Dict[int, npt.NDArray], id: int, location_prediction: Tuple[float, float]):
         with torch.no_grad():
             (
                 prediction_map,
@@ -1858,7 +1816,9 @@ class CNNBase:
         return batched_actor_mapstack, batched_critic_mapstack
 
     def select_action(
-        self, state_observation: Dict[int, npt.NDArray], id: int, hidden: torch.Tensor
+        self, state_observation: Dict[int, npt.NDArray], 
+        id: int,
+        hidden: torch.Tensor
     ) -> Tuple[ActionChoice, HeatMaps]:
         """
         Method to take a multi-agent observation and convert it to maps and store to a buffer. Then uses the actor network to select an
@@ -1869,18 +1829,18 @@ class CNNBase:
         """
         with torch.no_grad():
             # Extract all observations for PFGRU
-            obs_list = np.array(
-                [state_observation[i][:3] for i in range(self.number_of_agents)]
-            )  # Create a list of just readings and locations for all agents
+            obs_list = [state_observation[i][:3] for i in range(self.number_of_agents)] # Create a list of just readings and locations for all agents
             obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)
 
             location_prediction, new_hidden = self.model(obs_tensor, hidden)
+            
+            prediction_tuple: Tuple[float, float] = tuple(location_prediction.tolist()) # type: ignore
 
             # Process data and create maps
             batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(
-                id=id,
-                state_observation=state_observation,
-                location_prediction=Point(tuple(location_prediction.tolist())),  # type: ignore
+                id = id,
+                state_observation = state_observation,
+                location_prediction=prediction_tuple
             )
 
             # Get actions and values
@@ -1903,10 +1863,10 @@ class CNNBase:
                 action=action.item(),
                 action_logprob=action_logprob.item(),
                 state_value=state_value_item,
-                loc_pred=location_prediction,
-                hidden=new_hidden,
+                loc_pred = location_prediction,
+                hidden = new_hidden
             ),
-            HeatMaps(batched_actor_mapstack, batched_critic_mapstack),
+            HeatMaps(batched_actor_mapstack, batched_critic_mapstack), 
         )
 
     def get_map_dimensions(self) -> Tuple[int, int]:
@@ -1919,12 +1879,11 @@ class CNNBase:
     def get_batch_size(self) -> int:
         return self.pi.batches
 
-    def save(self, checkpoint_path: str, iteration: Union[int, None] = None) -> None:
+    def save(self, checkpoint_path: str) -> None:
         """
         Save the actor, critic, and predictor neural network models.
 
         :param checkpoint_path: (str) Path to save neural network models to.
-        :param iteration: (int, none) tag for end of file.
         """
 
         # Save original modes
@@ -1967,12 +1926,12 @@ class CNNBase:
         self.reset_flag += 1 if self.reset_flag < 100 else 1
 
     def step(
-        self, state_observation: Dict[int, npt.NDArray], hidden: torch.Tensor
+        self,
+        state_observation: Dict[int, npt.NDArray],
+        hidden: torch.Tensor
     ) -> Tuple[ActionChoice, HeatMaps]:
         """Alias for select_action"""
-        return self.select_action(
-            state_observation=state_observation, id=self.id, hidden=hidden
-        )
+        return self.select_action(state_observation=state_observation, id=self.id, hidden=hidden)
 
     def step_keep_gradient_for_critic(
         self,

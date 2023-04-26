@@ -5,115 +5,14 @@ import gym # type: ignore
 import time
 import os
 import core # type: ignore
+import ppo_tools # type: ignore
+
+from RADTEAM_core import StatisticStandardization 
+
 from gym.utils.seeding import _int_list_from_bigint, hash_seed # type: ignore
 from rl_tools.logx import EpochLogger # type: ignore
 from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params,synchronize, mpi_avg_grads, sync_params_stats # type: ignore
 from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar,mpi_statistics_vector, num_procs, mpi_min_max_scalar # type: ignore
-
-
-class PPOBuffer:
-    """
-    A buffer for storing histories experienced by a PPO agent interacting
-    with the environment, and using Generalized Advantage Estimation (GAE-Lambda)
-    for calculating the advantages of state-action pairs.
-    """
-
-    def __init__(self, obs_dim, act_dim, size, gamma=0.99, lam=0.90, hid_size=48):
-        self.obs_buf = np.zeros(core.combined_shape(size, obs_dim), dtype=np.float32)
-        self.act_buf = np.zeros(core.combined_shape(size), dtype=np.float32)
-        self.adv_buf = np.zeros(size, dtype=np.float32)
-        self.rew_buf = np.zeros(size, dtype=np.float32)
-        self.ret_buf = np.zeros(size, dtype=np.float32)
-        self.val_buf = np.zeros(size, dtype=np.float32)
-        self.source_tar = np.zeros((size,2), dtype=np.float32)
-        self.logp_buf = np.zeros(size, dtype=np.float32)
-        self.obs_win = np.zeros(obs_dim, dtype=np.float32)
-        self.obs_win_std = np.zeros(obs_dim, dtype=np.float32)
-        self.gamma, self.lam = gamma, lam
-        self.ptr, self.path_start_idx, self.max_size = 0, 0, size
-        self.beta = 0.005
-
-    def store(self, obs, act, rew, val, logp, src):
-        """
-        Append one timestep of agent-environment interaction to the buffer.
-        """
-        assert self.ptr < self.max_size     
-        self.obs_buf[self.ptr,:] = obs 
-        self.act_buf[self.ptr] = act
-        self.rew_buf[self.ptr] = rew
-        self.val_buf[self.ptr] = val
-        self.source_tar[self.ptr] = src
-        self.logp_buf[self.ptr] = logp
-        self.ptr += 1
-
-    def finish_path(self, last_val=0):
-        """
-        Call this at the end of a trajectory, or when one gets cut off
-        by an epoch ending. This looks back in the buffer to where the
-        trajectory started, and uses rewards and value estimates from
-        the whole trajectory to compute advantage estimates with GAE-Lambda,
-        as well as compute the rewards-to-go for each state, to use as
-        the targets for the value function.
-
-        The "last_val" argument should be 0 if the trajectory ended
-        because the agent reached a terminal state (died), and otherwise
-        should be V(s_T), the value function estimated for the last state.
-        This allows us to bootstrap the reward-to-go calculation to account
-        for timesteps beyond the arbitrary episode horizon (or epoch cutoff).
-        """
-
-        path_slice = slice(self.path_start_idx, self.ptr)
-        rews = np.append(self.rew_buf[path_slice], last_val)
-        vals = np.append(self.val_buf[path_slice], last_val)
-        
-        # the next two lines implement GAE-Lambda advantage calculation
-        # gamma determines scale of value function, introduces bias regardless of VF accuracy
-        # lambda introduces bias when VF is inaccurate
-        deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
-        self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lam)
-        
-        # the next line computes rewards-to-go, to be targets for the value function
-        self.ret_buf[path_slice] = core.discount_cumsum(rews, self.gamma)[:-1]
-        
-        self.path_start_idx = self.ptr
-
-    def get(self,logger=None):
-        """
-        Call this at the end of an epoch to get all of the data from
-        the buffer, with advantages appropriately normalized (shifted to have
-        mean zero and std one). Also, resets some pointers in the buffer.
-        """
-        assert self.ptr == self.max_size    # buffer has to be full before you can get
-        self.ptr, self.path_start_idx = 0, 0
-        # the next two lines implement the advantage normalization trick
-        adv_mean, adv_std = mpi_statistics_scalar(self.adv_buf)
-        self.adv_buf = (self.adv_buf - adv_mean) / adv_std
-        #ret_mean, ret_std = mpi_statistics_scalar(self.ret_buf)
-        #self.ret_buf = (self.ret_buf) / ret_std
-        #obs_mean, obs_std = mpi_statistics_vector(self.obs_buf)
-        #self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
-        
-        data = dict(obs=self.obs_buf, act=self.act_buf, ret=self.ret_buf,
-                    adv=self.adv_buf, logp=self.logp_buf, loc_pred=self.obs_win_std,ep_len= sum(logger.epoch_dict['EpLen']))
-        data = {k: torch.as_tensor(v, dtype=torch.float32) for k,v in data.items()}
-
-        if logger:
-            slice_b = 0
-            slice_f = 0
-            epLen = logger.epoch_dict['EpLen']
-            epLenSize = len(epLen) if sum(epLen) == len(self.obs_buf) else (len(epLen) + 1)
-            obs_buf = np.hstack((self.obs_buf,self.adv_buf[:,None],self.ret_buf[:,None],self.logp_buf[:,None],self.act_buf[:,None],self.source_tar))
-            epForm = [[] for _ in range(epLenSize)]
-            for jj, ep_i in enumerate(epLen):
-                slice_f += ep_i
-                epForm[jj].append(torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32))
-                slice_b += ep_i
-            if slice_f != len(self.obs_buf):
-                epForm[jj+1].append(torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32))
-                
-            data['ep_form'] = epForm
-
-        return data
 
 
 def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0, 
@@ -142,8 +41,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
     
     if load_model != 0:
-        ac.load_state_dict(torch.load('model.pt'))                     
-        
+        ac.load_state_dict(torch.load('model.pt'))           
+    
     # Sync params across processes
     sync_params(ac)
 
@@ -161,34 +60,12 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
     # Set up trajectory buffer
     local_steps_per_epoch = int(steps_per_epoch / num_procs())
-    buf = PPOBuffer(obs_dim, act_dim, local_steps_per_epoch, gamma, lam, ac_kwargs['hidden_sizes_rec'][0])
+    #buf = PPOBuffer(obs_dim, act_dim, local_steps_per_epoch, gamma, lam, ac_kwargs['hidden_sizes_rec'][0])
+    buf = ppo_tools.PPOBuffer(observation_dimension=obs_dim, max_size=local_steps_per_epoch, max_episode_length=120, number_agents=1)
+    
     save_gif_freq = epochs // 3
     if proc_id() == 0:
         print(f'Local steps per epoch: {local_steps_per_epoch}')
-
-    def update_loc_rnn(data, env_sim, loss):
-        """Update for the simple regression GRU"""
-        ep_form= data['ep_form']
-        model_loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
-        for jj in range(train_v_iters):
-            model_loss_arr_buff.zero_()
-            model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
-            for ii,ep in enumerate(ep_form):
-                hidden = ac.model.init_hidden(1)
-                src_tar =  ep[0][:,15:].clone()
-                src_tar[:,:2] = src_tar[:,:2]/env_sim.search_area[2][1]
-                obs_t = torch.as_tensor(ep[0][:,:3], dtype=torch.float32)
-                loc_pred, _ = ac.model(obs_t,hidden,batch=True)
-                model_loss_arr[ii] = loss(loc_pred.squeeze(),src_tar.squeeze())
-            
-            model_loss = model_loss_arr.mean()
-            model_optimizer.zero_grad()
-            model_loss.backward()
-            mpi_avg_grads(ac.model)
-            torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
-            model_optimizer.step()    
-
-        return model_loss
             
 
     def update_a2c(data, env_sim, minibatch=None,iter=None):
@@ -225,8 +102,10 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             clipfrac = torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
             approx_kl = logp_diff.detach().mean().item()
             ent = pi.entropy().detach().mean().item()
-            val_loss = loss(val,ret)
             
+            #val_loss = loss(val,ret)
+            val_loss = optimization.MSELoss(val, ret)
+
             loss_arr[ii] = -(torch.min(ratio * adv, clip_adv).mean() - 0.01*val_loss + alpha * ent)
             loss_sto[ii,0] = approx_kl; loss_sto[ii,1] = ent; loss_sto[ii,2] = clipfrac; loss_sto[ii,3] = val_loss.detach()
             
@@ -239,11 +118,15 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         #Average KL across processes 
         kl = mpi_avg(pi_info['kl'][-1])
         if kl.item() < 1.5 * target_kl:
-            pi_optimizer.zero_grad() 
+            #pi_optimizer.zero_grad() 
+            optimization.pi_optimizer.zero_grad()
+            
             loss_pi.backward()
             #Average gradients across processes
             mpi_avg_grads(ac.pi)
-            pi_optimizer.step()
+            
+            #pi_optimizer.step()
+            optimization.pi_optimizer.step()
             term = False
         else:
             term = True
@@ -318,30 +201,44 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 model_loss_arr[ii] = total_loss
             
             model_loss = model_loss_arr.mean()
-            model_optimizer.zero_grad()
+            
+            #model_optimizer.zero_grad()
+            optimization.model_optimizer.zero_grad()
+            
             model_loss.backward()
 
             #Average gradients across the processes
             mpi_avg_grads(ac.model)
             torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
             
-            model_optimizer.step() 
+            #model_optimizer.step() 
+            optimization.model_optimizer.step()
+            
         
         return model_loss
     
     # Set up optimizers and learning rate decay for policy and localization module
-    pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
-    model_optimizer = Adam(ac.model.parameters(), lr=vf_lr)
-    pi_scheduler = torch.optim.lr_scheduler.StepLR(pi_optimizer,step_size=100,gamma=0.99)
-    model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer,step_size=100,gamma=0.99)
-    loss = torch.nn.MSELoss(reduction='mean')
+    # pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
+    # model_optimizer = Adam(ac.model.parameters(), lr=vf_lr)
+    # pi_scheduler = torch.optim.lr_scheduler.StepLR(pi_optimizer,step_size=100,gamma=0.99)
+    # model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer,step_size=100,gamma=0.99)
+    # loss = torch.nn.MSELoss(reduction='mean')
+    
+    optimization = ppo_tools.OptimizationStorage(
+        pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
+        #critic_optimizer= Adam(ac.critic.parameters(), lr=pi_lr),  # TODO change this to own learning rate
+        model_optimizer=Adam(ac.model.parameters(), lr=vf_lr),  # TODO change this to correct name (for PFGRU)
+        MSELoss=torch.nn.MSELoss(reduction="mean"),
+        critic_flag=False,
+    )    
 
     # Set up model saving
     logger.setup_pytorch_saver(ac)
 
-    def update(env, args, loss_fcn=loss):
+    def update(env, args, loss_fcn=optimization.MSELoss):
         """Update for the localization and A2C modules"""
-        data = buf.get(logger=logger)
+        #data = buf.get(logger=logger)
+        data = buf.get()
 
         #Update function if using the PFGRU, fcn. performs multiple updates per call
         ac.model.train()
@@ -361,8 +258,11 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             kk += 1
         
         #Reduce learning rate
-        pi_scheduler.step()
-        model_scheduler.step()
+        #pi_scheduler.step()
+        optimization.pi_scheduler.step()                
+        
+        #model_scheduler.step()
+        optimization.model_scheduler.step()
 
         logger.store(StopIter=kk)
 
@@ -373,15 +273,15 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                      KL=kl, Entropy=ent, ClipFrac=cf,
                      LocLoss=loc_loss, VarExplain=0)
 
-
-    
     # Prepare for interaction with environment
     start_time = time.time()
     o, _, _, _ = env.reset()
     o = o[0]
     ep_ret, ep_len, done_count, a = 0, 0, 0, -1
-    stat_buff = core.StatBuff()
+    #stat_buff = core.StatBuff()
+    stat_buff = StatisticStandardization()
     stat_buff.update(o[0])
+    
     ep_ret_ls = []
     oob = 0
     reduce_v_iters = True
@@ -395,7 +295,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         for t in range(local_steps_per_epoch):
             #Standardize input using running statistics per episode
             obs_std = o
-            obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
+            #obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
+            obs_std[0] = stat_buff.standardize(o[0])
+            
             #compute action and logp (Actor), compute value (Critic)
             a, v, logp, hidden, out_pred = ac.step(obs_std, hidden=hidden)
             next_o, r, d, _ = env.step({0: a})
@@ -404,7 +306,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             ep_len += 1
             ep_ret_ls.append(ep_ret)
 
-            buf.store(obs_std, a, r, v, logp, env.src_coords)
+            #buf.store(obs_std, a, r, v, logp, env.src_coords)
+            buf.store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
             logger.store(VVals=v)
 
             # Update obs (critical!)
@@ -428,17 +331,22 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
                 if timeout or epoch_ended:
                     # if trajectory didn't reach terminal state, bootstrap value target
-                    obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
+                    #obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
+                    obs_std[0] = stat_buff.standardize(o[0])
+                    
                     _, v, _, _, _ = ac.step(obs_std, hidden=hidden)
                     if epoch_ended:
                         #Set flag to sample new environment parameters
                         env.epoch_end = True
                 else:
                     v = 0
-                buf.finish_path(v)
+                #buf.finish_path(v)
+                buf.GAE_advantage_and_rewardsToGO(v)
+                
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
                     logger.store(EpRet=ep_ret, EpLen=ep_len)
+                    buf.store_episode_length(episode_length=ep_len)
 
                 if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1 ) == epochs)):
                     #Check agent progress during training
@@ -477,7 +385,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             reduce_v_iters = False
 
         # Perform PPO update!
-        update(env, bp_args, loss_fcn=loss)
+        update(env, bp_args, loss_fcn=optimization.MSELoss)
 
         # Log info about epoch
         logger.log_tabular('Epoch', epoch)
@@ -512,7 +420,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', '-s', type=int, default=2,help='Random seed control')
     parser.add_argument('--cpu', type=int, default=1,help='Number of cores/environments to train the agent with')
     parser.add_argument('--steps_per_epoch', type=int, default=480,help='Number of timesteps per epoch per cpu. Default is equal to 4 episodes per cpu per epoch.')      
-    parser.add_argument('--epochs', type=int, default=300,help='Number of epochs to train the agent')
+    parser.add_argument('--epochs', type=int, default=100,help='Number of epochs to train the agent')
     parser.add_argument('--exp_name', type=str,default='alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh',help='Name of experiment for saving')
     parser.add_argument('--dims', type=list, default=[[0.0,0.0],[1500.0,0.0],[1500.0,1500.0],[0.0,1500.0]],
                         help='Dimensions of radiation source search area in cm, decreased by area_obs param. to ensure visilibity graph setup is valid.')
@@ -522,7 +430,7 @@ if __name__ == '__main__':
     parser.add_argument('--net_type',type=str, default='rnn', help='Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp') 
     parser.add_argument('--alpha',type=float,default=0.1, help='Entropy reward term scaling') 
     parser.add_argument('--load_model', type=int, default=0)
-
+    
     args = parser.parse_args()
 
     #Change mini-batch size, only been tested with size of 1
@@ -539,7 +447,7 @@ if __name__ == '__main__':
         "number_agents": 1, 
         "enforce_grid_boundaries": True,
         "DEBUG": True,
-        "TEST": 3
+        "TEST": 1
         }
     max_ep_step = 120
     if args.cpu > 1:
@@ -558,10 +466,11 @@ if __name__ == '__main__':
     from rl_tools.run_utils import setup_logger_kwargs # type: ignore
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed,data_dir='../../models/train',env_name=args.env_name)
     
+    
     #Run ppo training function
     ppo(lambda : gym.make(args.env,**init_dims), actor_critic=core.RNNModelActorCritic,
         ac_kwargs=dict(hidden_sizes_pol=[args.hid_pol]*args.l_pol,hidden_sizes_val=[args.hid_val]*args.l_val,
         hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch), gamma=args.gamma, alpha=args.alpha,
         seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,
-        logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model = args.load_model)
+        logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model)
     
