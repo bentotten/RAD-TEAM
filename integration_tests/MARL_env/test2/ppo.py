@@ -518,6 +518,8 @@ if __name__ == '__main__':
                         help='Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions')
     parser.add_argument('--net_type',type=str, default='rnn', help='Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp') 
     parser.add_argument('--alpha',type=float,default=0.1, help='Entropy reward term scaling') 
+    parser.add_argument('--test', type=int, default=2)
+
     args = parser.parse_args()
 
     #Change mini-batch size, only been tested with size of 1
@@ -533,7 +535,8 @@ if __name__ == '__main__':
         'obstruction_count':args.obstruct,
         "number_agents": 1, 
         "enforce_grid_boundaries": True,
-        "DEBUG": True
+        "DEBUG": True,
+        "TEST": args.test
         }
     max_ep_step = 120
     if args.cpu > 1:

@@ -384,12 +384,31 @@ class RadSearch(gym.Env):
 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     # Stage 1
+    TEST: int = field(default=0)
     DEBUG: bool = field(default=False)
     DEBUG_SOURCE_LOCATION: Point = field(default=Point((1, 1)))
     DEBUG_DETECTOR_LOCATION: Point = Point((1499.0, 1499.0))
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     def __post_init__(self) -> None:
+        # Debugging tests
+        # Test 1: 15x15 grid, no obstructions, fixed start and stop points
+        if self.TEST == 1:
+            self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0,1500.0)), Point((0.0,1500.0))))
+            self.observation_area = Interval((100.0,100.0))
+            self.obstruction_count = 0
+            self.DEBUG = True
+            self.DEBUG_SOURCE_LOCATION: Point = field(default=Point((1, 1)))
+            self.DEBUG_DETECTOR_LOCATION: Point = Point((1499.0, 1499.0))       
+            
+        # Test 2: 15x15 grid, no obstructions, fixed stop points             
+        elif self.TEST == 2:
+            self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0,1500.0)), Point((0.0,1500.0))))
+            self.observation_area = Interval((100.0,100.0))
+            self.obstruction_count = 0
+            self.DEBUG = True
+            self.DEBUG_SOURCE_LOCATION: Point = field(default=Point((1, 1)))
+        
         self.search_area: BBox = BBox(
             (
                 Point(
@@ -1045,7 +1064,7 @@ class RadSearch(gym.Env):
 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        if self.DEBUG:
+        if self.DEBUG and self.TEST in [1, 2]:
             source = self.DEBUG_SOURCE_LOCATION
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -1054,7 +1073,7 @@ class RadSearch(gym.Env):
         detector = rand_point()
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        if self.DEBUG:
+        if self.DEBUG and self.TEST in [1]:
             detector = self.DEBUG_DETECTOR_LOCATION
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         det_point = to_vis_p(detector)
