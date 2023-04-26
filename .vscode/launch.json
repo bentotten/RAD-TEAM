@@ -159,7 +159,7 @@
       "console": "integratedTerminal",
       "justMyCode": false,
 
-      "cwd": "${workspaceFolder}/algos/test_ppo"
+      "cwd": "${workspaceFolder}/integration_tests/MARL_env/15x15_0_start_stop_rnn"
     }        
   ]
 }

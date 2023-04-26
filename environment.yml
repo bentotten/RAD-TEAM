@@ -1,0 +1,23 @@
+name: multi_ppo_pytorch
+channels:
+  - numba
+  - pytorch
+  - conda-forge
+dependencies:
+  - python
+  - pytorch
+  - scipy
+  - gym
+  - numba
+  - black
+  - swig
+  - numpy
+  - matplotlib
+  - pytorch-lightning
+  - cudatoolkit
+  - sphinx
+  - pip
+  - pip:
+      - -e ../../gym_rad_search
+      - -U ray
+      - sphinx-rtd-theme

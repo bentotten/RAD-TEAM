@@ -50,29 +50,9 @@ from gym_rad_search.envs import rad_search_env  # type: ignore
 from gym_rad_search.envs.rad_search_env import RadSearch, StepResult  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
-# PPO and logger
-try:
-    from ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
-    from ppo import BpArgs  # type: ignore
-
-except ModuleNotFoundError:
-    from algos.multiagent.ppo import AgentPPO  # type: ignore
-    from algos.multiagent.ppo import BpArgs  # type: ignore
-
-except:
-    raise Exception
 
 # Neural Networks
-try:
-    import NeuralNetworkCores.FF_core as RADFF_core  # type: ignore
-    import NeuralNetworkCores.RADTEAM_core as RADCNN_core  # type: ignore
-    import NeuralNetworkCores.RADA2C_core as RADA2C_core  # type: ignore
-    from NeuralNetworkCores.RADTEAM_core import StatisticStandardization  # type: ignore
-except ModuleNotFoundError:
-    import algos.multiagent.NeuralNetworkCores.FF_core as RADFF_core  # type: ignore
-    import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core  # type: ignore
-    import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core  # type: ignore
-    from algos.multiagent.NeuralNetworkCores.RADTEAM_core import StatisticStandardization  # type: ignore
+import core as RADA2C_core  # type: ignore
 
 
 # Helpful functions
@@ -153,14 +133,14 @@ class EpisodeRunner:
 
     # Initialized elsewhere
     #: Object that holds agents
-    agents: Dict[int, Union[RADCNN_core.CNNBase, RADA2C_core.RNNModelActorCritic]] = field(default_factory=lambda: dict())
+    agents: Dict[int, RADA2C_core.RNNModelActorCritic] = field(default_factory=lambda: dict())
 
     def __post_init__(self) -> None:
         # Change to correct directory
         os.chdir(self.current_dir)
 
         #Generate a large random seed and random generator object for reproducibility
-        rng = np.random.default_rng(self.seed) # TODO see if already the larger seed
+        rng = np.random.default_rng(self.seed) 
         self.env_kwargs['np_random'] = rng
 
         # Create own instatiation of environment
@@ -173,8 +153,8 @@ class EpisodeRunner:
                 agent_models[int(child.name[0])] = (child.path)  # Read in model path by id number. NOTE: Important that ID number is the first element of file name
             if child.is_dir() and "general" in child.name:
                 general_config_path = child.path
-                
-        obj = json.load(open(f"config.json"))
+
+        obj = json.load(open(f"{self.model_path}/config.json"))
         if 'self' in obj.keys():
             original_configs = list(obj["self"].values())[0]["ppo_kwargs"]["actor_critic_args"]
         else:
@@ -189,7 +169,6 @@ class EpisodeRunner:
             net_type="rnn",
             batch_s=1,
         )
-        original_configs['net_type'] = original_configs['lstm']
 
         if self.actor_critic_architecture != "cnn":
             assert self.team_mode == "individual"  # No global critic for RAD-A2C
@@ -217,8 +196,8 @@ class EpisodeRunner:
                     assert (actor_critic_args[arg] == original_configs[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
 
         # Initialize agents and load agent models
-        actor_critic_args['obs_dim'] = self.env.observation_space.shape[0]
-        actor_critic_args['act_dim'] = self.env.detectable_directions
+        actor_critic_args['observation_space'] = self.env.observation_space 
+        actor_critic_args['action_space'] = self.env.action_space
         actor_critic_args['seed'] = self.seed
         actor_critic_args['pad_dim'] = 2
 
@@ -236,45 +215,45 @@ class EpisodeRunner:
         # Prepare results buffers
         results = MonteCarloResults(id=self.id)
         # For RAD-A2C Compatibility
-        stat_buffers: Dict[int, StatisticStandardization] = dict()
+        stat_buffers = dict()
 
         # Reset environment and save test env parameters
-        observations = self.env.reset()
+        observations, _, _, _  = self.env.reset()
 
         # Save env for refresh
-        self.env_dict[0] = []
-        self.env_dict[0][0] = self.env.src_coords.copy()
-        self.env_dict[0][1] = self.env.agents[0].det_coords.copy()
-        self.env_dict[0][2] = self.env.intensity.copy()
-        self.env_dict[0][3] = self.env.bkg_intensity.copy()
-        self.env_dict[0][4] = [] # obstructions
+        self.env_dict['env_0'] = [_ for _ in range(5)]
+        self.env_dict['env_0'][0] = self.env.src_coords
+        self.env_dict['env_0'][1] = self.env.agents[0].det_coords
+        self.env_dict['env_0'][2] = self.env.intensity
+        self.env_dict['env_0'][3] = self.env.bkg_intensity
+        self.env_dict['env_0'][4] = [] # obstructions
 
-        for agent in self.agents.values():
-            agent.set_mode("eval")
+        self.agents[0].pi.eval()
+        self.agents[0].model.eval()
 
         # Prepare episode variables
-        agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
+        agent_thoughts: Dict = dict()
         hiddens: Dict[int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]] = {id: self.agents[id].reset_hidden() for id in self.agents}  # For RAD-A2C compatibility
 
         initial_prediction = np.zeros((3,))
         for id, ac in self.agents.items():
-            stat_buffers[id] = StatisticStandardization()
+            stat_buffers[id] = RADA2C_core.StatBuff()
             stat_buffers[id].update(observations[id][0])
-            observations[id][0] = stat_buffers[id].standardize(observations[id][0])
+            observations[id][0] = np.clip((observations[id][0]-stat_buffers[id].mu)/stat_buffers[id].sig_obs,-8,8)
 
         while run_counter < self.montecarlo_runs:
             # Get agent thoughts on current state. Actor: Compute action and logp (log probability); Critic: compute state-value
             agent_thoughts.clear()
+            agent_thoughts[id] = {}
             for id, ac in self.agents.items():
                 with torch.no_grad():
-                    agent_thoughts[id], heatmaps = ac.step(
-                        observations[id], hiddens[id]
-                    )
+                    a, v, logp, hidden, out_pred = ac.step(observations[id], hiddens[id])
+                    agent_thoughts[id]['action'] = a
 
-                hiddens[id] = agent_thoughts[id].hiddens  # For RAD-A2C - save latest hiddens for use in next steps.
 
+                hiddens[id] = hidden
             # Create action list to send to environment
-            agent_action_decisions = {id: int(agent_thoughts[id].action) for id in agent_thoughts}
+            agent_action_decisions = {id: int(agent_thoughts[id]['action']) for id in agent_thoughts}
             for action in agent_action_decisions.values():
                 assert 0 <= action and action < int(self.env.number_actions)
 
@@ -283,7 +262,7 @@ class EpisodeRunner:
 
             for id, ac in self.agents.items():
                 stat_buffers[id].update(observations[id][0])
-                observations[id][0] = stat_buffers[id].standardize(observations[id][0])
+                observations[id][0] = np.clip((observations[id][0]-stat_buffers[id].mu)/stat_buffers[id].sig_obs,-8,8)
 
             # Incremement Counters and save new (individual) cumulative returns
             for id in rewards["individual_reward"]:
@@ -338,9 +317,7 @@ class EpisodeRunner:
                 for id, ac in self.agents.items():
                     stat_buffers[id].reset()
                     stat_buffers[id].update(observations[id][0])
-                    observations[id][0] = stat_buffers[id].standardize(
-                        observations[id][0]
-                    )
+                    observations[id][0] = np.clip((observations[id][0]-stat_buffers[id].mu)/stat_buffers[id].sig_obs,-8,8)
 
         results.completed_runs = run_counter
 
@@ -494,3 +471,9 @@ if __name__ == "__main__":
         save_path_for_ac = ".",
         seed = 2,
     )
+    
+    test = evaluate_PPO(eval_kwargs=eval_kwargs)
+    
+    test.evaluate()
+    
+    print('done')
