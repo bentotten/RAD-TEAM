@@ -1172,7 +1172,8 @@ class RadSearch(gym.Env):
                         "Creating Environment Failed - Maximum tries exceeded to clear Detector. Check bounds and observation area to ensure source and detector can spawn 10 meters apart (1000 cm)."
                     )
         if self.DEBUG:
-            print(f"Agent: {detector}. Source: {source}")
+            dist = dist_p(detector, source)
+            print(f"Agent: {detector}. Source: {source}. Distance {dist}")
         return src_point, det_point, detector, source
 
     def is_intersect(self, agent: Agent, threshold: float = 0.001) -> bool:

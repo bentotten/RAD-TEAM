@@ -119,7 +119,7 @@ class PPOBuffer:
 def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
         vf_lr=5e-3, train_pi_iters=40, train_v_iters=15, lam=0.9, max_ep_len=120, save_gif=False,
-        target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None):
+        target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None, load_model=0):
 
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
     setup_pytorch_for_mpi()
@@ -140,6 +140,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
     #Instantiate A2C
     ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
+    
+    if load_model != 0:
+        ac.load_state_dict(torch.load('model.pt'))           
     
     # Sync params across processes
     sync_params(ac)
@@ -518,6 +521,8 @@ if __name__ == '__main__':
                         help='Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions')
     parser.add_argument('--net_type',type=str, default='rnn', help='Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp') 
     parser.add_argument('--alpha',type=float,default=0.1, help='Entropy reward term scaling') 
+    parser.add_argument('--load_model', type=int, default=0)
+    
     args = parser.parse_args()
 
     #Change mini-batch size, only been tested with size of 1
@@ -558,5 +563,5 @@ if __name__ == '__main__':
         ac_kwargs=dict(hidden_sizes_pol=[args.hid_pol]*args.l_pol,hidden_sizes_val=[args.hid_val]*args.l_val,
         hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch), gamma=args.gamma, alpha=args.alpha,
         seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,
-        logger_kwargs=logger_kwargs,render=False, save_gif=False)
+        logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model)
     
