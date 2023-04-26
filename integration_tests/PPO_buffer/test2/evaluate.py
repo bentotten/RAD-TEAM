@@ -140,10 +140,6 @@ class EpisodeRunner:
         # Change to correct directory
         os.chdir(self.current_dir)
 
-        #Generate a large random seed and random generator object for reproducibility
-        rng = np.random.default_rng(self.seed) 
-        self.env_kwargs['np_random'] = rng
-
         # Create own instatiation of environment
         self.env: rad_search_env = self.create_environment()
 
@@ -483,6 +479,8 @@ class evaluate_PPO:
         
     
 if __name__ == "__main__":
+    rng = np.random.default_rng(2) 
+
     env_kwargs = {
         'bbox': [[0.0,0.0],[1500.0,0.0],[1500.0,1500.0],[0.0,1500.0]],
         'observation_area': [100.0,100.0], 
@@ -490,6 +488,7 @@ if __name__ == "__main__":
         "number_agents": 1, 
         "enforce_grid_boundaries": True,
         "DEBUG": True,
+        "np_random": rng,            
         "TEST": 2
         }    
     
