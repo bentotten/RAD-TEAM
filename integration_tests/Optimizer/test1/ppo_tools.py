@@ -133,7 +133,7 @@ class OptimizationStorage:
     #: Schedules gradient steps for value function (critic)
     critic_scheduler: Union[torch.optim.lr_scheduler.StepLR, None] = field(init=False)
     #: Schedules gradient steps for PFGRU location predictor module
-    pfgru_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)
+    model_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)
     #: Loss calculator utility for Critic
     MSELoss: torch.nn.modules.loss.MSELoss = field(
         default_factory=(lambda: torch.nn.MSELoss(reduction="mean"))
@@ -143,7 +143,7 @@ class OptimizationStorage:
         self.pi_scheduler = torch.optim.lr_scheduler.StepLR(
             self.pi_optimizer, step_size=100, gamma=0.99
         )
-        self.pfgru_scheduler = torch.optim.lr_scheduler.StepLR(
+        self.model_scheduler = torch.optim.lr_scheduler.StepLR(
             self.model_optimizer, step_size=100, gamma=0.99
         )
 
