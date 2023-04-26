@@ -451,7 +451,7 @@ class EpisodeRunner:
                 steps_in_episode = 0
                 terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
 
-                observations = self.env.refresh_environment(env_dict=self.env_sets, id=, num_obs=self.obstruction_count) # TODO should this be id or 0?
+                observations = self.env.refresh_environment(env_dict=self.env_sets, id=, num_obs=self.obstruction_count) # TODO should this be id ir 0
 
                 # Reset stat buffer for RAD-A2C
                 if (
@@ -643,238 +643,41 @@ class evaluate_PPO:
         # self.parse_results(full_results)
         pass
 
-    def parse_results(self, results: List):
-        """Get the weighted median episode length and the weighted success rate for each  environment configuration (scenario)"""
+    def calc_stats(self, results, mc=None, plot=False, snr=None, control=None, obs=None):
+        """Calculate results from the evaluation"""
+        # Per episode run:
+        # [int] Completed runs count
+        # [int] Success Counter
+        # [list] Successful episode lengths
+        # [List] Successful epsiode returns
+        # Intensity Measurement
+        
+        
+        success_counts = np.zeros(len(results))
+        episode_length_medians = np.zeros(len(results))
+        
+        episode_return_medians = np.zeros(len(results))
+        # TODO make less terrible
+        total_lengths = []
+        total_rets = []
 
-        # Succesful objects
-        successful_runs = []
-        success_episode_return = Metrics()
-        success_episode_lengths = Metrics()
-        success_intensity = Metrics()
-        success_background_intensity = Metrics()
-
-        # Unsuccesful objects
-        unsuccess_episode_return = Metrics()
-        unsuccess_episode_lengths = Metrics()
-        unsuccess_intensity = Metrics()
-        unsuccess_background_intensity = Metrics()
-
-        # Successful episode length object
-        success_episode_len_dist = Distribution()
-
-        for scenario in results:
-            # Get medians and variances for successful runs
-            successful_runs.append(scenario.success_counter)
-
-            success_episode_return.medians.append(
-                median(scenario.successful.background_intensity)
-            )
-            success_episode_return.variances.append(
-                variance(scenario.successful.background_intensity)
-            )
-
-            success_episode_lengths.medians.append(
-                median(scenario.successful.background_intensity)
-            )
-            success_episode_lengths.variances.append(
-                variance(scenario.successful.background_intensity)
-            )
-
-            success_intensity.medians.append(
-                median(scenario.successful.background_intensity)
-            )
-            success_intensity.variances.append(
-                variance(scenario.successful.background_intensity)
-            )
-
-            success_background_intensity.medians.append(
-                median(scenario.successful.background_intensity)
-            )
-            success_background_intensity.variances.append(
-                variance(scenario.successful.background_intensity)
-            )
-
-            # Get medians and variances for unsuccessful runs
-            unsuccess_episode_return.medians.append(
-                median(scenario.successful.background_intensity)
-            )
-            unsuccess_episode_return.variances.append(
-                variance(scenario.successful.background_intensity)
-            )
-
-            unsuccess_episode_lengths.medians.append(
-                median(scenario.successful.background_intensity)
-            )
-            unsuccess_episode_lengths.variances.append(
-                variance(scenario.successful.background_intensity)
-            )
-
-            unsuccess_intensity.medians.append(
-                median(scenario.successful.background_intensity)
-            )
-            unsuccess_intensity.variances.append(
-                variance(scenario.successful.background_intensity)
-            )
-
-            unsuccess_background_intensity.medians.append(
-                median(scenario.successful.background_intensity)
-            )
-            unsuccess_background_intensity.variances.append(
-                variance(scenario.successful.background_intensity)
-            )
-
-            # Get 'weighted median' for successful episode lengths
-            unique, counts = np.unique(
-                scenario.successful.episode_length, return_counts=True
-            )
-            sort_idx = np.argsort(counts)
-
-            success_episode_len_dist.unique[scenario.id] = list()
-            success_episode_len_dist.counts[scenario.id] = list()
-
-            for index in sort_idx:
-                success_episode_len_dist.unique[scenario.id].append(unique[index])
-                success_episode_len_dist.counts[scenario.id].append(counts[index])
-
-        for ii, key in enumerate(keys):
-            if key in [
-                "dIntDist",
-                "ndIntDist",
-                "dBkgDist",
-                "ndBkgDist",
-                "dEpRet",
-                "ndEpRet",
-                "ndEpLen",
-                "TotEpLen",
-            ]:
-                pass
-            else:
-                if "LocEstErr" in key:
-                    tot_mean = np.mean(stats[:, ii, 0])
-                    std_error = math.sqrt(np.nansum(stats[:, ii, 1] / stats[:, ii, 2]))
-                    # print('Mean '+ key +': ' +str(np.round(tot_mean,decimals=2))+ ' +/- ' +str(np.round(std_error,3)))
-                else:
-                    if np.nansum(stats[:, ii, 0]) > 1:
-                        d1 = DescrStatsW(stats[:, ii, 0], weights=stats[:, ii, 2])
-                        lp_w, weight_med, hp_w = d1.quantile(
-                            [0.025, 0.5, 0.975], return_pandas=False
-                        )
-                        q1, q3 = d1.quantile([0.25, 0.75], return_pandas=False)
-                        print(
-                            "Weighted Median "
-                            + key
-                            + ": "
-                            + str(np.round(weight_med, decimals=2))
-                            + " Weighted Percentiles ("
-                            + str(np.round(lp_w, 3))
-                            + ","
-                            + str(np.round(hp_w, 3))
-                            + ")"
-                        )
-        pass
-
-    def calc_stats(results, mc=None, plot=False, snr=None, control=None, obs=None):
-        """
-        Calculate results from the evaluation
-        """
-
-        # Metrics we care about:
-        #   - Success Count: save number if greater than 0, otherwise NaN
-        #       - [0.025,0.5,0.975] quantiles?
-        #       - [0.25,0.75] quantiles?
-        #   - Successful Epsiode Lengths:
-        #       - unsure, but saving unique lengths and their counts to a distribution matrix?
-        #       - [0.025,0.5,0.975] quantiles?
-        #       - [0.25,0.75] quantiles?
-        #   - All other metrics: Median/Variance/shape for epsiode length,
-
-        # mc_stats['dEpLen'] = d_ep_len
-        # mc_stats['ndEpLen'] = nd_ep_len
-        # mc_stats['dEpRet'] = d_ep_ret
-        # mc_stats['ndEpRet'] = nd_ep_ret
-        # mc_stats['dIntDist'] = done_dist_int
-        # mc_stats['ndIntDist'] = not_done_dist_int
-        # mc_stats['dBkgDist'] = done_dist_bkg
-        # mc_stats['ndBkgDist'] = not_done_dist_bkg
-        # mc_stats['DoneCount'] = np.array([done_count])
-        # mc_stats['TotEpLen'] = tot_ep_len
-        # mc_stats['LocEstErr'] = loc_est_err
-        # results = [loc_est_ls, FIM_bound, J_score_ls, det_ls]
-        # print(f'Finished episode {n}!, completed count: {done_count}')
-        # return (results,mc_stats)
-        # Assuming these got switched at some point?
-
-        # Results[0] only has one element that contains all 100 mc runs
-        #   - each run contains two elements:
-        #   [0] is [loc_est_ls, FIM_bound, J_score_ls, det_ls]
-        #   [1] is mc_stats
-
-        # [Mean, Variance, Size]
-        stats = np.zeros((len(results[0]), len(results[0][0][1]), 3))  # 100  # 11
-        keys = results[0][0][1].keys()
-        num_elem = 101
-        d_count_dist = np.zeros((len(results[0]), 2, num_elem))
-
-        for jj, data in enumerate(results[0]):
-            for ii, key in enumerate(keys):
-                # if 'Count' in key:
-                #     stats[jj,ii,0:2] = data[1][key] if data[1][key].size > 0 else np.nan
-                # elif 'LocEstErr' in key:
-                #     stats[jj,ii,0] = np.mean(data[1][key]) if data[1][key].size > 0 else np.nan
-                #     stats[jj,ii,1] = np.var(data[1][key])/data[1][key].shape[0] if data[1][key].size > 0 else np.nan
-                # else:
-                #     stats[jj,ii,0] = np.median(data[1][key]) if data[1][key].size > 0 else np.nan
-                #     stats[jj,ii,1] = np.var(data[1][key])/data[1][key].shape[0] if data[1][key].size > 0 else np.nan
-                # stats[jj,ii,2] = data[1][key].shape[0]
-
-                if key in "dEpLen":  # and isinstance(data[0],np.ndarray):
-                    uni, counts = np.unique(data[1][key], return_counts=True)
-                    sort_idx = np.argsort(counts)
-                    if len(sort_idx) > num_elem:
-                        d_count_dist[jj, 0, :] = uni[sort_idx][-num_elem:]
-                        d_count_dist[jj, 1, :] = counts[sort_idx][-num_elem:]
-                    else:
-                        d_count_dist[jj, 0, num_elem - len(sort_idx) :] = uni[sort_idx][
-                            -num_elem:
-                        ]
-                        d_count_dist[jj, 1, num_elem - len(sort_idx) :] = counts[
-                            sort_idx
-                        ][-num_elem:]
-
-        for ii, key in enumerate(keys):
-            if key in [
-                "dIntDist",
-                "ndIntDist",
-                "dBkgDist",
-                "ndBkgDist",
-                "dEpRet",
-                "ndEpRet",
-                "ndEpLen",
-                "TotEpLen",
-            ]:
-                pass
-            else:
-                if "LocEstErr" in key:
-                    tot_mean = np.mean(stats[:, ii, 0])
-                    std_error = math.sqrt(np.nansum(stats[:, ii, 1] / stats[:, ii, 2]))
-                    # print('Mean '+ key +': ' +str(np.round(tot_mean,decimals=2))+ ' +/- ' +str(np.round(std_error,3)))
-                else:
-                    if np.nansum(stats[:, ii, 0]) > 1:
-                        d1 = DescrStatsW(stats[:, ii, 0], weights=stats[:, ii, 2])
-                        lp_w, weight_med, hp_w = d1.quantile(
-                            [0.025, 0.5, 0.975], return_pandas=False
-                        )
-                        q1, q3 = d1.quantile([0.25, 0.75], return_pandas=False)
-                        print(
-                            "Weighted Median "
-                            + key
-                            + ": "
-                            + str(np.round(weight_med, decimals=2))
-                            + " Weighted Percentiles ("
-                            + str(np.round(lp_w, 3))
-                            + ","
-                            + str(np.round(hp_w, 3))
-                            + ")"
-                        )
-
-        return stats, d_count_dist
+        for ep_index, episode in enumerate(results):
+            success_counts[ep_index] = episode.success_counter
+            sorted_len = sorted(episode.total_episode_length)
+            episode_length_medians[ep_index] = np.median(sorted_len)
+            sorted_ret = sorted(episode.total_episode_return)
+            episode_return_medians[ep_index] = np.median(sorted_ret)
+            
+            total_lengths.append(episode.total_episode_length)
+            total_rets.append(episode.total_episode_return)
+            
+        success_counts_median = np.median(sorted(success_counts))
+        final_eplen_median = np.median(sorted(episode_length_medians))
+        final_epret_median  = np.median(sorted(episode_return_medians))
+        
+        succ_std = round(np.std(success_counts_median), 3)
+        len_std = round(np.std(total_lengths), 3)
+        ret_std = round(np.std(total_rets), 3)
+        print(f"Median Success Counts: {success_counts_median} with std {succ_std}")
+        print(f"Median Episode Length: {final_eplen_median} with std {len_std}")
+        print(f"Median Episode Return: {final_epret_median} with std {ret_std}")

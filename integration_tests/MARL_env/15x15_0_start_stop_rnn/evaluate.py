@@ -470,12 +470,14 @@ class evaluate_PPO:
             total_lengths.append(episode.total_episode_length)
             total_rets.append(episode.total_episode_return)
             
-                
+        success_counts_median = np.median(sorted(success_counts))
         final_eplen_median = np.median(sorted(episode_length_medians))
         final_epret_median  = np.median(sorted(episode_return_medians))
         
-        len_std = np.std(total_lengths)
-        ret_std = np.std(total_rets)
+        succ_std = round(np.std(success_counts_median), 3)
+        len_std = round(np.std(total_lengths), 3)
+        ret_std = round(np.std(total_rets), 3)
+        print(f"Median Success Counts: {success_counts_median} with std {succ_std}")
         print(f"Median Episode Length: {final_eplen_median} with std {len_std}")
         print(f"Median Episode Return: {final_epret_median} with std {ret_std}")
         
