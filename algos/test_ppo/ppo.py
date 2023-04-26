@@ -768,9 +768,7 @@ class AgentPPO:
                         map_buffer_maps=critic_maps_buffer,
                     )
                     critic_loss_results["critic_loss"].backward()
-                    mpi_avg_grads(
-                        self.agent.critic
-                    )  # Average gradients across processes
+                    mpi_avg_grads(self.agent.critic)  # Average gradients across processes
                     self.agent_optimizer.critic_optimizer.step()
 
                 # Reduce learning rate
@@ -784,9 +782,7 @@ class AgentPPO:
                     kl_divergence=actor_loss_results["kl"],
                     Entropy=actor_loss_results["entropy"],
                     ClipFrac=actor_loss_results["clip_fraction"],
-                    LocLoss=torch.tensor(
-                        0
-                    ),  # TODO implement when PFGRU is working for CNN
+                    LocLoss=torch.tensor(0),  # TODO implement when PFGRU is working for CNN
                     VarExplain=0,
                 )
             else:
@@ -798,9 +794,7 @@ class AgentPPO:
                     kl_divergence=actor_loss_results["kl"],
                     Entropy=actor_loss_results["entropy"],
                     ClipFrac=actor_loss_results["clip_fraction"],
-                    LocLoss=torch.tensor(
-                        0
-                    ),  # TODO implement when PFGRU is working for CNN
+                    LocLoss=torch.tensor(0),  # TODO implement when PFGRU is working for CNN
                     VarExplain=0,
                 )
 
@@ -1082,16 +1076,16 @@ class AgentPPO:
         # ent is entropy (randomness)
         # val is state-value from critic
         # val-loss is the loss from the critic model
-        pi_info = dict(kl=[], ent=[], cf=[], val=np.array([]), val_loss=[])
+        pi_info: Dict = dict(kl=[], ent=[], cf=[], val=np.array([]), val_loss=[])
 
         # Sample a random tensor
         ep_select = np.random.choice(np.arange(0, len(ep_form)), size=int(min_iterations), replace=False)
         ep_form = [ep_form[idx] for idx in ep_select]
 
         # Loss storage buffer(s)
-        loss_array_buffer = torch.zeros((len(ep_form), 1),dtype=torch.float32) # Prefilling is fast with numpy
-        loss_buffer = torch.autograd.Variable(loss_array_buffer)
-        loss_storage = torch.zeros((len(ep_form),4),dtype=torch.float32)
+        loss_array_buffer: torch.Tensor = torch.zeros((len(ep_form), 1),dtype=torch.float32) # Prefilling is fast with numpy
+        loss_buffer: torch.Tensor = torch.autograd.Variable(loss_array_buffer)
+        loss_storage: torch.Tensor = torch.zeros((len(ep_form),4),dtype=torch.float32)
         
         for index, ep in enumerate(ep_form):
             # For each set of episodes per process from an epoch, compute loss
@@ -1130,17 +1124,17 @@ class AgentPPO:
                 + self.alpha * ent
             )
             
-            loss_storage[index,0] = approx_kl; 
-            loss_storage[index,1] = ent; 
-            loss_storage[index,2] = clipfrac; 
-            loss_storage[index,3] = val_loss.detach()
+            loss_storage[index, 0] = approx_kl; 
+            loss_storage[index, 1] = ent; 
+            loss_storage[index, 2] = clipfrac; 
+            loss_storage[index, 3] = val_loss.detach()
 
         # Get means
-        mean_loss = loss_buffer.mean()
-        means = loss_storage.mean(axis=0) # type: ignore
+        mean_loss: torch.Tensor = loss_buffer.mean()
+        means: torch.Tensor  = loss_storage.mean(axis=0) # type: ignore
         
         # For clarity
-        loss_pi = mean_loss
+        loss_pi: torch.Tensor  = mean_loss
         approx_kl = means[0].detach()
         ent = means[1].detach()
         clipfrac = means[2].detach()
