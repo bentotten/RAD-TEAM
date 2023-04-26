@@ -152,10 +152,20 @@
       "cwd": "${workspaceFolder}/algos/test_ppo"
     },
     {
+      "name": "Stage 1 - Test 1: Test Environment ",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/integration_tests/MARL_env/test1/evaluate.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+
+      "cwd": "${workspaceFolder}/integration_tests/MARL_env/test1"
+    },
+    {
       "name": "Stage 1 - Test 2: Test Environment ",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/integration_tests/MARL_env/test2/ppo.py",
+      "program": "${workspaceFolder}/integration_tests/MARL_env/test2/evaluate.py",
       "console": "integratedTerminal",
       "justMyCode": false,
 

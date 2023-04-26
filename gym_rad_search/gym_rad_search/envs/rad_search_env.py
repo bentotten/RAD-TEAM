@@ -394,6 +394,7 @@ class RadSearch(gym.Env):
         # Debugging tests
         # Test 1: 15x15 grid, no obstructions, fixed start and stop points
         if self.TEST == 1:
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 1 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0,1500.0)), Point((0.0,1500.0))))
             self.observation_area = Interval((100.0,100.0))
             self.obstruction_count = 0
@@ -401,13 +402,23 @@ class RadSearch(gym.Env):
             self.DEBUG_SOURCE_LOCATION = Point((1, 1))
             self.DEBUG_DETECTOR_LOCATION = Point((1499.0, 1499.0))       
             
-        # Test 2: 15x15 grid, no obstructions, fixed stop points             
+        # Test 2: 15x15 grid, no obstructions, fixed stop point          
         elif self.TEST == 2:
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 2 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0,1500.0)), Point((0.0,1500.0))))
             self.observation_area = Interval((100.0,100.0))
             self.obstruction_count = 0
             self.DEBUG = True
             self.DEBUG_SOURCE_LOCATION = Point((1, 1))
+            
+        # Test 2: 15x15 grid, no obstructions          
+        elif self.TEST == 3:
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 2 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0,1500.0)), Point((0.0,1500.0))))
+            self.observation_area = Interval((100.0,100.0))
+            self.obstruction_count = 0
+            self.DEBUG = True
+            self.DEBUG_DETECTOR_LOCATION = Point((1499.0, 1499.0))                   
     
         self.search_area: BBox = BBox(
             (
@@ -1073,7 +1084,7 @@ class RadSearch(gym.Env):
         detector = rand_point()
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        if self.DEBUG and self.TEST in [1]:
+        if self.DEBUG and self.TEST in [1, 3]:
             detector = self.DEBUG_DETECTOR_LOCATION
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         det_point = to_vis_p(detector)
@@ -1108,7 +1119,7 @@ class RadSearch(gym.Env):
 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        if self.DEBUG:
+        if self.DEBUG and self.TEST in [1, 2]:
             pass
         else:
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1151,7 +1162,8 @@ class RadSearch(gym.Env):
                     raise ValueError(
                         "Creating Environment Failed - Maximum tries exceeded to clear Detector. Check bounds and observation area to ensure source and detector can spawn 10 meters apart (1000 cm)."
                     )
-
+        if self.DEBUG:
+            print(f"Agent: {detector}. Source: {source}")
         return src_point, det_point, detector, source
 
     def is_intersect(self, agent: Agent, threshold: float = 0.001) -> bool:

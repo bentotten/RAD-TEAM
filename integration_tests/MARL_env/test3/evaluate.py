@@ -490,7 +490,7 @@ if __name__ == "__main__":
         "number_agents": 1, 
         "enforce_grid_boundaries": True,
         "DEBUG": True,
-        "TEST": 1
+        "TEST": 3
         }    
     
     eval_kwargs = dict(
