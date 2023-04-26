@@ -398,8 +398,8 @@ class RadSearch(gym.Env):
             self.observation_area = Interval((100.0,100.0))
             self.obstruction_count = 0
             self.DEBUG = True
-            self.DEBUG_SOURCE_LOCATION: Point = field(default=Point((1, 1)))
-            self.DEBUG_DETECTOR_LOCATION: Point = Point((1499.0, 1499.0))       
+            self.DEBUG_SOURCE_LOCATION = Point((1, 1))
+            self.DEBUG_DETECTOR_LOCATION = Point((1499.0, 1499.0))       
             
         # Test 2: 15x15 grid, no obstructions, fixed stop points             
         elif self.TEST == 2:
@@ -407,8 +407,8 @@ class RadSearch(gym.Env):
             self.observation_area = Interval((100.0,100.0))
             self.obstruction_count = 0
             self.DEBUG = True
-            self.DEBUG_SOURCE_LOCATION: Point = field(default=Point((1, 1)))
-        
+            self.DEBUG_SOURCE_LOCATION = Point((1, 1))
+    
         self.search_area: BBox = BBox(
             (
                 Point(
