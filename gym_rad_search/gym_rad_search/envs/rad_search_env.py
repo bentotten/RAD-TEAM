@@ -819,7 +819,10 @@ class RadSearch(gym.Env):
 
         for id, agent in self.agents.items():
             agent.reset()
-            agent.det_coords = env_dict[key][1].copy()
+            if isinstance(env_dict[key][1], tuple):
+                agent.det_coords = env_dict[key][1]
+            else:
+                agent.det_coords = env_dict[key][1].copy()
             agent.detector = to_vis_p(agent.det_coords)
 
         # Get obstacles from parameters
@@ -860,7 +863,10 @@ class RadSearch(gym.Env):
 
         # Erase previous results from agent's memory (for render)
         for id, agent in self.agents.items():
-            agent.det_sto = [env_dict[key][1].copy()]
+            if isinstance(env_dict[key][1], tuple):
+                agent.det_coords = Point(env_dict[key][1])
+            else:            
+                agent.det_sto = [env_dict[key][1].copy()]                 
             agent.meas_sto = [observation[id][0].copy()]
             agent.prev_det_dist = self.world.shortest_path(
                 self.source, agent.detector, self.vis_graph, EPSILON
