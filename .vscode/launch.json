@@ -191,6 +191,15 @@
 
       "cwd": "${workspaceFolder}/integration_tests/MARL_env/test4"
     },
-    
+    {
+      "name": "Test PPO Buffer Stage 1 - Test 1",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/integration_tests/PPO_buffer/test1/ppo.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+
+      "cwd": "${workspaceFolder}/integration_tests/PPO_buffer/test1"
+    },    
   ]
 }

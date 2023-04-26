@@ -118,7 +118,7 @@ class PPOBuffer:
         return data
 
 
-def ppo(env_fn, ppo_kwargs, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0, 
+def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
         vf_lr=5e-3, train_pi_iters=40, train_v_iters=15, lam=0.9, max_ep_len=120, save_gif=False,
         target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None):
@@ -541,7 +541,8 @@ if __name__ == '__main__':
         'obstruction_count':args.obstruct,
         "number_agents": 1, 
         "enforce_grid_boundaries": True,
-        "DEBUG": True
+        "DEBUG": True,
+        "TEST": 1
         }
     max_ep_step = 120
     if args.cpu > 1:

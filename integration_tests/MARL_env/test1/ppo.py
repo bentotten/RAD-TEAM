@@ -533,7 +533,8 @@ if __name__ == '__main__':
         'obstruction_count':args.obstruct,
         "number_agents": 1, 
         "enforce_grid_boundaries": True,
-        "DEBUG": True
+        "DEBUG": True,
+        "TEST": 1
         }
     max_ep_step = 120
     if args.cpu > 1:
