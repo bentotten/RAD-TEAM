@@ -16,7 +16,7 @@ from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar
 
 
 
-def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logger, clip_ratio, target_kl):
+def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logger, clip_ratio, target_kl, alpha):
     """Update for the localization and A2C modules"""
     
     def update_a2c(data, env_sim, minibatch=None,iter=None):
@@ -201,6 +201,16 @@ def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logg
     # logger.store(LossPi=pi_l.item(), LossV=loss_v.item(), LossModel= loss_mod.item(),
     #                 KL=kl, Entropy=ent, ClipFrac=cf,
     #                 LocLoss=loc_loss, VarExplain=0)
+    # Returns:
+    # actor_loss[id], 
+    # critic_loss[id],
+    # model_loss[id],                
+    # stop_iteration[id],
+    # kl[id], 
+    # entropy[id], 
+    # location_loss[id]    
+    
+    return pi_l, loss_v, loss_mod, kk, kl, ent, loc_loss
 
 
 def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0, 
@@ -312,7 +322,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             logprobs = []
             
             for id in range(len(agents)):
-                obs_std[id] = stat_buffers[id].standardize(o[id][0])
+                obs_std[id][0] = stat_buffers[id].standardize(o[id][0])
             
                 #compute action and logp (Actor), compute value (Critic)
                 actions[id], v, logp, hidden[id], _ = agents[id].step(obs_std[id], hidden=hidden[id]) # TODO make take a batch of observations from all agents
@@ -328,7 +338,17 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
             #buf.store(obs_std, a, r, v, logp, env.src_coords)
             for id in range(len(agents)):
-                buffer[id].store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
+                buffer[id].store(
+                    obs=obs_std[id], 
+                    act=actions[id],
+                    rew=r['team_reward'],
+                    val=values[id], 
+                    logp=logprobs[id], 
+                    src=env.src_coords, 
+                    full_observation=obs_std, 
+                    heatmap_stacks=None, 
+                    terminal=d
+                    )
             
             logger.store(VVals=v[0]) # TODO only taking first agents v
 
@@ -355,7 +375,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                     #obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
                     values = []
                     for id in range(len(agents)):
-                        obs_std[id] = stat_buffers[id].standardize(o[id][0])                    
+                        obs_std[id][0] = stat_buffers[id].standardize(o[id][0])                    
                     
                         _, v, _, _, _ = agents[id].step(obs_std[id], hidden=hidden[id])
                         values.append(v)
@@ -408,7 +428,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         # Save model
         if (epoch % save_freq == 0) or (epoch == epochs-1):
             for id in range(len(agents)):
-                agent_loggers.save_state(None, None)
+                agent_loggers[id].save_state(None, None)
 
         #Reduce localization module training iterations after 100 epochs to speed up training
         if reduce_v_iters and epoch > 99:
@@ -445,10 +465,11 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 optimization=optimization[id],
                 logger=logger,
                 clip_ratio=clip_ratio,
-                target_kl=target_kl
+                target_kl=target_kl,
+                alpha=alpha
                 )
-            
-        # logger.store(StopIter=kk)
+        
+        logger.store(StopIter=stop_iteration.mean().item())
 
         # Log changes from update
         kl, ent, cf, loss_v = kl.mean().item(), entropy.mean().item(), clip_frac.mean().item(), critic_loss.mean().item()
@@ -482,7 +503,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         logger.log_tabular('KL', average_only=True)
         logger.log_tabular('ClipFrac', average_only=True)
         logger.log_tabular('DoneCount', sum_only=True)
-        logger.log_tabular('OutOfBound', average_only=True)
+        # logger.log_tabular('OutOfBound', average_only=True)
         logger.log_tabular('StopIter', average_only=True)
         logger.log_tabular('Time', time.time()-start_time)
         logger.dump_tabular()
