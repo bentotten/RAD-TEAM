@@ -50,6 +50,7 @@ Metadata = TypedDict(
 )
 
 MAX_CREATION_TRIES = 1000000000
+LIST_MODE = True
 
 # These actions correspond to:
 # -1: stay idle
@@ -98,6 +99,12 @@ ACTION_MAPPING: Dict = {
     8: "Idle",
 }
 FPS = 5
+
+
+def combined_shape(length, shape=None):
+    if shape is None:
+        return (length,)
+    return (length, shape) if np.isscalar(shape) else (length, *shape)
 
 
 def sum_p(p1: Point, p2: Point) -> Point:
@@ -665,22 +672,25 @@ class RadSearch(gym.Env):
                 assert action[i] in get_args(Action)
         action_list = action if type(action) is dict else None
 
-        aggregate_observation_result: Dict = {_: None for _ in self.agents}
-        aggregate_reward_result: Dict = {_: None for _ in self.agents}
-        aggregate_success_result: Dict = {_: None for _ in self.agents}
+
+        aggregate_observation_result: Union[Dict, npt.NDArray]
+        aggregate_reward_result: Union[Dict, npt.NDArray]
+        aggregate_success_result: Union[Dict, npt.NDArray]
+
+        if LIST_MODE:
+            aggregate_observation_result = np.zeros(combined_shape(self.number_agents, self.observation_space.shape[0]), dtype=np.float32)
+            aggregate_reward_result = np.zeros((self.number_agents), dtype=np.float32)
+            aggregate_success_result = np.zeros((self.number_agents), dtype=np.float32)
+      
+        elif not LIST_MODE:
+            aggregate_observation_result = {_: None for _ in self.agents}
+            aggregate_reward_result = {_: None for _ in self.agents}
+            aggregate_success_result = {_: None for _ in self.agents}
+        
         aggregate_info_result: Dict = {_: None for _ in self.agents}
         max_reward: Union[float, None] = None
 
         if action_list:
-            # if self.DEBUG:
-            #     test_step = get_step(action_list[0])
-            # print(f"Test step {ACTION_MAPPING[action_list[0]]}: {test_step}")
-            # print("Current coordinates: ", self.agents[0].det_coords)
-            # test = sum_p(self.agents[0].det_coords, test_step)
-            # print("Tentative coordinates: ", test)
-            # test_scaled = scale_p(test, 1 / self.search_area[2][1])
-            # print("Tentative scaled return coords: ", test_scaled)
-
             proposed_coordinates = [
                 sum_p(self.agents[agent_id].det_coords, get_step(action))
                 for agent_id, action in action_list.items()
@@ -697,19 +707,20 @@ class RadSearch(gym.Env):
                     proposed_coordinates=proposed_coordinates,
                 )
 
-                # Calculate team reward
-                if not max_reward:
-                    max_reward = aggregate_reward_result[agent_id]
-                elif max_reward < aggregate_reward_result[agent_id]:
-                    max_reward = aggregate_reward_result[agent_id]
-            # Save team reward
+                if not LIST_MODE:
+                    # Calculate team reward
+                    if not max_reward:
+                        max_reward = aggregate_reward_result[agent_id]
+                    elif max_reward < aggregate_reward_result[agent_id]:
+                        max_reward = aggregate_reward_result[agent_id]
+            if LIST_MODE:
+                max_reward = aggregate_reward_result.max() # type: ignore
+            
+            # Save cumulative team reward for rendering
             for agent in self.agents.values():
                 if max_reward:
-                    agent.team_reward_sto.append(
-                        max_reward + agent.team_reward_sto[-1]
-                        if len(agent.team_reward_sto) > 0
-                        else max_reward
-                    )
+                    agent.team_reward_sto.append(max_reward + agent.team_reward_sto[-1] if len(agent.team_reward_sto) > 0 else max_reward )
+                    
             self.iter_count += 1
             # return {k: asdict(v) for k, v in aggregate_step_result.items()}
         elif not action or type(action) is int:
@@ -728,12 +739,16 @@ class RadSearch(gym.Env):
                     aggregate_info_result[agent_id],
                 ) = agent_step( action=action, agent=agent)  # type: ignore
 
-                # Calculate team reward
-                if not max_reward:
-                    max_reward = aggregate_reward_result[agent_id]
-                elif max_reward < aggregate_reward_result[agent_id]:
-                    max_reward = aggregate_reward_result[agent_id]
-            # Save team reward
+                if not LIST_MODE:
+                    # Calculate team reward
+                    if not max_reward:
+                        max_reward = aggregate_reward_result[agent_id]
+                    elif max_reward < aggregate_reward_result[agent_id]:
+                        max_reward = aggregate_reward_result[agent_id]
+            if LIST_MODE:
+                max_reward = aggregate_reward_result.max() # type: ignore
+            
+            # Save cumulative team reward for rendering
             for agent in self.agents.values():
                 if max_reward:
                     agent.team_reward_sto.append(
@@ -742,24 +757,9 @@ class RadSearch(gym.Env):
                         else max_reward
                     )
             self.iter_count += 1
-
         else:
             raise ValueError("Incompatible Action type")
 
-        # To meet Gym compliance, must be in form observation, reward, done, info
-        # if self.DEBUG:
-        #     print("-----")
-        #     print("Step New coordinates: ", self.agents[0].det_coords)
-        #     print("Step Observation: ", aggregate_observation_result[0][0])
-        #     print(f"Step new scaled coords: ({aggregate_observation_result[0][1]}, {aggregate_observation_result[0][2]})")
-        #     print("Step Reward: ", aggregate_reward_result[0])
-        #     print("Step Info: ", aggregate_info_result[0])
-        #     print("Step Terminal", aggregate_success_result[0])
-        #     if aggregate_info_result[0]['out_of_bounds'] == True:
-        #         print('out of bounds')
-        #     print()
-
-        # TODO use arrays not dicts for faster processing
         return (
             aggregate_observation_result,
             {"team_reward": max_reward, "individual_reward": aggregate_reward_result},
