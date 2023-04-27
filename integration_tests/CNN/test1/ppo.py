@@ -79,6 +79,13 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     if proc_id() == 0:
         print(f'Local steps per epoch: {local_steps_per_epoch}')
 
+    optimization = ppo_tools.OptimizationStorage(
+        pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
+        critic_optimizer= Adam(ac.critic.parameters(), lr=vf_lr), 
+        #model_optimizer=Adam(ac.model.parameters(), lr=vf_lr), 
+        MSELoss=torch.nn.MSELoss(reduction="mean"),
+    )    
+
     def sample(data, minibatch=1):
         """Get sample indexes of episodes to train on"""
 
@@ -145,8 +152,6 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         #return loss_pi, pi_info
         return loss_pi, approx_kl, ent, clipfrac        
 
-
-    # Set up function for computing value loss
     def compute_loss_critic(
         agent,
         index,
@@ -192,7 +197,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                 agent=agent,
                 data=data, 
                 index=index, 
-                mapstack=mapstacks_buffer
+                map_stack=mapstacks_buffer
             )
 
             pi_loss_list.append(loss_pi)
@@ -211,18 +216,11 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         for index in sample:
             # Reset existing episode maps
             agent.reset()
-            critic_loss_list.append(compute_loss_critic(data=data, v_maps=map_buffer_maps, step=index))
+            critic_loss_list.append(compute_loss_critic(agent=agent, data=data, map_stack=map_buffer_maps, index=index))
 
         # take mean of everything for batch update
         return torch.stack(critic_loss_list).mean()
     
-    optimization = ppo_tools.OptimizationStorage(
-        pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
-        critic_optimizer= Adam(ac.critic.parameters(), lr=vf_lr), 
-        #model_optimizer=Adam(ac.model.parameters(), lr=vf_lr), 
-        MSELoss=torch.nn.MSELoss(reduction="mean"),
-    )    
-
     def update(env, args, loss_fcn=optimization.MSELoss):
         """Update for the localization and A2C modules"""
         #data = buf.get(logger=logger)
@@ -259,7 +257,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     ac.reset()
                     optimization.pi_optimizer.zero_grad()
                     
-                    loss_pi, kl, entropy, clip_fraction = compute_loss_pi(data, pi_maps, step)
+                    loss_pi, kl, entropy, clip_fraction = compute_loss_pi(agent=agent, data=data, map_stack=pi_maps, index=step)
  
                     if kl < 1.5 * target_kl:
                         loss_pi.backward()
@@ -325,7 +323,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         ac.set_mode("eval")
         ########################
 
-
+    ##########################################################################################################################################
     # Prepare for interaction with environment
     start_time = time.time()
     o, _, _, _ = env.reset()
