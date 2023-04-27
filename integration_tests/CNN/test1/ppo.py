@@ -177,8 +177,9 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         #loss_mod = update_loc_rnn(data,env,loss)
 
         sample_indexes = sample(data=data)
-
-        for kk in range(train_pi_iters):
+        kk = 0
+        kl_bound_flag = False
+        while kk < train_pi_iters and not kl_bound_flag:
             if BATCHED_UPDATE:
                 optimization.pi_optimizer.zero_grad()           
                                      
@@ -190,7 +191,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     optimization.pi_optimizer.step()
                 else:
                     logger.log('Early stopping at step %d due to reaching max kl.'%kk)                    
-                    kk = train_pi_iters # Avoid messy for-loop breaking
+                    kl_bound_flag = True
                 
             elif not BATCHED_UPDATE:
                 for step in sample_indexes:
@@ -204,9 +205,10 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                         optimization.pi_optimizer.step()
                     else:
                         logger.log('Early stopping at step %d due to reaching max kl.'%kk)                        
-                        kk = train_pi_iters # Avoid messy for-loop breaking 
+                        kl_bound_flag = True
                     
                 pi_info = dict(kl = kl, ent = entropy, cf = clip_fraction) # Just for last step
+            kk += 1
                         
 
         # Update value function 
