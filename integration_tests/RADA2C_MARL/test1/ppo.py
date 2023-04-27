@@ -15,59 +15,10 @@ from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params,synchronize,
 from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar,mpi_statistics_vector, num_procs, mpi_min_max_scalar # type: ignore
 
 
-def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0, 
-        steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
-        vf_lr=5e-3, train_pi_iters=40, train_v_iters=15, lam=0.9, max_ep_len=120, save_gif=False,
-        target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None, load_model=0):
 
-    # Special function to avoid certain slowdowns from PyTorch + MPI combo.
-    setup_pytorch_for_mpi()
-    # Set up logger and save configuration
-    logger = EpochLogger(**logger_kwargs)
-    logger.save_config(locals())
-
-    #Set Pytorch random seed
-    torch.manual_seed(seed)
-
-    # Instantiate environment
-    env = env_fn()
-    ac_kwargs['seed'] = seed
-    ac_kwargs['pad_dim'] = 2
-
-    obs_dim = env.observation_space.shape[0]
-    act_dim = env.action_space.shape
-
-    #Instantiate A2C
-    ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
+def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logger, clip_ratio, target_kl):
+    """Update for the localization and A2C modules"""
     
-    if load_model != 0:
-        ac.load_state_dict(torch.load('model.pt'))           
-    
-    # Sync params across processes
-    sync_params(ac)
-
-    #PFGRU args, from Ma et al. 2020
-    bp_args = {
-        'bp_decay' : 0.1,
-        'l2_weight':1.0, 
-        'l1_weight':0.0,
-        'elbo_weight':1.0,
-        'area_scale':env.search_area[2][1]}
-
-    # Count variables
-    var_counts = tuple(core.count_vars(module) for module in [ac.pi,ac.model])
-    logger.log('\nNumber of parameters: \t pi: %d, model: %d \t'%var_counts)
-
-    # Set up trajectory buffer
-    local_steps_per_epoch = int(steps_per_epoch / num_procs())
-    #buf = PPOBuffer(obs_dim, act_dim, local_steps_per_epoch, gamma, lam, ac_kwargs['hidden_sizes_rec'][0])
-    buf = ppo_tools.PPOBuffer(observation_dimension=obs_dim, max_size=local_steps_per_epoch, max_episode_length=120, number_agents=1)
-    
-    save_gif_freq = epochs // 3
-    if proc_id() == 0:
-        print(f'Local steps per epoch: {local_steps_per_epoch}')
-            
-
     def update_a2c(data, env_sim, minibatch=None,iter=None):
         observation_idx = 11
         action_idx = 14
@@ -137,8 +88,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         loss_sum_new = loss_pi
         return loss_sum_new, pi_info, term, (env_sim.search_area[2][1]*loc-(src_tar)).square().mean().sqrt()
 
-
-    def update_model(data, args, loss=None):
+    def update_model(data, args):
         #Update the PFGRU, see Ma et al. 2020 for more details
         ep_form= data['ep_form']
         model_loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
@@ -214,108 +164,180 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             #model_optimizer.step() 
             optimization.model_optimizer.step()
             
-        
         return model_loss
+           
+    #data = buf.get(logger=logger)
+    data = buf.get()
+
+    #Update function if using the PFGRU, fcn. performs multiple updates per call
+    ac.model.train()
+    loss_mod = update_model(data, args)
+
+    #Update function if using the regression GRU
+    #loss_mod = update_loc_rnn(data,env,loss)
+
+    ac.model.eval()
+    min_iters = len(data['ep_form'])
+    kk = 0; term = False
+
+    # Train policy with multiple steps of gradient descent (mini batch)
+    while (not term and kk < train_pi_iters):
+        #Early stop training if KL-div above certain threshold
+        pi_l, pi_info, term, loc_loss = update_a2c(data, env, minibatch=min_iters,iter=kk)
+        kk += 1
     
-    # Set up optimizers and learning rate decay for policy and localization module
-    # pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
-    # model_optimizer = Adam(ac.model.parameters(), lr=vf_lr)
-    # pi_scheduler = torch.optim.lr_scheduler.StepLR(pi_optimizer,step_size=100,gamma=0.99)
-    # model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer,step_size=100,gamma=0.99)
-    # loss = torch.nn.MSELoss(reduction='mean')
+    #Reduce learning rate
+    #pi_scheduler.step()
+    optimization.pi_scheduler.step()                
     
-    optimization = ppo_tools.OptimizationStorage(
-        pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
-        #critic_optimizer= Adam(ac.critic.parameters(), lr=pi_lr),  # TODO change this to own learning rate
-        model_optimizer=Adam(ac.model.parameters(), lr=vf_lr),  # TODO change this to correct name (for PFGRU)
-        MSELoss=torch.nn.MSELoss(reduction="mean"),
-        critic_flag=False,
-    )    
+    #model_scheduler.step()
+    optimization.model_scheduler.step()
+
+    # logger.store(StopIter=kk)
+
+    # Log changes from update
+    kl, ent, cf, loss_v = pi_info['kl'], pi_info['ent'], pi_info['cf'], pi_info['val_loss']
+
+    # logger.store(LossPi=pi_l.item(), LossV=loss_v.item(), LossModel= loss_mod.item(),
+    #                 KL=kl, Entropy=ent, ClipFrac=cf,
+    #                 LocLoss=loc_loss, VarExplain=0)
+
+
+def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0, 
+        steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
+        vf_lr=5e-3, train_pi_iters=40, train_v_iters=15, lam=0.9, max_ep_len=120, save_gif=False,
+        target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None, load_model=0, number_of_agents=1):
+
+    # Special function to avoid certain slowdowns from PyTorch + MPI combo.
+    setup_pytorch_for_mpi()
+    
+    # Set up general logger and save configuration
+    logger = EpochLogger(**logger_kwargs)
+    logger.save_config(locals())
+
+    # Set up individual loggers
+    agent_loggers = [EpochLogger(**logger_kwargs) for _ in range(number_of_agents)]
+    
+    #Set Pytorch random seed
+    torch.manual_seed(seed)
+
+    # Instantiate environment
+    env = env_fn()
+    ac_kwargs['seed'] = seed
+    ac_kwargs['pad_dim'] = 2
+
+    obs_dim = env.observation_space.shape[0]
+
+    #Instantiate A2C
+    #ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
+    agents = [actor_critic(env.observation_space, env.action_space, **ac_kwargs) for _ in range(number_of_agents)]
+    
+    if load_model != 0:
+        for id in range(len(agents)):
+            agents[id].load_state_dict(torch.load('model.pt'))           
+    
+    # Sync params across processes
+    # sync_params(ac)
+
+    #PFGRU args, from Ma et al. 2020
+    bp_args = {
+        'bp_decay' : 0.1,
+        'l2_weight':1.0, 
+        'l1_weight':0.0,
+        'elbo_weight':1.0,
+        'area_scale':env.search_area[2][1]}
+
+    # Count variables
+    var_counts = tuple(core.count_vars(module) for module in [agents[0].pi, agents[0].model])
+    logger.log('\nNumber of parameters: \t pi: %d, model: %d \t'%var_counts)
+
+    # Set up trajectory buffer
+    local_steps_per_epoch = int(steps_per_epoch / num_procs())
+    #buf = PPOBuffer(obs_dim, act_dim, local_steps_per_epoch, gamma, lam, ac_kwargs['hidden_sizes_rec'][0])
+    buffer = [
+        ppo_tools.PPOBuffer(observation_dimension=obs_dim, max_size=local_steps_per_epoch, max_episode_length=120, number_agents=1)
+        for _ in range(len(agents))
+    ]
+    
+    save_gif_freq = epochs // 3
+    if proc_id() == 0:
+        print(f'Local steps per epoch: {local_steps_per_epoch}')
+
+    optimization = [
+        ppo_tools.OptimizationStorage(
+            pi_optimizer=Adam(agents[id].pi.parameters(), lr=pi_lr),
+            #critic_optimizer= Adam(ac.critic.parameters(), lr=pi_lr),  # TODO change this to own learning rate
+            model_optimizer=Adam(agents[id].model.parameters(), lr=vf_lr),  # TODO change this to correct name (for PFGRU)
+            MSELoss=torch.nn.MSELoss(reduction="mean"),
+            critic_flag=False,
+        )   
+    for id in range(number_of_agents)]
 
     # Set up model saving
-    logger.setup_pytorch_saver(ac)
-
-    def update(env, args, loss_fcn=optimization.MSELoss):
-        """Update for the localization and A2C modules"""
-        #data = buf.get(logger=logger)
-        data = buf.get()
-
-        #Update function if using the PFGRU, fcn. performs multiple updates per call
-        ac.model.train()
-        loss_mod = update_model(data, args, loss=loss_fcn)
-
-        #Update function if using the regression GRU
-        #loss_mod = update_loc_rnn(data,env,loss)
-
-        ac.model.eval()
-        min_iters = len(data['ep_form'])
-        kk = 0; term = False
-
-        # Train policy with multiple steps of gradient descent (mini batch)
-        while (not term and kk < train_pi_iters):
-            #Early stop training if KL-div above certain threshold
-            pi_l, pi_info, term, loc_loss = update_a2c(data, env, minibatch=min_iters,iter=kk)
-            kk += 1
-        
-        #Reduce learning rate
-        #pi_scheduler.step()
-        optimization.pi_scheduler.step()                
-        
-        #model_scheduler.step()
-        optimization.model_scheduler.step()
-
-        logger.store(StopIter=kk)
-
-        # Log changes from update
-        kl, ent, cf, loss_v = pi_info['kl'], pi_info['ent'], pi_info['cf'], pi_info['val_loss']
-
-        logger.store(LossPi=pi_l.item(), LossV=loss_v.item(), LossModel= loss_mod.item(),
-                     KL=kl, Entropy=ent, ClipFrac=cf,
-                     LocLoss=loc_loss, VarExplain=0)
+    for id in range(len(agents)):
+        agent_loggers[id].setup_pytorch_saver(agents[id])
 
     # Prepare for interaction with environment
     start_time = time.time()
     o, _, _, _ = env.reset()
-    o = o[0]
     ep_ret, ep_len, done_count, a = 0, 0, 0, -1
-    #stat_buff = core.StatBuff()
-    stat_buff = StatisticStandardization()
-    stat_buff.update(o[0])
+
+    stat_buffers = list()
+    for id in range(len(agents)):
+        stat_buffers.append(StatisticStandardization())
+        stat_buffers[id].update(o[id][0])
     
     ep_ret_ls = []
-    oob = 0
     reduce_v_iters = True
-    ac.model.eval()
+    for id in range(len(agents)):
+        agents[id].model.eval()
+        
+    hidden = [None for _ in range(len(agents))]
     
     # Main loop: collect experience in env and update/log each epoch
     print(f'Proc id: {proc_id()} -> Starting main training loop!', flush=True)
     for epoch in range(epochs):
         #Reset hidden state
-        hidden = ac.reset_hidden()
-        ac.pi.logits_net.v_net.eval()
-        for t in range(local_steps_per_epoch):
-            #Standardize input using running statistics per episode
-            obs_std = o
-            #obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
-            obs_std[0] = stat_buff.standardize(o[0])
+        for id in range(len(agents)):
+            hidden[id] = agents[id].reset_hidden()
+            agents[id].pi.logits_net.v_net.eval()
             
-            #compute action and logp (Actor), compute value (Critic)
-            a, v, logp, hidden, out_pred = ac.step(obs_std, hidden=hidden)
-            next_o, r, d, _ = env.step({0: a})
-            next_o, r, d = next_o[0], r['individual_reward'][0], d[0]
-            ep_ret += r
+        for t in range(local_steps_per_epoch):
+            # Artifact - overwrites o because python
+            obs_std = o
+
+            # obs_std[0] = stat_buff.standardize(o[0])
+            actions = {id: None for id in range(len(agents))}
+            values = []
+            logprobs = []
+            
+            for id in range(len(agents)):
+                obs_std[id] = stat_buffers[id].standardize(o[id][0])
+            
+                #compute action and logp (Actor), compute value (Critic)
+                actions[id], v, logp, hidden[id], _ = agents[id].step(obs_std[id], hidden=hidden[id]) # TODO make take a batch of observations from all agents
+                values.append(v)
+                logprobs.append(logp)
+                
+            next_o, r, d, _ = env.step(actions)
+            d = True if True in d.values() else False
+            
+            ep_ret += r['team_reward']
             ep_len += 1
             ep_ret_ls.append(ep_ret)
 
             #buf.store(obs_std, a, r, v, logp, env.src_coords)
-            buf.store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
-            logger.store(VVals=v)
+            for id in range(len(agents)):
+                buffer[id].store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
+            
+            logger.store(VVals=v[0]) # TODO only taking first agents v
 
             # Update obs (critical!)
             o = next_o
 
             #Update running mean and std
-            stat_buff.update(o[0])
+            for id in range(len(agents)):
+                stat_buffers[id].update(o[id][0])            
 
             timeout = ep_len == max_ep_len
             terminal = d or timeout
@@ -324,31 +346,35 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             if terminal or epoch_ended:
                 if d and not timeout:
                     done_count += 1
-                if env.get_agent_outOfBounds_count(id=0) > 0:
-                    # Log if agent went out of bounds
-                    oob += 1
+
                 if epoch_ended and not(terminal):
                     print(f'Warning: trajectory cut off by epoch at {ep_len} steps and time {t}.', flush=True)
 
                 if timeout or epoch_ended:
                     # if trajectory didn't reach terminal state, bootstrap value target
                     #obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
-                    obs_std[0] = stat_buff.standardize(o[0])
+                    values = []
+                    for id in range(len(agents)):
+                        obs_std[id] = stat_buffers[id].standardize(o[id][0])                    
                     
-                    _, v, _, _, _ = ac.step(obs_std, hidden=hidden)
+                        _, v, _, _, _ = agents[id].step(obs_std[id], hidden=hidden[id])
+                        values.append(v)
                     if epoch_ended:
                         #Set flag to sample new environment parameters
                         env.epoch_end = True
                 else:
-                    v = 0
-                #buf.finish_path(v)
-                buf.GAE_advantage_and_rewardsToGO(v)
+                    values = [0 for _ in range(len(agents))]
+                # buf.GAE_advantage_and_rewardsToGO(v)
+                for id in range(len(agents)):
+                    buffer[id].GAE_advantage_and_rewardsToGO(values[id])
                 
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
                     logger.store(EpRet=ep_ret, EpLen=ep_len)
-                    buf.store_episode_length(episode_length=ep_len)
-
+                    # buf.store_episode_length(episode_length=ep_len)
+                    for id in range(len(agents)):
+                        buffer[id].store_episode_length(episode_length=ep_len)
+                    
                 if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1 ) == epochs)):
                     #Check agent progress during training
                     if proc_id() == 0 and epoch != 0:
@@ -356,37 +382,91 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                                    ep_rew=ep_ret_ls)
                 
                 ep_ret_ls = []
-                stat_buff.reset()
+                # stat_buff.reset()
+                for id in range(len(agents)):
+                    stat_buffers[id].reset()
+                
                 if not env.epoch_end:
                     #Reset detector position and episode tracking
-                    hidden = ac.reset_hidden()
+                    # hidden = ac.reset_hidden()
+                    for id in range(len(agents)):
+                        hidden[id] = agents[id].reset_hidden()
+                        
                     o, _, _, _ = env.reset()
-                    o = o[0]
                     ep_ret, ep_len, a = 0, 0, -1    
                 else:
                     #Sample new environment parameters, log epoch results
-                    oob += env.get_agent_outOfBounds_count(id=0)
-                    logger.store(DoneCount=done_count, OutOfBound=oob)
-                    done_count = 0; oob = 0
+                    logger.store(DoneCount=done_count)
+                    done_count = 0
                     o, _, _, _ = env.reset()
-                    o = o[0]
                     ep_ret, ep_len, a = 0, 0, -1
 
-                stat_buff.update(o[0])
+                # stat_buff.update(o[0])
+                for id in range(len(agents)):
+                    stat_buffers[id].update(o[id][0])
 
         # Save model
         if (epoch % save_freq == 0) or (epoch == epochs-1):
-            logger.save_state(None, None)
-            pass
+            for id in range(len(agents)):
+                agent_loggers.save_state(None, None)
 
-        
         #Reduce localization module training iterations after 100 epochs to speed up training
         if reduce_v_iters and epoch > 99:
             train_v_iters = 5
             reduce_v_iters = False
 
         # Perform PPO update!
-        update(env, bp_args, loss_fcn=optimization.MSELoss)
+        # update(agent, env, bp_args)
+        stop_iteration = np.zeros((len(agents)))
+        kl = np.zeros((len(agents)))
+        entropy = np.zeros((len(agents)))
+        clip_frac = np.zeros((len(agents)))
+        actor_loss = np.zeros((len(agents)))                
+        critic_loss = np.zeros((len(agents)))
+        model_loss = np.zeros((len(agents)))
+        location_loss = np.zeros((len(agents)))
+        
+        for id in range(len(agents)):
+            (
+                actor_loss[id], 
+                critic_loss[id],
+                model_loss[id],                
+                stop_iteration[id],
+                kl[id], 
+                entropy[id], 
+                location_loss[id]
+            ) = update(
+                ac=agents[id], 
+                env=env,
+                args=bp_args,
+                buf=buffer[id],
+                train_pi_iters=train_pi_iters,
+                train_v_iters=train_v_iters,
+                optimization=optimization[id],
+                logger=logger,
+                clip_ratio=clip_ratio,
+                target_kl=target_kl
+                )
+            
+        # logger.store(StopIter=kk)
+
+        # Log changes from update
+        kl, ent, cf, loss_v = kl.mean().item(), entropy.mean().item(), clip_frac.mean().item(), critic_loss.mean().item()
+        loss_pi = actor_loss.mean().item()
+        loss_mod = model_loss.mean().item()
+        loc_loss = location_loss.mean().item()
+
+        logger.store(
+            LossPi=loss_pi,
+            LossV=loss_v, 
+            LossModel= loss_mod,
+            KL=kl, 
+            Entropy=ent, 
+            ClipFrac=cf,
+            LocLoss=loc_loss, 
+            VarExplain=0
+            )            
+        
 
         # Log info about epoch
         logger.log_tabular('Epoch', epoch)
@@ -431,6 +511,7 @@ if __name__ == '__main__':
     parser.add_argument('--net_type',type=str, default='rnn', help='Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp') 
     parser.add_argument('--alpha',type=float,default=0.1, help='Entropy reward term scaling') 
     parser.add_argument('--load_model', type=int, default=0)
+    parser.add_argument('--agents', type=int, default=1)
     
     args = parser.parse_args()
 
@@ -467,11 +548,10 @@ if __name__ == '__main__':
     from rl_tools.run_utils import setup_logger_kwargs # type: ignore
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed,data_dir='../../models/train',env_name=args.env_name)
     
-    
     #Run ppo training function
     ppo(lambda : gym.make(args.env,**init_dims), actor_critic=core.RNNModelActorCritic,
         ac_kwargs=dict(hidden_sizes_pol=[args.hid_pol]*args.l_pol,hidden_sizes_val=[args.hid_val]*args.l_val,
         hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch), gamma=args.gamma, alpha=args.alpha,
         seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,
-        logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model)
+        logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model, number_of_agents=args.agents)
     
