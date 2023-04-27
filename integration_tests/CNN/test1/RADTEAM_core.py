@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt  # type: ignore
 import warnings
 import json
 
-PFGRU = True # If wanting to use the PFGRU TODO turn this into a parameter
+PFGRU = False # If wanting to use the PFGRU TODO turn this into a parameter
 SMALL_VERSION = True
 
 # Maps
@@ -548,7 +548,8 @@ class MapsBuffer:
         for agent_id in observation:
             # Fetch scaled coordinates
             inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[agent_id])
-            inflated_prediction: Tuple[int, int] = self._inflate_coordinates(single_observation=loc_prediciton)
+            if PFGRU:            
+                inflated_prediction: Tuple[int, int] = self._inflate_coordinates(single_observation=loc_prediciton)
 
             last_coordinates: Union[Tuple[int, int], None] = (
                 self.tools.last_coords[agent_id]
@@ -602,7 +603,8 @@ class MapsBuffer:
 
             # Update last coordinates
             self.tools.last_coords[agent_id] = inflated_agent_coordinates
-            self.tools.last_prediction = inflated_prediction
+            if PFGRU:
+                self.tools.last_prediction = inflated_prediction
 
 
         return MapStack(
@@ -628,6 +630,9 @@ class MapsBuffer:
                 self.combined_location_map[inflated_last_coordinates] = 0
                 self.location_map[inflated_last_coordinates] = 0
                 self.others_locations_map[inflated_last_coordinates] = 0
+
+            self.prediction_map[self.tools.last_prediction] = 0
+                
             
             # Reinitialize non-sparse matrices
             self.readings_map: Map = Map(
@@ -654,10 +659,9 @@ class MapsBuffer:
                 self.readings_map[k] = 0
                 self.obstacles_map[k] = 0
                 self.visit_counts_map[k] = 0
+                self.prediction_map[k] = 0
                 
-        self.prediction_map[self.tools.last_prediction] = 0
                 
-
         assert self.obstacles_map.max() == 0 and self.obstacles_map.min() == 0
         assert self.readings_map.max() == 0 and self.readings_map.min() == 0
         assert (self.others_locations_map.max() == 0 and self.others_locations_map.min() == 0)
@@ -1813,16 +1817,27 @@ class CNNBase:
                 ) = self.maps.observation_to_map(state_observation, id, location_prediction)
 
                 # Convert map to tensor
-                actor_map_stack = torch.stack(
-                    [
-                        torch.tensor(prediction_map),
-                        torch.tensor(location_map),
-                        torch.tensor(others_locations_map),
-                        torch.tensor(readings_map),
-                        torch.tensor(visit_counts_map),
-                        torch.tensor(obstacles_map),
-                    ]
-                )
+                if PFGRU:
+                    actor_map_stack = torch.stack(
+                        [
+                            torch.tensor(prediction_map),
+                            torch.tensor(location_map),
+                            torch.tensor(others_locations_map),
+                            torch.tensor(readings_map),
+                            torch.tensor(visit_counts_map),
+                            torch.tensor(obstacles_map),
+                        ]
+                    )
+                else:
+                   actor_map_stack = torch.stack(
+                        [
+                            torch.tensor(location_map),
+                            torch.tensor(others_locations_map),
+                            torch.tensor(readings_map),
+                            torch.tensor(visit_counts_map),
+                            torch.tensor(obstacles_map),
+                        ]
+                    )
                 critic_map_stack = torch.stack(
                     [
                         torch.tensor(combo_location_map),
@@ -1830,7 +1845,7 @@ class CNNBase:
                         torch.tensor(visit_counts_map),
                         torch.tensor(obstacles_map),
                     ]
-                )
+                )                    
         elif SMALL_VERSION:
             with torch.no_grad():
                 (
@@ -1891,7 +1906,7 @@ class CNNBase:
             
                 prediction_tuple: Tuple[float, float] = tuple(location_prediction.tolist()) # type: ignore
             else:
-                prediction_tuple = []
+                prediction_tuple = [] # type: ignore
 
             # Process data and create maps
             batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(
