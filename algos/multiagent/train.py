@@ -326,7 +326,10 @@ class train_PPO:
             ):
                 for id, ac in self.agents.items():
                     ac.agent.pi.logits_net.v_net.eval()
-                    hiddens[id] = ac.reset_hidden()
+
+            for id, ac in self.agents.items():
+                hiddens[id] = ac.reset_hidden()
+
 
             # Start epoch! Episodes end when steps_per_episode is reached, steps_per_epoch is reached, or a terminal state is found
             for steps_in_epoch in range(self.steps_per_epoch):
@@ -346,9 +349,7 @@ class train_PPO:
                     agent_thoughts[id], heatmaps = ac.step(
                         observations=observations, hidden=hiddens[id], message=infos
                     )
-                    hiddens[id] = agent_thoughts[
-                        id
-                    ].hiddens  # For RAD-A2C - save latest hiddens for use in next steps.
+                    hiddens[id] = agent_thoughts[id].hidden  # For RAD-A2C - save latest hiddens for use in next steps.
 
                 # Create action list to send to environment
                 agent_action_decisions = {
@@ -508,14 +509,10 @@ class train_PPO:
                         for id in self.agents:
                             self.stat_buffers[id].reset()
 
-                    # For RAD-A2C - If not at the end of an epoch, reset RAD-A2C agents for incoming new episode
+                    # If not at the end of an epoch, reset RAD-A2C agents for incoming new episode
                     if not epoch_ended:  # not env.epoch_end:
-                        if (
-                            self.actor_critic_architecture == "rnn"
-                            or self.actor_critic_architecture == "mlp"
-                        ):
-                            for id, ac in self.agents.items():
-                                hiddens[id] = ac.reset_hidden()
+                        for id, ac in self.agents.items():
+                            hiddens[id] = ac.reset_hidden()
                     # If at the end of an epoch, log epoch results and reset counters
                     else:
                         for id in self.agents:

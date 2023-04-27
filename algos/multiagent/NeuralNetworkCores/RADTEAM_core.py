@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt  # type: ignore
 import warnings
 import json
 
-PFGRU = True # If wanting to use the PFGRU TODO turn this into a parameter
+PFGRU = False # If wanting to use the PFGRU TODO turn this into a parameter
 
 # Maps
 #: [New Type] Array indicies to access a GridSquare (x, y). Type: Tuple[float, float]
@@ -1850,6 +1850,7 @@ class CNNBase:
         with torch.no_grad():
 
             # Extract all observations for PFGRU
+            # TODO create tensor from numpy array, not list of numpy arrays
             obs_list = [state_observation[i][:3] for i in range(self.number_of_agents)] # Create a list of just readings and locations for all agents
             obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)
 

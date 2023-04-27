@@ -84,13 +84,13 @@
         // "10",
         "--obstruct",
         "0",
-        // "--seed",
-        // "2",
+        "--seed",
+        "30176",
         // "--exp-name",
         // "TEAM-RAD",
         "--net-type",
         "cnn",
-        "--no-enforce-boundaries"
+        // "--no-enforce-boundaries"
         // "--DEBUG",
         // "True",
         // "--save-freq",

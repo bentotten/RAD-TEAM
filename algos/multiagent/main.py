@@ -35,7 +35,7 @@ except ModuleNotFoundError:
 except:
     raise Exception
 
-PROFILE = False
+PROFILE = True
 
 
 def log_state(error: Exception) -> None:
@@ -568,6 +568,7 @@ def main() -> None:
                 resolution_multiplier=args.resolution_multiplier,
                 GlobalCritic=None,
                 save_path=save_path,
+                predictor_hidden_size= args.hid_rec
             )
 
         # Set up static PPO args. NOTE: Shared data structure between agents, do not add dynamic data here!

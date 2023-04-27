@@ -699,7 +699,7 @@ class AgentPPO:
 
         :param observations: (Dict) Observations from all agents.
         :param hiddens: (Tuple) Hidden layer values for individual agent. Only compatible with RAD-A2C.
-        :param message: (Dict) Information from the episode.
+        :param message: (Dit) Information from the episode.
 
         """
         # RAD-A2C compatibility
@@ -721,8 +721,8 @@ class AgentPPO:
             #     )
         else:
             results, heatmaps = self.agent.select_action(
-                observations, self.id
-            )  # TODO add in hidden layer shenanagins for PFGRU use
+                observations, self.id, hidden=hidden
+            )  
         return results, heatmaps
 
     def reset_agent(self) -> None:
@@ -733,15 +733,7 @@ class AgentPPO:
         self.agent.reset()
 
     def reset_hidden(self) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
-        if (
-            self.actor_critic_architecture == "rnn"
-            or self.actor_critic_architecture == "mlp"
-        ):
-            return self.agent.reset_hidden()  # type: ignore
-        else:
-            raise ValueError(
-                "Attempting to reset hidden layers on non-RAD-A2C architecture!"
-            )
+        return self.agent.reset_hidden()  # type: ignore
 
     def update_agent(
         self, logger: EpochLogger = None
@@ -830,13 +822,14 @@ class AgentPPO:
                 self.agent_optimizer.pi_optimizer.zero_grad()
 
                 # actor_loss_results = self.compute_batched_losses_pi(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
-                actor_loss_results = self.compute_batched_losses_pi(
+                # actor_loss_results = self.compute_batched_losses_pi(
+                pi_loss, kl, entropy, clip_fraction = self.compute_batched_losses_pi(                 
                     data=data, sample=sample_indexes, mapstacks_buffer=actor_maps_buffer
                 )
 
                 # Check Actor KL Divergence
-                if actor_loss_results["kl"].item() < 1.5 * self.target_kl:
-                    actor_loss_results["pi_loss"].backward()
+                if kl < 1.5 * self.target_kl:
+                    pi_loss.backward()
 
                     mpi_avg_grads(self.agent.pi)  # Average gradients across processes
 
@@ -863,7 +856,7 @@ class AgentPPO:
                         sample=sample_indexes,
                         map_buffer_maps=critic_maps_buffer,
                     )
-                    critic_loss_results["critic_loss"].backward()
+                    critic_loss_results.backward()
                     
                     # Average gradients across processes                    
                     mpi_avg_grads(self.agent.critic)
@@ -874,24 +867,24 @@ class AgentPPO:
 
                 results = UpdateResult(
                     stop_iteration = kk,
-                    loss_policy=actor_loss_results["pi_loss"].item(),
-                    loss_critic=critic_loss_results["critic_loss"].item(),
+                    loss_policy=pi_loss.item(),
+                    loss_critic=critic_loss_results.item(),
                     loss_predictor=model_loss.item(),  # TODO implement when PFGRU is working for CNN
-                    kl_divergence=actor_loss_results["kl"],
-                    Entropy=actor_loss_results["entropy"],
-                    ClipFrac=actor_loss_results["clip_fraction"],
+                    kl_divergence=kl,
+                    Entropy=entropy,
+                    ClipFrac=clip_fraction,
                     LocLoss=torch.tensor(0),  
                     VarExplain=0,
                 )
             else:
                 results = UpdateResult(
                     stop_iteration = kk,
-                    loss_policy=actor_loss_results["pi_loss"].item(),
+                    loss_policy=pi_loss.item(),
                     loss_critic=None,
                     loss_predictor=model_loss.item(),  # TODO implement when PFGRU is working for CNN
-                    kl_divergence=actor_loss_results["kl"],
-                    Entropy=actor_loss_results["entropy"],
-                    ClipFrac=actor_loss_results["clip_fraction"],
+                    kl_divergence=kl,
+                    Entropy=entropy,
+                    ClipFrac=clip_fraction,
                     LocLoss=torch.tensor(0),  
                     VarExplain=0,
                 )
@@ -915,24 +908,24 @@ class AgentPPO:
         for index in sample:
             # Reset existing episode maps
             self.reset_agent()
-            single_pi_l, single_pi_info = self.compute_loss_pi(
+            loss_pi, approx_kl, ent, clipfrac = self.compute_loss_pi(
                 data=data, index=index, map_stack=mapstacks_buffer[index]
             )
 
-            pi_loss_list.append(single_pi_l)
-            kl_list.append(single_pi_info["kl"])
-            entropy_list.append(single_pi_info["entropy"])
-            clip_fraction_list.append(single_pi_info["clip_fraction"])
+            pi_loss_list.append(loss_pi)
+            kl_list.append(approx_kl)
+            entropy_list.append(ent)
+            clip_fraction_list.append(clipfrac)
 
         # take mean of everything for batch update
-        # TODO Check if better to just take a gradient step with every sample
-        results = {
-            "pi_loss": torch.stack(pi_loss_list).mean(),
-            "kl": np.mean(kl_list),
-            "entropy": np.mean(entropy_list),
-            "clip_fraction": np.mean(clip_fraction_list),
-        }
-        return results
+        # results = {
+        #     "pi_loss": torch.stack(pi_loss_list).mean(),
+        #     "kl": np.mean(kl_list),
+        #     "entropy": np.mean(entropy_list),
+        #     "clip_fraction": np.mean(clip_fraction_list),
+        # }
+        # return results
+        return torch.stack(pi_loss_list).mean(), np.mean(kl_list), np.mean(entropy_list), np.mean(clip_fraction_list)
 
     def compute_loss_pi(
         self,
@@ -994,7 +987,8 @@ class AgentPPO:
         clipfrac = torch.as_tensor(clipped, dtype=torch.float32).item()
         pi_info = dict(kl=approx_kl, entropy=ent, clip_fraction=clipfrac)
 
-        return loss_pi, pi_info
+        #return loss_pi, pi_info
+        return loss_pi, approx_kl, ent, clipfrac        
 
     def compute_batched_losses_critic(self, data, map_buffer_maps, sample):
         """Simulates batched processing through CNN. Wrapper for single-batch computing critic loss"""
@@ -1014,8 +1008,8 @@ class AgentPPO:
             )
 
         # take mean of everything for batch update
-        results = {"critic_loss": torch.stack(critic_loss_list).mean()}
-        return results
+        # results = {"critic_loss": torch.stack(critic_loss_list).mean()}
+        return torch.stack(critic_loss_list).mean()
 
     def compute_loss_critic(
         self,

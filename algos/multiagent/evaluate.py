@@ -343,7 +343,7 @@ class EpisodeRunner:
         stat_buffers: Dict[int, StatisticStandardization] = dict()
 
         # Refresh environment with test env parameters
-        observations = self.env.refresh_environment(env_dict=self.env_sets, id=, num_obs=self.obstruction_count) # TODO locate id
+        observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id, num_obs=self.obstruction_count)
 
         for agent in self.agents.values():
             agent.set_mode("eval")
@@ -451,7 +451,7 @@ class EpisodeRunner:
                 steps_in_episode = 0
                 terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
 
-                observations = self.env.refresh_environment(env_dict=self.env_sets, id=, num_obs=self.obstruction_count) # TODO should this be id ir 0
+                observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id, num_obs=self.obstruction_count) # TODO should this be id ir 0
 
                 # Reset stat buffer for RAD-A2C
                 if (

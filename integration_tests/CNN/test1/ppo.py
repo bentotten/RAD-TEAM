@@ -14,7 +14,7 @@ from rl_tools.logx import EpochLogger # type: ignore
 from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params,synchronize, mpi_avg_grads, sync_params_stats # type: ignore
 from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar,mpi_statistics_vector, num_procs, mpi_min_max_scalar # type: ignore
 
-BATCHED_UPDATE = False
+BATCHED_UPDATE = True
 
 def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
@@ -132,7 +132,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             # Reset existing episode maps
             agent.reset()
             loss_pi, approx_kl, ent, clipfrac = compute_loss_pi(
-                data=data, index=index, map_stack=mapstacks_buffer[index]
+                data=data, step=index, pi_maps=mapstacks_buffer
             )
 
             pi_loss_list.append(loss_pi)
@@ -151,7 +151,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         for index in sample:
             # Reset existing episode maps
             agent.reset()
-            critic_loss_list.append(compute_loss_v(data=data, map_stack=map_buffer_maps[index], index=index))
+            critic_loss_list.append(compute_loss_v(data=data, v_maps=map_buffer_maps, step=index))
 
         # take mean of everything for batch update
         return torch.stack(critic_loss_list).mean()
@@ -192,6 +192,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                 else:
                     logger.log('Early stopping at step %d due to reaching max kl.'%kk)                    
                     kl_bound_flag = True
+                    break
                 
             elif not BATCHED_UPDATE:
                 for step in sample_indexes:
@@ -206,6 +207,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     else:
                         logger.log('Early stopping at step %d due to reaching max kl.'%kk)                        
                         kl_bound_flag = True
+                        break
                     
                 pi_info = dict(kl = kl, ent = entropy, cf = clip_fraction) # Just for last step
             kk += 1
@@ -215,12 +217,12 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         for i in range(train_v_iters):
             if BATCHED_UPDATE:
                 optimization.critic_optimizer.zero_grad()
-                critic_loss = compute_batched_losses_critic(agent=ac, data=data, sample=sample_indexes, map_buffer_maps=v_maps)
+                loss_v = compute_batched_losses_critic(agent=ac, data=data, sample=sample_indexes, map_buffer_maps=v_maps)
                 
-                critic_loss.backward()
+                loss_v.backward()
                 optimization.critic_optimizer.step()
                 
-            else:
+            elif not BATCHED_UPDATE:
                 for step in sample_indexes:
                     ac.reset()
 
@@ -260,7 +262,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             VarExplain=0,
         )
         
-        ac.set_mode("val")
+        ac.set_mode("eval")
         ########################
 
 
