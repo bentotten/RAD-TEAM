@@ -1751,7 +1751,7 @@ class CNNBase:
                 self.critic = EmptyCritic()
             else:
                 self.critic = Critic(map_dim=self.maps.map_dimensions)  
-
+            
         elif SMALL_VERSION:
             self.pi = Actor(
                     map_dim=self.maps.map_dimensions, 
@@ -1891,7 +1891,7 @@ class CNNBase:
             
                 prediction_tuple: Tuple[float, float] = tuple(location_prediction.tolist()) # type: ignore
             else:
-                prediction_tuple = ()
+                prediction_tuple = []
 
             # Process data and create maps
             batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(

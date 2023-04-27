@@ -17,7 +17,7 @@ from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar
 
 def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
-        vf_lr=5e-3, train_pi_iters=40, train_v_iters=15, lam=0.9, max_ep_len=120, save_gif=False,
+        vf_lr=3e-4, train_pi_iters=40, train_v_iters=40, lam=0.9, max_ep_len=120, save_gif=False,
         target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None, load_model=0):
 
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
@@ -31,20 +31,31 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
 
     # Instantiate environment
     env = env_fn()
-    ac_kwargs['seed'] = seed
-    ac_kwargs['pad_dim'] = 2
+    #ac_kwargs['seed'] = seed
+    # ac_kwargs['pad_dim'] = 2
+    ac_kwargs["id"] = 0
+    ac_kwargs["action_space"] = env.detectable_directions  # Usually 8
+    ac_kwargs["observation_space"] = env.observation_space.shape[0]  # Also known as state dimensions: The dimensions of the observation returned from the environment. Usually 11
+    ac_kwargs["detector_step_size"] = env.step_size  # Usually 100 cm
+    ac_kwargs["environment_scale"] = env.scale
+    ac_kwargs["bounds_offset"] = env.observation_area
+    ac_kwargs["grid_bounds"] = env.scaled_grid_max    
+    ac_kwargs["steps_per_episode"] = 120
+    ac_kwargs["number_of_agents"] = 1
+    ac_kwargs["enforce_boundaries"] = env.enforce_grid_boundaries
 
     obs_dim = env.observation_space.shape[0]
-    act_dim = env.action_space.shape
 
     #Instantiate A2C
-    ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
+    ac = actor_critic(**ac_kwargs)
     
     if load_model != 0:
         ac.load_state_dict(torch.load('model.pt'))           
     
     # Sync params across processes
-    sync_params(ac)
+    sync_params(ac.pi)
+    sync_params(ac.critic)
+    #sync_params(ac.model)
 
     #PFGRU args, from Ma et al. 2020
     bp_args = {
@@ -55,8 +66,8 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         'area_scale':env.search_area[2][1]}
 
     # Count variables
-    var_counts = tuple(core.count_vars(module) for module in [ac.pi,ac.model])
-    logger.log('\nNumber of parameters: \t pi: %d, model: %d \t'%var_counts)
+    var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.critic])
+    logger.log('\nNumber of parameters: \t pi: %d, critic: %d \t'%var_counts)
 
     # Set up trajectory buffer
     local_steps_per_epoch = int(steps_per_epoch / num_procs())
@@ -67,156 +78,35 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     if proc_id() == 0:
         print(f'Local steps per epoch: {local_steps_per_epoch}')
             
+    def compute_loss_pi(data, step):
+        obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
+        mapstacks = data['actor_mapstacks']
 
-    def update_a2c(data, env_sim, minibatch=None,iter=None):
-        observation_idx = 11
-        action_idx = 14
-        logp_old_idx = 13
-        advantage_idx = 11
-        return_idx = 12
-        source_loc_idx = 15
+        # Policy loss
+        logp, dist_entropy = ac.step_keep_gradient_for_actor(actor_mapstack=mapstacks[step], action_taken=act[step])
+        ratio = torch.exp(logp - logp_old)
+        clip_adv = torch.clamp(ratio, 1-clip_ratio, 1+clip_ratio) * adv # Alpha and entropy here?
+        loss_pi = -(torch.min(ratio * adv, clip_adv)).mean()
+
+        # Useful extra info
+        approx_kl = (logp_old - logp).mean().item()
+        ent = dist_entropy.mean().item()
+        clipped = ratio.gt(1+clip_ratio) | ratio.lt(1-clip_ratio)
+        clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
+        pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac)
+
+        return loss_pi, pi_info
+
+    # Set up function for computing value loss
+    def compute_loss_v(data, step):
+        ret = torch.unsqueeze(data['ret'][step], 0)
+        mapstacks = data['critic_mapstacks']
         
-        ep_form= data['ep_form']
-        pi_info = dict(kl=[], ent=[], cf=[], val= np.array([]), val_loss = [])
-        ep_select = np.random.choice(np.arange(0,len(ep_form)),size=int(minibatch),replace=False)
-        ep_form = [ep_form[idx] for idx in ep_select]
-        loss_sto = torch.zeros((len(ep_form),4),dtype=torch.float32)
-        loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
-        loss_arr = torch.autograd.Variable(loss_arr_buff)
-
-        for ii,ep in enumerate(ep_form):
-            #For each set of episodes per process from an epoch, compute loss 
-            trajectories = ep[0]
-            hidden = ac.reset_hidden()
-            obs, act, logp_old, adv, ret, src_tar = trajectories[:,:observation_idx], trajectories[:,action_idx],trajectories[:,logp_old_idx], \
-                                                     trajectories[:,advantage_idx], trajectories[:,return_idx,None], trajectories[:,source_loc_idx:].clone()
-            #Calculate new log prob.
-            pi, val, logp, loc = ac.grad_step(obs, act, hidden=hidden)
-            logp_diff = logp_old - logp 
-            ratio = torch.exp(logp - logp_old)
-
-            clip_adv = torch.clamp(ratio, 1-clip_ratio, 1+clip_ratio) * adv
-            clipped = ratio.gt(1+clip_ratio) | ratio.lt(1-clip_ratio)
-
-            #Useful extra info
-            clipfrac = torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
-            approx_kl = logp_diff.detach().mean().item()
-            ent = pi.entropy().detach().mean().item()
-            
-            #val_loss = loss(val,ret)
-            val_loss = optimization.MSELoss(val, ret)
-
-            loss_arr[ii] = -(torch.min(ratio * adv, clip_adv).mean() - 0.01*val_loss + alpha * ent)
-            loss_sto[ii,0] = approx_kl; loss_sto[ii,1] = ent; loss_sto[ii,2] = clipfrac; loss_sto[ii,3] = val_loss.detach()
-            
-
-        mean_loss = loss_arr.mean()
-        means = loss_sto.mean(axis=0)
-        loss_pi, approx_kl, ent, clipfrac, loss_val = mean_loss, means[0].detach(), means[1].detach(), means[2].detach(), means[3].detach()
-        pi_info['kl'].append(approx_kl), pi_info['ent'].append(ent), pi_info['cf'].append(clipfrac), pi_info['val_loss'].append(loss_val)
+        value = ac.step_keep_gradient_for_critic(critic_mapstack=mapstacks[step])
+        loss = optimization.MSELoss(value, ret)
         
-        #Average KL across processes 
-        kl = mpi_avg(pi_info['kl'][-1])
-        if kl.item() < 1.5 * target_kl:
-            #pi_optimizer.zero_grad() 
-            optimization.pi_optimizer.zero_grad()
-            
-            loss_pi.backward()
-            #Average gradients across processes
-            mpi_avg_grads(ac.pi)
-            
-            #pi_optimizer.step()
-            optimization.pi_optimizer.step()
-            term = False
-        else:
-            term = True
-            if proc_id() == 0:
-                logger.log('Terminated at %d steps due to reaching max kl.'%iter)
+        return loss
 
-        pi_info['kl'], pi_info['ent'], pi_info['cf'], pi_info['val_loss'] = pi_info['kl'][0].numpy(), pi_info['ent'][0].numpy(), pi_info['cf'][0].numpy(), pi_info['val_loss'][0].numpy()
-        loss_sum_new = loss_pi
-        return loss_sum_new, pi_info, term, (env_sim.search_area[2][1]*loc-(src_tar)).square().mean().sqrt()
-
-    
-    def update_model(data, args, loss=None):
-        #Update the PFGRU, see Ma et al. 2020 for more details
-        ep_form= data['ep_form']
-        model_loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
-        source_loc_idx = 15
-        o_idx = 3
-
-        for jj in range(train_v_iters):
-            model_loss_arr_buff.zero_()
-            model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
-            for ii,ep in enumerate(ep_form):
-                sl = len(ep[0])
-                hidden = ac.reset_hidden()[0]
-                src_tar =  ep[0][:,source_loc_idx:].clone()
-                src_tar[:,:2] = src_tar[:,:2]/args['area_scale']
-                obs_t = torch.as_tensor(ep[0][:,:o_idx], dtype=torch.float32)
-                loc_pred = torch.empty_like(src_tar)
-                particle_pred = torch.empty((sl,ac.model.num_particles,src_tar.shape[1]))
-                
-                bpdecay_params = np.exp(args['bp_decay'] * np.arange(sl))
-                bpdecay_params = bpdecay_params / np.sum(bpdecay_params)
-                for zz,meas in enumerate(obs_t):
-                    loc, hidden = ac.model(meas, hidden)
-                    particle_pred[zz] = ac.model.hid_obs(hidden[0])
-                    loc_pred[zz,:] = loc
-
-                bpdecay_params = torch.FloatTensor(bpdecay_params)
-                bpdecay_params = bpdecay_params.unsqueeze(-1)
-                l2_pred_loss = torch.nn.functional.mse_loss(loc_pred.squeeze(), src_tar.squeeze(), reduction='none') * bpdecay_params
-                l1_pred_loss = torch.nn.functional.l1_loss(loc_pred.squeeze(), src_tar.squeeze(), reduction='none') * bpdecay_params
-                
-                l2_loss = torch.sum(l2_pred_loss)
-                l1_loss = 10*torch.mean(l1_pred_loss)
-
-                pred_loss = args['l2_weight'] * l2_loss + args['l1_weight'] * l1_loss
-
-                total_loss = pred_loss
-                particle_pred = particle_pred.transpose(0, 1).contiguous()
-
-                particle_gt = src_tar.repeat(ac.model.num_particles, 1, 1)
-                l2_particle_loss = torch.nn.functional.mse_loss(particle_pred, particle_gt, reduction='none') * bpdecay_params
-                l1_particle_loss = torch.nn.functional.l1_loss(particle_pred, particle_gt, reduction='none') * bpdecay_params
-
-                # p(y_t| \tau_{1:t}, x_{1:t}, \theta) is assumed to be a Gaussian with variance = 1.
-                # other more complicated distributions could be used to improve the performance
-                y_prob_l2 = torch.exp(-l2_particle_loss).view(ac.model.num_particles, -1, sl, 2)
-                l2_particle_loss = - y_prob_l2.mean(dim=0).log()
-
-                y_prob_l1 = torch.exp(-l1_particle_loss).view(ac.model.num_particles, -1, sl, 2)
-                l1_particle_loss = - y_prob_l1.mean(dim=0).log()
-
-                xy_l2_particle_loss = torch.mean(l2_particle_loss)
-                l2_particle_loss = xy_l2_particle_loss
-
-                xy_l1_particle_loss = torch.mean(l1_particle_loss)
-                l1_particle_loss = 10 * xy_l1_particle_loss
-
-                belief_loss = args['l2_weight'] * l2_particle_loss + args['l1_weight'] * l1_particle_loss
-                total_loss = total_loss + args['elbo_weight'] * belief_loss
-
-                model_loss_arr[ii] = total_loss
-            
-            model_loss = model_loss_arr.mean()
-            
-            #model_optimizer.zero_grad()
-            optimization.model_optimizer.zero_grad()
-            
-            model_loss.backward()
-
-            #Average gradients across the processes
-            mpi_avg_grads(ac.model)
-            torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
-            
-            #model_optimizer.step() 
-            optimization.model_optimizer.step()
-            
-        
-        return model_loss
-    
     # Set up optimizers and learning rate decay for policy and localization module
     # pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
     # model_optimizer = Adam(ac.model.parameters(), lr=vf_lr)
@@ -226,8 +116,8 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     
     optimization = ppo_tools.OptimizationStorage(
         pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
-        #critic_optimizer= Adam(ac.critic.parameters(), lr=pi_lr),  # TODO change this to own learning rate
-        model_optimizer=Adam(ac.model.parameters(), lr=vf_lr),  # TODO change this to correct name (for PFGRU)
+        critic_optimizer= Adam(ac.critic.parameters(), lr=vf_lr), 
+        #model_optimizer=Adam(ac.model.parameters(), lr=vf_lr), 
         MSELoss=torch.nn.MSELoss(reduction="mean"),
         critic_flag=False,
     )    
@@ -241,81 +131,114 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         data = buf.get()
 
         #Update function if using the PFGRU, fcn. performs multiple updates per call
-        ac.model.train()
-        loss_mod = update_model(data, args, loss=loss_fcn)
+        #ac.model.train()
+        #loss_mod = update_model(data, args, loss=loss_fcn)
 
         #Update function if using the regression GRU
         #loss_mod = update_loc_rnn(data,env,loss)
 
-        ac.model.eval()
+        #ac.model.eval()
         min_iters = len(data['ep_form'])
         kk = 0; term = False
 
-        # Train policy with multiple steps of gradient descent (mini batch)
-        while (not term and kk < train_pi_iters):
-            #Early stop training if KL-div above certain threshold
-            pi_l, pi_info, term, loc_loss = update_a2c(data, env, minibatch=min_iters,iter=kk)
-            kk += 1
+        for i in range(train_pi_iters):
+            for step in range(len(data['obs'])):
+                optimization.pi_optimizer.zero_grad()
+                loss_pi, pi_info = compute_loss_pi(data, step)
+                kl = mpi_avg(pi_info['kl'])
+
+                loss_pi.backward()
+                mpi_avg_grads(ac.pi)    # average grads across MPI processes
+                optimization.pi_optimizer.step()        
+            if kl > 1.5 * target_kl:
+                logger.log('Early stopping at step %d due to reaching max kl.'%i)
+                break    
+
+        # Update value function 
+        for i in range(train_v_iters):
+            for step in range(len(data['obs'])):
+            
+                optimization.critic_optimizer.zero_grad()
+                loss_v = compute_loss_v(data, step)
+                loss_v.backward()
+                mpi_avg_grads(ac.critic)    # average grads across MPI processes
+                optimization.critic_optimizer.step()            
         
         #Reduce learning rate
         #pi_scheduler.step()
         optimization.pi_scheduler.step()                
-        
+        optimization.critic_scheduler.step()        
         #model_scheduler.step()
-        optimization.model_scheduler.step()
+        #optimization.model_scheduler.step()
 
         logger.store(StopIter=kk)
 
         # Log changes from update
         kl, ent, cf, loss_v = pi_info['kl'], pi_info['ent'], pi_info['cf'], pi_info['val_loss']
 
-        logger.store(LossPi=pi_l.item(), LossV=loss_v.item(), LossModel= loss_mod.item(),
-                     KL=kl, Entropy=ent, ClipFrac=cf,
-                     LocLoss=loc_loss, VarExplain=0)
+        # Log changes from update
+        kl, ent, cf = (
+            pi_info["kl"],
+            pi_info["ent"],
+            pi_info["cf"],
+        )
+
+        logger.store(
+            LossPi=loss_pi.item(),
+            LossV=loss_v.item(),
+            LossModel=0, # loss_mod
+            KL=kl,
+            Entropy=ent,
+            ClipFrac=cf,
+            LocLoss=0,
+            VarExplain=0,
+        )
 
     # Prepare for interaction with environment
     start_time = time.time()
     o, _, _, _ = env.reset()
     o = o[0]
     ep_ret, ep_len, done_count, a = 0, 0, 0, -1
-    #stat_buff = core.StatBuff()
-    stat_buff = StatisticStandardization()
-    stat_buff.update(o[0])
-    
+
     ep_ret_ls = []
     oob = 0
-    reduce_v_iters = True
-    ac.model.eval()
+
+    ac.set_mode("eval")
+
     
     # Main loop: collect experience in env and update/log each epoch
     print(f'Proc id: {proc_id()} -> Starting main training loop!', flush=True)
     for epoch in range(epochs):
         #Reset hidden state
-        hidden = ac.reset_hidden()
-        ac.pi.logits_net.v_net.eval()
+        #hidden = ac.reset_hidden()
+        hidden = []
         for t in range(local_steps_per_epoch):
             #Standardize input using running statistics per episode
             obs_std = o
-            #obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
-            obs_std[0] = stat_buff.standardize(o[0])
             
             #compute action and logp (Actor), compute value (Critic)
-            a, v, logp, hidden, out_pred = ac.step(obs_std, hidden=hidden)
-            next_o, r, d, _ = env.step({0: a})
+            result, heatmap_stack = ac.step({0: obs_std}, hidden=hidden)
+            next_o, r, d, _ = env.step({0: result.action})
             next_o, r, d = next_o[0], r['individual_reward'][0], d[0]
             ep_ret += r
             ep_len += 1
             ep_ret_ls.append(ep_ret)
 
             #buf.store(obs_std, a, r, v, logp, env.src_coords)
-            buf.store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
-            logger.store(VVals=v)
-
+            buf.store(
+                obs=obs_std,
+                act=result.action,
+                val=result.state_value,
+                logp=result.action_logprob,
+                rew=r,
+                src=env.src_coords,
+                full_observation={0: obs_std},
+                heatmap_stacks=heatmap_stack,
+                terminal=d,
+                location_prediction=result.loc_pred,
+            )
             # Update obs (critical!)
             o = next_o
-
-            #Update running mean and std
-            stat_buff.update(o[0])
 
             timeout = ep_len == max_ep_len
             terminal = d or timeout
@@ -332,10 +255,10 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
 
                 if timeout or epoch_ended:
                     # if trajectory didn't reach terminal state, bootstrap value target
-                    #obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
-                    obs_std[0] = stat_buff.standardize(o[0])
                     
-                    _, v, _, _, _ = ac.step(obs_std, hidden=hidden)
+                    result, _ = ac.step({0: obs_std}, hidden=hidden)
+                    v = result.state_value
+                    
                     if epoch_ended:
                         #Set flag to sample new environment parameters
                         env.epoch_end = True
@@ -356,10 +279,9 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                                    ep_rew=ep_ret_ls)
                 
                 ep_ret_ls = []
-                stat_buff.reset()
                 if not env.epoch_end:
                     #Reset detector position and episode tracking
-                    hidden = ac.reset_hidden()
+                    #hidden = ac.reset_hidden()
                     o, _, _, _ = env.reset()
                     o = o[0]
                     ep_ret, ep_len, a = 0, 0, -1    
@@ -367,26 +289,27 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     #Sample new environment parameters, log epoch results
                     oob += env.get_agent_outOfBounds_count(id=0)
                     logger.store(DoneCount=done_count, OutOfBound=oob)
-                    done_count = 0; oob = 0
+                    done_count = 0; 
+                    oob = 0
                     o, _, _, _ = env.reset()
                     o = o[0]
                     ep_ret, ep_len, a = 0, 0, -1
 
-                stat_buff.update(o[0])
+                # Clear maps for next episode
+                ac.reset()
 
         # Save model
         if (epoch % save_freq == 0) or (epoch == epochs-1):
-            logger.save_state(None, None)
+            fpath = "pyt_save"
+            fpath = os.path.join(logger.output_dir, fpath)
+            os.makedirs(fpath, exist_ok=True)
+            ac.save(checkpoint_path=fpath)            
+        
             pass
 
-        
-        #Reduce localization module training iterations after 100 epochs to speed up training
-        if reduce_v_iters and epoch > 99:
-            train_v_iters = 5
-            reduce_v_iters = False
 
         # Perform PPO update!
-        update(env, bp_args, loss_fcn=optimization.MSELoss)
+        update(env, bp_args)
 
         # Log info about epoch
         logger.log_tabular('Epoch', epoch)
@@ -467,11 +390,18 @@ if __name__ == '__main__':
     from rl_tools.run_utils import setup_logger_kwargs # type: ignore
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed,data_dir='../../models/train',env_name=args.env_name)
     
+    ac_kwargs = dict(
+        #hidden_sizes_pol=[args.hid_pol]*args.l_pol,
+        #hidden_sizes_val=[args.hid_val]*args.l_val, 
+        predictor_hidden_size=args.hid_rec, 
+        #hidden=[args.hid_gru], 
+        #net_type=args.net_type,
+        #batch_s=args.batch
+    )
     
     #Run ppo training function
     ppo(lambda : gym.make(args.env,**init_dims), actor_critic=CNNBase,
-        ac_kwargs=dict(hidden_sizes_pol=[args.hid_pol]*args.l_pol,hidden_sizes_val=[args.hid_val]*args.l_val,
-        hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch), gamma=args.gamma, alpha=args.alpha,
+        ac_kwargs=ac_kwargs, gamma=args.gamma, alpha=args.alpha,
         seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,
         logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model)
     

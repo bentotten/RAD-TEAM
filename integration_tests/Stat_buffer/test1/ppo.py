@@ -137,7 +137,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         loss_sum_new = loss_pi
         return loss_sum_new, pi_info, term, (env_sim.search_area[2][1]*loc-(src_tar)).square().mean().sqrt()
 
-    
+
     def update_model(data, args, loss=None):
         #Update the PFGRU, see Ma et al. 2020 for more details
         ep_form= data['ep_form']

@@ -124,7 +124,7 @@ class OptimizationStorage:
     """
     critic_flag: bool
     pi_optimizer: torch.optim.Optimizer
-    model_optimizer: torch.optim.Optimizer
+    model_optimizer: Union[torch.optim.Optimizer, None] = field(default=None)    
     critic_optimizer: Union[torch.optim.Optimizer, None] = field(default=None)    
 
     # Initialized elsewhere
@@ -143,9 +143,12 @@ class OptimizationStorage:
         self.pi_scheduler = torch.optim.lr_scheduler.StepLR(
             self.pi_optimizer, step_size=100, gamma=0.99
         )
-        self.model_scheduler = torch.optim.lr_scheduler.StepLR(
-            self.model_optimizer, step_size=100, gamma=0.99
-        )
+        if self.model_optimizer:
+            self.model_scheduler = torch.optim.lr_scheduler.StepLR(
+                self.model_optimizer, step_size=100, gamma=0.99
+            )
+        else:
+            self.model_optimizer = None
 
         if self.critic_flag:
             self.critic_scheduler = torch.optim.lr_scheduler.StepLR(

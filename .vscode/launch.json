@@ -220,6 +220,16 @@
       "justMyCode": false,
 
       "cwd": "${workspaceFolder}/integration_tests/Stat_buffer/test1"
-    },         
+    },
+    {
+      "name": "Test CNN Stage 1 - Test 1",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/integration_tests/CNN/test1/ppo.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+
+      "cwd": "${workspaceFolder}/integration_tests/CNN/test1"
+    },              
   ]
 }

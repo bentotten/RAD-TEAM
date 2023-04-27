@@ -224,7 +224,7 @@ def ppo(
     }
 
     # Setup args for actor-critic and prediction module (pfgru)
-    dict(
+    pfgru_args = dict(
         hidden_sizes_pol=[args.hid_pol] * args.l_pol,
         hidden_sizes_val=[args.hid_val] * args.l_val,
         hidden_sizes_rec=args.hid_rec,
