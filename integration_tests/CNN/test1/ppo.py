@@ -130,7 +130,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
 
         # Get action probabilities and entropy for an state's mapstack and action, then put the action probabilities on the CPU (if on the GPU)
         action_logprobs, dist_entropy = agent.step_keep_gradient_for_actor(
-            map_stack, act[index]
+            map_stack[index], act[index]
         )
         action_logprobs = action_logprobs.cpu()
 
@@ -175,11 +175,11 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         true_return = data["ret"][index]
 
         # Compare predicted return with true return and use MSE to indicate loss
-        predicted_value = agent.step_keep_gradient_for_critic(map_stack)
+        predicted_value = agent.step_keep_gradient_for_critic(map_stack[index])
         critic_loss = optimization.MSELoss(torch.squeeze(predicted_value), true_return)
         return critic_loss
 
-    def compute_batched_losses_pi(agent, sample, data, mapstacks_buffer, minibatch=None):
+    def compute_batched_losses_pi(agent, sample, data, mapstacks_buffer):
         """Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi"""
 
         # TODO make more concise
@@ -257,7 +257,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     ac.reset()
                     optimization.pi_optimizer.zero_grad()
                     
-                    loss_pi, kl, entropy, clip_fraction = compute_loss_pi(agent=agent, data=data, map_stack=pi_maps, index=step)
+                    loss_pi, kl, entropy, clip_fraction = compute_loss_pi(agent=ac, data=data, map_stack=pi_maps, index=step)
  
                     if kl < 1.5 * target_kl:
                         loss_pi.backward()
