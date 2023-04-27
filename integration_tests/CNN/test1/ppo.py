@@ -106,7 +106,6 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         ent = dist_entropy.mean().item()
         clipped = ratio.gt(1+clip_ratio) | ratio.lt(1-clip_ratio)
         clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
-        #pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac)
 
         return loss_pi, approx_kl, ent, clipfrac
 
@@ -187,10 +186,10 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                 pi_info = dict(kl = kl, ent = entropy, cf = clip_fraction)
 
                 if kl < 1.5 * target_kl:
-                    logger.log('Early stopping at step %d due to reaching max kl.'%i)
                     loss_pi.backward()
                     optimization.pi_optimizer.step()
                 else:
+                    logger.log('Early stopping at step %d due to reaching max kl.'%kk)                    
                     kk = train_pi_iters # Avoid messy for-loop breaking
                 
             elif not BATCHED_UPDATE:
@@ -201,11 +200,12 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     loss_pi, kl, entropy, clip_fraction = compute_loss_pi(data, pi_maps, step)
  
                     if kl < 1.5 * target_kl:
-                        logger.log('Early stopping at step %d due to reaching max kl.'%i)
                         loss_pi.backward()
                         optimization.pi_optimizer.step()
                     else:
+                        logger.log('Early stopping at step %d due to reaching max kl.'%kk)                        
                         kk = train_pi_iters # Avoid messy for-loop breaking 
+                    
                 pi_info = dict(kl = kl, ent = entropy, cf = clip_fraction) # Just for last step
                         
 
