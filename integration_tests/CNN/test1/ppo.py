@@ -106,9 +106,9 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         ent = dist_entropy.mean().item()
         clipped = ratio.gt(1+clip_ratio) | ratio.lt(1-clip_ratio)
         clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
-        pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac)
+        #pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac)
 
-        return loss_pi, pi_info
+        return loss_pi, approx_kl, ent, clipfrac
 
     # Set up function for computing value loss
     def compute_loss_v(data, v_maps, step):
@@ -132,14 +132,14 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         for index in sample:
             # Reset existing episode maps
             agent.reset()
-            single_pi_l, single_pi_info = compute_loss_pi(
+            loss_pi, approx_kl, ent, clipfrac = compute_loss_pi(
                 data=data, index=index, map_stack=mapstacks_buffer[index]
             )
 
-            pi_loss_list.append(single_pi_l)
-            kl_list.append(single_pi_info["kl"])
-            entropy_list.append(single_pi_info["entropy"])
-            clip_fraction_list.append(single_pi_info["clip_fraction"])
+            pi_loss_list.append(loss_pi)
+            kl_list.append(approx_kl)
+            entropy_list.append(ent)
+            clip_fraction_list.append(clipfrac)
 
         # pi_loss, kl, entropy, clip_fraction - removed dict to improve speed
         return torch.stack(pi_loss_list).mean(), np.mean(kl_list), np.mean(entropy_list),  np.mean(clip_fraction_list)
@@ -198,7 +198,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     ac.reset()
                     optimization.pi_optimizer.zero_grad()
                     
-                    loss_pi, pi_info = compute_loss_pi(data, pi_maps, step)
+                    loss_pi, kl, entropy, clip_fraction = compute_loss_pi(data, pi_maps, step)
  
                     if kl < 1.5 * target_kl:
                         logger.log('Early stopping at step %d due to reaching max kl.'%i)
@@ -206,6 +206,8 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                         optimization.pi_optimizer.step()
                     else:
                         kk = train_pi_iters # Avoid messy for-loop breaking 
+                pi_info = dict(kl = kl, ent = entropy, cf = clip_fraction) # Just for last step
+                        
 
         # Update value function 
         for i in range(train_v_iters):
