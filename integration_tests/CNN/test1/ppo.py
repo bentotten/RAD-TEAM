@@ -7,7 +7,7 @@ import os
 import core # type: ignore
 import ppo_tools # type: ignore
 
-from RADTEAM_core import StatisticStandardization 
+from RADTEAM_core import StatisticStandardization, CNNBase
 
 from gym.utils.seeding import _int_list_from_bigint, hash_seed # type: ignore
 from rl_tools.logx import EpochLogger # type: ignore
@@ -15,7 +15,7 @@ from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params,synchronize,
 from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar,mpi_statistics_vector, num_procs, mpi_min_max_scalar # type: ignore
 
 
-def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0, 
+def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
         vf_lr=5e-3, train_pi_iters=40, train_v_iters=15, lam=0.9, max_ep_len=120, save_gif=False,
         target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None, load_model=0):
@@ -26,7 +26,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
 
-    #Set Pytorch random seed
+    # Set Pytorch random seed
     torch.manual_seed(seed)
 
     # Instantiate environment
@@ -469,7 +469,7 @@ if __name__ == '__main__':
     
     
     #Run ppo training function
-    ppo(lambda : gym.make(args.env,**init_dims), actor_critic=core.RNNModelActorCritic,
+    ppo(lambda : gym.make(args.env,**init_dims), actor_critic=CNNBase,
         ac_kwargs=dict(hidden_sizes_pol=[args.hid_pol]*args.l_pol,hidden_sizes_val=[args.hid_val]*args.l_val,
         hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch), gamma=args.gamma, alpha=args.alpha,
         seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,

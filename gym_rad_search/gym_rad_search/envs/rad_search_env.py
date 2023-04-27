@@ -402,8 +402,8 @@ class RadSearch(gym.Env):
             self.DEBUG = True
             self.DEBUG_SOURCE_LOCATION = Point((1, 1))
             self.DEBUG_DETECTOR_LOCATION = Point((1499.0, 1499.0))
-            
-        # Test 2: 15x15 grid, no obstructions, fixed stop point          
+
+        # Test 2: 15x15 grid, no obstructions, fixed stop point
         elif self.TEST == 2:
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 2 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0,1500.0)), Point((0.0,1500.0))))
@@ -411,8 +411,8 @@ class RadSearch(gym.Env):
             self.obstruction_count = 0
             self.DEBUG = True
             self.DEBUG_SOURCE_LOCATION = Point((1, 1))
-            
-        # Test 3: 15x15 grid, no obstructions, fixed start point       
+
+        # Test 3: 15x15 grid, no obstructions, fixed start point
         elif self.TEST == 3:
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 3 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0,1500.0)), Point((0.0,1500.0))))
@@ -421,16 +421,16 @@ class RadSearch(gym.Env):
             self.DEBUG = True
             self.DEBUG_DETECTOR_LOCATION = Point((1499.0, 1499.0))
             self.MIN_STARTING_DISTANCE = 500 # cm
-            
-        # Test 2: 15x15 grid, no obstructions          
+
+        # Test 2: 15x15 grid, no obstructions
         elif self.TEST == 4:
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 4 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0,1500.0)), Point((0.0,1500.0))))
             self.observation_area = Interval((100.0,100.0))
             self.obstruction_count = 0
             self.DEBUG = True
-            self.MIN_STARTING_DISTANCE = 500 # cm            
-    
+            self.MIN_STARTING_DISTANCE = 500 # cm
+
         self.search_area: BBox = BBox(
             (
                 Point(
@@ -727,7 +727,7 @@ class RadSearch(gym.Env):
                     aggregate_success_result[agent_id],
                     aggregate_info_result[agent_id],
                 ) = agent_step( action=action, agent=agent)  # type: ignore
-                
+
                 # Calculate team reward
                 if not max_reward:
                     max_reward = aggregate_reward_result[agent_id]
@@ -904,8 +904,8 @@ class RadSearch(gym.Env):
         for id, agent in self.agents.items():
             if isinstance(env_dict[key][1], tuple):
                 agent.det_coords = Point(env_dict[key][1])
-            else:            
-                agent.det_sto = [env_dict[key][1].copy()]                 
+            else:
+                agent.det_sto = [env_dict[key][1].copy()]
             agent.meas_sto = [observation[id][0].copy()]
             agent.prev_det_dist = self.world.shortest_path(
                 self.source, agent.detector, self.vis_graph, EPSILON
@@ -959,7 +959,7 @@ class RadSearch(gym.Env):
         # Do not return here, to make compatible for future when agents have dimensions
         # TODO make agents have dimensions like obstacles
         if self.enforce_grid_boundaries:
-            if ( 
+            if (
                 tentative_coordinates[0] < self.bbox[0][0] or tentative_coordinates[1] < self.bbox[0][1]
             ) or (
                 self.bbox[2][0] <= tentative_coordinates[0] or self.bbox[2][1] <= tentative_coordinates[1]
@@ -1808,8 +1808,8 @@ class RadSearch(gym.Env):
             return
 
     def get_agent_outOfBounds_count(self, id: int)-> int:
-        return self.agents[id].out_of_bounds_count     
-    
+        return self.agents[id].out_of_bounds_count
+
     # TODO make multi-agent
     def FIM_step(
         self, agent: Agent, action: Action, coords: Optional[Point] = None
