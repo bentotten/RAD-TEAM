@@ -78,12 +78,13 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     if proc_id() == 0:
         print(f'Local steps per epoch: {local_steps_per_epoch}')
             
-    def compute_loss_pi(data, step):
-        obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
-        mapstacks = data['actor_mapstacks']
+    def compute_loss_pi(data, pi_maps, step):
+        act = data['act']
+        adv = data['adv']
+        logp_old = data['logp']
 
         # Policy loss
-        logp, dist_entropy = ac.step_keep_gradient_for_actor(actor_mapstack=mapstacks[step], action_taken=act[step])
+        logp, dist_entropy = ac.step_keep_gradient_for_actor(actor_mapstack=pi_maps[step], action_taken=act[step])
         ratio = torch.exp(logp - logp_old)
         clip_adv = torch.clamp(ratio, 1-clip_ratio, 1+clip_ratio) * adv # Alpha and entropy here?
         loss_pi = -(torch.min(ratio * adv, clip_adv)).mean()
@@ -98,11 +99,9 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         return loss_pi, pi_info
 
     # Set up function for computing value loss
-    def compute_loss_v(data, step):
-        ret = torch.unsqueeze(data['ret'][step], 0)
-        mapstacks = data['critic_mapstacks']
-        
-        value = ac.step_keep_gradient_for_critic(critic_mapstack=mapstacks[step])
+    def compute_loss_v(data, v_maps, step):
+        ret = torch.unsqueeze(data['ret'][step], 0)        
+        value = ac.step_keep_gradient_for_critic(critic_mapstack=v_maps[step])
         loss = optimization.MSELoss(value, ret)
         
         return loss
@@ -119,16 +118,13 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         critic_optimizer= Adam(ac.critic.parameters(), lr=vf_lr), 
         #model_optimizer=Adam(ac.model.parameters(), lr=vf_lr), 
         MSELoss=torch.nn.MSELoss(reduction="mean"),
-        critic_flag=False,
     )    
 
-    # Set up model saving
-    logger.setup_pytorch_saver(ac)
 
     def update(env, args, loss_fcn=optimization.MSELoss):
         """Update for the localization and A2C modules"""
         #data = buf.get(logger=logger)
-        data = buf.get()
+        data, pi_maps, v_maps = buf.get() # TODO use arrays not dicts for faster processing
 
         #Update function if using the PFGRU, fcn. performs multiple updates per call
         #ac.model.train()
@@ -139,12 +135,13 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
 
         #ac.model.eval()
         min_iters = len(data['ep_form'])
-        kk = 0; term = False
+        kk = 0; 
+        term = False
 
         for i in range(train_pi_iters):
             for step in range(len(data['obs'])):
                 optimization.pi_optimizer.zero_grad()
-                loss_pi, pi_info = compute_loss_pi(data, step)
+                loss_pi, pi_info = compute_loss_pi(data, pi_maps, step)
                 kl = mpi_avg(pi_info['kl'])
 
                 loss_pi.backward()
@@ -159,7 +156,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             for step in range(len(data['obs'])):
             
                 optimization.critic_optimizer.zero_grad()
-                loss_v = compute_loss_v(data, step)
+                loss_v = compute_loss_v(data, v_maps, step)
                 loss_v.backward()
                 mpi_avg_grads(ac.critic)    # average grads across MPI processes
                 optimization.critic_optimizer.step()            
@@ -174,7 +171,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         logger.store(StopIter=kk)
 
         # Log changes from update
-        kl, ent, cf, loss_v = pi_info['kl'], pi_info['ent'], pi_info['cf'], pi_info['val_loss']
+        kl, ent, cf = pi_info['kl'], pi_info['ent'], pi_info['cf']
 
         # Log changes from update
         kl, ent, cf = (
@@ -224,7 +221,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             ep_len += 1
             ep_ret_ls.append(ep_ret)
 
-            #buf.store(obs_std, a, r, v, logp, env.src_coords)
+            logger.store(VVals=result.state_value)
             buf.store(
                 obs=obs_std,
                 act=result.action,
@@ -235,7 +232,6 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                 full_observation={0: obs_std},
                 heatmap_stacks=heatmap_stack,
                 terminal=d,
-                location_prediction=result.loc_pred,
             )
             # Update obs (critical!)
             o = next_o
@@ -393,7 +389,7 @@ if __name__ == '__main__':
     ac_kwargs = dict(
         #hidden_sizes_pol=[args.hid_pol]*args.l_pol,
         #hidden_sizes_val=[args.hid_val]*args.l_val, 
-        predictor_hidden_size=args.hid_rec, 
+        predictor_hidden_size=args.hid_rec[0], 
         #hidden=[args.hid_gru], 
         #net_type=args.net_type,
         #batch_s=args.batch

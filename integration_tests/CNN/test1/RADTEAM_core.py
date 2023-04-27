@@ -1714,8 +1714,9 @@ class CNNBase:
 
     def __post_init__(self) -> None:
         # Put agent number on save_path
-        self.save_path_test = self.save_path
-        self.save_path = f"{self.save_path[0]}/{self.id}_agent_{self.save_path[1]}"
+        if self.save_path == '.':
+            self.save_path = getcwd()
+            self.save_path = f"{self.save_path}/{self.id}_agent"
         # Set resolution accuracy
         self.resolution_accuracy = calculate_resolution_accuracy(
             resolution_multiplier=self.resolution_multiplier,
@@ -1907,6 +1908,8 @@ class CNNBase:
                 prediction_tuple: Tuple[float, float] = tuple(location_prediction.tolist()) # type: ignore
             else:
                 prediction_tuple = [] # type: ignore
+                location_prediction = []
+                new_hidden = []
 
             # Process data and create maps
             batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(

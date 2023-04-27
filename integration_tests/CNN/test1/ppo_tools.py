@@ -112,7 +112,6 @@ class OptimizationStorage:
     ensuring a destructively large policy update doesn't happen, an entropy parameter for randomness/entropy, and the target kl divergence
     for early stopping.
 
-    :param critic_flag: (bool) Indicate if there is a critic
     :param {*}_optimizer: (torch.optim) Pytorch Optimizer with learning rate decay [Torch]
     :param clip_ratio: (float) Hyperparameter for clipping in the policy objective. Roughly: how far can the new policy go from the old policy
         while still profiting (improving the objective function)? The new policy can still go farther than the clip_ratio says, but it doesn't
@@ -122,7 +121,6 @@ class OptimizationStorage:
     :param target_kl: (float) Roughly what KL divergence we think is appropriate between new and old policies after an update. This will get used
         for early stopping. It's usually small, 0.01 or 0.05.
     """
-    critic_flag: bool
     pi_optimizer: torch.optim.Optimizer
     model_optimizer: Union[torch.optim.Optimizer, None] = field(default=None)    
     critic_optimizer: Union[torch.optim.Optimizer, None] = field(default=None)    
@@ -150,7 +148,7 @@ class OptimizationStorage:
         else:
             self.model_optimizer = None
 
-        if self.critic_flag:
+        if self.critic_optimizer:
             self.critic_scheduler = torch.optim.lr_scheduler.StepLR(
                 self.critic_optimizer, step_size=100, gamma=0.99
             )
@@ -383,6 +381,7 @@ class PPOBuffer:
 
         # Save in a giant tensor for RAD-A2C
         episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
+        # TODO unnecessary for CNNs
 
         # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
         slice_b: int = 0
@@ -414,4 +413,4 @@ class PPOBuffer:
             ep_form=episode_form,
         )
 
-        return data
+        return data, self.heatmap_buffer['actor'], self.heatmap_buffer['critic']
