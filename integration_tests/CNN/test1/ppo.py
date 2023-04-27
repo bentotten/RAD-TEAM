@@ -259,13 +259,12 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     
                     loss_pi, kl, entropy, clip_fraction = compute_loss_pi(agent=ac, data=data, map_stack=pi_maps, index=step)
  
-                    if kl < 1.5 * target_kl:
-                        loss_pi.backward()
-                        optimization.pi_optimizer.step()
-                    else:
-                        logger.log('Early stopping at step %d due to reaching max kl.'%kk)                        
-                        kl_bound_flag = True
-                        break
+                    loss_pi.backward()
+                    optimization.pi_optimizer.step()
+                if kl < 1.5 * target_kl:
+                    logger.log('Early stopping at step %d due to reaching max kl.'%kk)                        
+                    kl_bound_flag = True
+                    break
                     
                 pi_info = dict(kl = kl, ent = entropy, cf = clip_fraction) # Just for last step
             kk += 1
