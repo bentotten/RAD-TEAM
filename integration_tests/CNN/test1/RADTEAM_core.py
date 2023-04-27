@@ -530,7 +530,7 @@ class MapsBuffer:
         self.visit_counts_shadow.clear()
         self.tools.reset()
 
-    def observation_to_map(self, observation: Dict[int, npt.NDArray], id: int, loc_prediciton: Tuple[float, float]) -> MapStack:
+    def observation_to_map(self, observation: Union[Dict[int, npt.NDArray], npt.NDArray], id: int, loc_prediciton: Tuple[float, float]) -> MapStack:
         """
         Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation. Also updates tools.
 
@@ -543,7 +543,7 @@ class MapsBuffer:
         for obs in observation.values():
             key: Tuple[int, int] = self._inflate_coordinates(obs)
             intensity: np.floating[Any] = obs[0]
-            self.tools.readings.update(key=key, value=float(intensity))
+            self.tools.readings.update(key=key, value=float(intensity))      
 
         for agent_id in observation:
             # Fetch scaled coordinates
@@ -1804,6 +1804,9 @@ class CNNBase:
     def get_map_stack(self, state_observation: Dict[int, npt.NDArray], id: int, location_prediction: Tuple[float, float]):
         actor_map_stack: torch.Tensor
         critic_map_stack: torch.Tensor
+
+        if not isinstance(state_observation, dict):
+            state_observation = {id: state_observation[id] for id in range(len(state_observation))}
 
         if not SMALL_VERSION:
             with torch.no_grad():

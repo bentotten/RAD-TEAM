@@ -23,9 +23,6 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
 
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
     setup_pytorch_for_mpi()
-    # Set up logger and save configuration
-    logger = EpochLogger(**logger_kwargs)
-    logger.save_config(locals())
 
     # Set Pytorch random seed
     torch.manual_seed(seed)
@@ -44,6 +41,10 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     ac_kwargs["steps_per_episode"] = 120
     ac_kwargs["number_of_agents"] = 1
     ac_kwargs["enforce_boundaries"] = env.enforce_grid_boundaries
+    
+    # Set up logger and save configuration
+    logger = EpochLogger(**logger_kwargs)
+    logger.save_config(locals())    
 
     obs_dim = env.observation_space.shape[0]
 

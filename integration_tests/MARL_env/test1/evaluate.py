@@ -19,9 +19,6 @@ import numpy as np
 import numpy.random as npr
 import numpy.typing as npt
 
-from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params,synchronize, mpi_avg_grads, sync_params_stats # type: ignore
-from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar,mpi_statistics_vector, num_procs, mpi_min_max_scalar # type: ignore
-
 from typing import (
     Any,
     List,
@@ -49,7 +46,6 @@ import gym  # type: ignore
 from gym_rad_search.envs import rad_search_env  # type: ignore
 from gym_rad_search.envs.rad_search_env import RadSearch, StepResult  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
-
 
 # Neural Networks
 import core as RADA2C_core  # type: ignore
@@ -429,15 +425,14 @@ class evaluate_PPO:
             i: EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs)
             for i in range(self.eval_kwargs["episodes"])
         }
-        
+
         full_results = [runner.run() for runner in self.runners.values()]
 
         print("Runtime: {}", time.time() - start_time)
 
         self.calc_stats(results=full_results)
-
         pass
-    
+
     def calc_stats(self, results, mc=None, plot=False, snr=None, control=None, obs=None):
         """Calculate results from the evaluation"""
         # Per episode run:
@@ -477,7 +472,7 @@ class evaluate_PPO:
         print(f"Median Episode Length: {final_eplen_median} with std {len_std}")
         print(f"Median Episode Return: {final_epret_median} with std {ret_std}")
         
-    
+
 if __name__ == "__main__":
     #Generate a large random seed and random generator object for reproducibility
     rng = np.random.default_rng(2) 

@@ -19,9 +19,6 @@ import numpy as np
 import numpy.random as npr
 import numpy.typing as npt
 
-from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params,synchronize, mpi_avg_grads, sync_params_stats # type: ignore
-from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar,mpi_statistics_vector, num_procs, mpi_min_max_scalar # type: ignore
-
 from typing import (
     Any,
     List,
@@ -50,10 +47,9 @@ from gym_rad_search.envs import rad_search_env  # type: ignore
 from gym_rad_search.envs.rad_search_env import RadSearch, StepResult  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
-
 # Neural Networks
-import RADTEAM_core  # type: ignore
-
+import RADTEAM_core as RADCNN_core  # type: ignore
+# import RADA2C_core as RADA2C_core  # type: ignore
 
 # Helpful functions
 def median(data: List) -> np.float32:
@@ -100,6 +96,48 @@ class Distribution:
 # @ray.remote
 @dataclass
 class EpisodeRunner:
+    """
+    Remote function to execute requested number of episodes for requested number of monte carlo runs each episode.
+
+    Process from RAD-A2C:
+    - 100 episodes classes:
+        - [done] create environment
+        - [done] refresh environment with test env
+        - [done] create and upload agent
+        - [done] Get initial environment observation
+        - Do monte-carlo runs
+            - Get action
+            - Take step in env
+            - Save return and increment steps-in-episode
+            - If terminal or timeout:
+                - Save det_sto from environment (why?)
+                - If first monte-carlo:
+                    - If terminal, save intensity/background intenity into "done" list
+                    - If not terminal, save intensity/background intenity into "not done" list
+                - If Terminal, increment done counter, add episode length to "done" list, and add episode return to "done" list
+                - If not Terminal, add episode length to "not done" list, and add episode return to "not done" list
+                - Render if desired
+                - Refresh environment and reset episode tracking
+                - ? #Reset model in action selection fcn. get_action(0)
+                - ? #Get initial location prediction
+        - Render
+        - Save stats/results and return:
+            mc_stats['dEpLen'] = d_ep_len
+            mc_stats['ndEpLen'] = nd_ep_len
+            mc_stats['dEpRet'] = d_ep_ret
+            mc_stats['ndEpRet'] = nd_ep_ret
+            mc_stats['dIntDist'] = done_dist_int
+            mc_stats['ndIntDist'] = not_done_dist_int
+            mc_stats['dBkgDist'] = done_dist_bkg
+            mc_stats['ndBkgDist'] = not_done_dist_bkg
+            mc_stats['DoneCount'] = np.array([done_count])
+            mc_stats['TotEpLen'] = tot_ep_len
+            mc_stats['LocEstErr'] = loc_est_err
+            results = [loc_est_ls, FIM_bound, J_score_ls, det_ls]
+            print(f'Finished episode {n}!, completed count: {done_count}')
+            return (results,mc_stats)
+
+    """
 
     id: int
     # env_sets: Dict
@@ -130,19 +168,17 @@ class EpisodeRunner:
     snr: str = field(default="high")
 
     render_first_episode: bool = field(default=True)
-    env_dict: Dict = field(default_factory=lambda: dict())    
 
     # Initialized elsewhere
     #: Object that holds agents
-    agents: Dict[int, RADCNN_core.CNNBase] = field(default_factory=lambda: dict())
+    agents: Dict[int, Union[RADCNN_core.CNNBase, RADA2C_core.RNNModelActorCritic]] = field(default_factory=lambda: dict())
 
     def __post_init__(self) -> None:
         # Change to correct directory
         os.chdir(self.current_dir)
 
-
         # Create own instatiation of environment
-        self.env: rad_search_env = self.create_environment()
+        self.env = self.create_environment()
 
         # Get agent model paths and saved agent configurations
         agent_models = {}
@@ -159,23 +195,53 @@ class EpisodeRunner:
             original_configs = obj["ac_kwargs"] # Original project save format
 
         # Set up static A2C actor-critic args
-        actor_critic_args = dict(
-            action_space=self.env.detectable_directions,
-            observation_space=self.env.observation_space.shape[
-                0
-            ],  # Also known as state dimensions: The dimensions of the observation returned from the environment
-            steps_per_episode=self.steps_per_episode,
-            number_of_agents=self.number_of_agents,
-            detector_step_size=self.env.step_size,
-            environment_scale=self.env.scale,
-            bounds_offset=self.env.observation_area,
-            enforce_boundaries=self.enforce_boundaries,
-            grid_bounds=self.env.scaled_grid_max,
-            resolution_multiplier=self.resolution_multiplier,
-            GlobalCritic=None,
-            no_critic=True,
-            save_path=self.save_path_for_ac,
-        )
+        if self.actor_critic_architecture == "cnn":
+            actor_critic_args = dict(
+                action_space=self.env.detectable_directions,
+                observation_space=self.env.observation_space.shape[
+                    0
+                ],  # Also known as state dimensions: The dimensions of the observation returned from the environment
+                steps_per_episode=self.steps_per_episode,
+                number_of_agents=self.number_of_agents,
+                detector_step_size=self.env.step_size,
+                environment_scale=self.env.scale,
+                bounds_offset=self.env.observation_area,
+                enforce_boundaries=self.enforce_boundaries,
+                grid_bounds=self.env.scaled_grid_max,
+                resolution_multiplier=self.resolution_multiplier,
+                GlobalCritic=None,
+                no_critic=True,
+                save_path=self.save_path_for_ac,
+            )
+        elif self.actor_critic_architecture == "rnn":
+            actor_critic_args = dict(
+                obs_dim=self.env.observation_space.shape[0],
+                act_dim=self.env.detectable_directions,
+                hidden_sizes_pol=[[32]],
+                hidden_sizes_val=[[32]],
+                hidden_sizes_rec=[24],
+                hidden=[[24]],
+                net_type="rnn",
+                batch_s=1,
+                seed=self.seed,
+                pad_dim=2,
+            )
+        elif self.actor_critic_architecture == "og":
+            actor_critic_args = dict(
+                #obs_dim=self.env.observation_space.shape[0],
+                #act_dim=self.env.detectable_directions,
+                hidden_sizes_pol=[[32]],
+                hidden_sizes_val=[[32]],
+                hidden_sizes_rec=[24],
+                hidden=[[24]],
+                net_type="rnn",
+                batch_s=1,
+                #seed=self.seed,
+                #pad_dim=2,
+            )
+            original_configs['net_type'] = original_configs['lstm']
+        else:
+            raise ValueError("Unsupported net type")
 
         if self.actor_critic_architecture != "cnn":
             assert self.team_mode == "individual"  # No global critic for RAD-A2C
@@ -211,6 +277,26 @@ class EpisodeRunner:
                 # Sanity check
                 assert self.agents[i].critic.is_mock_critic()
 
+            elif self.actor_critic_architecture == "rnn":
+                self.agents[i] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
+                if DELETE_PI_AFTER_NEW_MODEL_TRAINED:
+                    self.agents[i].pi.load_state_dict(torch.load(f"{agent_models[i]}/pyt_save/model.pt"))
+                else:
+                    self.agents[i].load_state_dict(torch.load(f"{agent_models[i]}/pyt_save/model.pt"))
+            elif self.actor_critic_architecture == "og":
+                # Add in needed params
+                actor_critic_args['obs_dim'] = self.env.observation_space.shape[0]
+                actor_critic_args['act_dim'] = self.env.detectable_directions
+                actor_critic_args['seed'] = self.seed
+                actor_critic_args['pad_dim'] = 2
+
+                self.agents[i] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
+                self.agents[i].load_state_dict(torch.load(f"{agent_models[i]}/pyt_save/model.pt"))         
+                
+                self.actor_critic_architecture = 'rnn' # Should be ok now           
+            else:
+                raise ValueError("Unsupported net type")
+
     def run(self) -> MonteCarloResults:
         # Prepare tracking buffers and counters
         episode_return: Dict[int, float] = {id: 0.0 for id in self.agents}
@@ -221,7 +307,7 @@ class EpisodeRunner:
         # Prepare results buffers
         results = MonteCarloResults(id=self.id)
         # For RAD-A2C Compatibility
-        stat_buffers = dict()
+        stat_buffers: Dict[int, StatisticStandardization] = dict()
 
         # Reset environment and save test env parameters
         observations, _, _, _  = self.env.reset()
@@ -234,31 +320,58 @@ class EpisodeRunner:
         self.env_dict['env_0'][3] = self.env.bkg_intensity
         self.env_dict['env_0'][4] = [] # obstructions
 
+        for agent in self.agents.values():
+            agent.set_mode("eval")
+
         # Prepare episode variables
-        agent_thoughts: Dict = dict()
+        agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
         hiddens: Dict[int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]] = {id: self.agents[id].reset_hidden() for id in self.agents}  # For RAD-A2C compatibility
 
+        # If RAD-A2C, instatiate stat buffer and load/standardize first observation
+        if (
+            self.actor_critic_architecture == "rnn"
+            or self.actor_critic_architecture == "mlp"
+        ):
+            initial_prediction = np.zeros((3,))
+            for id, ac in self.agents.items():
+                stat_buffers[id] = StatisticStandardization()
+                stat_buffers[id].update(observations[id][0])
+                observations[id][0] = stat_buffers[id].standardize(observations[id][0])
 
         while run_counter < self.montecarlo_runs:
             # Get agent thoughts on current state. Actor: Compute action and logp (log probability); Critic: compute state-value
             agent_thoughts.clear()
-            
             for id, ac in self.agents.items():
                 with torch.no_grad():
-                    a, v, logp, hidden, out_pred = ac.step(observations[id], hiddens[id])
-                    agent_thoughts[id]['action'] = a
+                    if (
+                        self.actor_critic_architecture == "rnn"
+                        or self.actor_critic_architecture == "mlp"
+                    ):
+                        agent_thoughts[id], heatmaps = ac.step(
+                            observations[id], hiddens[id]
+                        )
+                    else:
+                        agent_thoughts[id], heatmaps = ac.step(observations, hiddens)
 
+                hiddens[id] = agent_thoughts[id].hiddens  # For RAD-A2C - save latest hiddens for use in next steps.
 
-                hiddens[id] = hidden
             # Create action list to send to environment
-            agent_action_decisions = {id: int(agent_thoughts[id]['action']) for id in agent_thoughts}
+            agent_action_decisions = {id: int(agent_thoughts[id].action) for id in agent_thoughts}
             for action in agent_action_decisions.values():
                 assert 0 <= action and action < int(self.env.number_actions)
 
             # Take step in environment - Note: will be missing last reward, rewards link to previous observation in env
             observations, rewards, terminals, _ = self.env.step(action=agent_action_decisions)
 
-  # Incremement Counters and save new (individual) cumulative returns
+            if (
+                self.actor_critic_architecture == "rnn"
+                or self.actor_critic_architecture == "mlp"
+            ):
+                for id, ac in self.agents.items():
+                    stat_buffers[id].update(observations[id][0])
+                    observations[id][0] = stat_buffers[id].standardize(observations[id][0])
+
+            # Incremement Counters and save new (individual) cumulative returns
             if self.team_mode == "individual":
                 for id in rewards["individual_reward"]:
                     episode_return[id] += np.array(rewards["individual_reward"][id], dtype="float32").item()
@@ -296,7 +409,7 @@ class EpisodeRunner:
                 if terminal_reached_flag:
                     results.success_counter += 1
                     results.successful.episode_length.append(steps_in_episode)
-                    results.successful.episode_return.append(episode_return[0])  # TODO change for individual mode                    
+                    results.successful.episode_return.append(episode_return[0])  # TODO change for individual mode
                 else:
                     results.unsuccessful.episode_length.append(steps_in_episode)
                     results.unsuccessful.episode_return.append(episode_return[0])  # TODO change for individual mode
@@ -312,6 +425,22 @@ class EpisodeRunner:
                 terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
 
                 observations = self.env.refresh_environment(env_dict=self.env_dict, id=0, num_obs=self.obstruction_count)
+
+                # Reset stat buffer for RAD-A2C
+                if (
+                    self.actor_critic_architecture == "rnn"
+                    or self.actor_critic_architecture == "mlp"
+                ):
+                    for id, ac in self.agents.items():
+                        stat_buffers[id].reset()
+                        stat_buffers[id].update(observations[id][0])
+                        observations[id][0] = stat_buffers[id].standardize(
+                            observations[id][0]
+                        )
+                else:
+                    # Reset agents
+                    for agent in self.agents.values():
+                        agent.reset()
 
         results.completed_runs = run_counter
 
@@ -440,24 +569,43 @@ class evaluate_PPO:
     runners: Dict = field(init=False)
 
     def __post_init__(self) -> None:
+        # Uncomment when ready to run with Ray
+        # Initialize ray
+        # try:
+        #     ray.init(address="auto")
+        # except:
+        #     print("Ray failed to initialize. Running on single server.")
         pass
 
     def evaluate(self):
         """Driver"""
         start_time = time.time()
+        # Uncomment when ready to run with Ray
+        # runners = {i: EpisodeRunner
+        #            .remote(
+        #                 id=i,
+        #                 current_dir=os.getcwd(),
+        #                 **self.eval_kwargs
+        #             )
+        #         for i in range(self.eval_kwargs['episodes'])
+        #     }
 
+        # full_results = ray.get([runner.run.remote() for runner in runners.values()])
+        # print(full_results)
+
+        # Uncomment when to run without Ray
         self.runners = {
             i: EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs)
             for i in range(self.eval_kwargs["episodes"])
         }
+
         full_results = [runner.run() for runner in self.runners.values()]
 
         print("Runtime: {}", time.time() - start_time)
 
         self.calc_stats(results=full_results)
-
         pass
-    
+
     def calc_stats(self, results, mc=None, plot=False, snr=None, control=None, obs=None):
         """Calculate results from the evaluation"""
         # Per episode run:
@@ -497,11 +645,10 @@ class evaluate_PPO:
         print(f"Median Episode Length: {final_eplen_median} with std {len_std}")
         print(f"Median Episode Return: {final_epret_median} with std {ret_std}")
         
-    
+
 if __name__ == "__main__":
     #Generate a large random seed and random generator object for reproducibility
     rng = np.random.default_rng(2) 
-       
     
     env_kwargs = {
         'bbox': [[0.0,0.0],[1500.0,0.0],[1500.0,1500.0],[0.0,1500.0]],
@@ -510,7 +657,7 @@ if __name__ == "__main__":
         "number_agents": 1, 
         "enforce_grid_boundaries": True,
         "DEBUG": True,
-        "np_random": rng,        
+        "np_random": rng,
         "TEST": 1
         }    
     
@@ -521,7 +668,7 @@ if __name__ == "__main__":
         model_path=(lambda: os.getcwd())(),
         episodes=100,  # Number of episodes to test on [1 - 1000]
         montecarlo_runs=100,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
-        actor_critic_architecture='cnn',  # Neural network type (control)
+        actor_critic_architecture='rnn',  # Neural network type (control)
         snr="none",  # signal to noise ratio [none, low, medium, high]
         obstruction_count = 0,  # number of obstacles [0 - 7] (num_obs)
         steps_per_episode = 120,
