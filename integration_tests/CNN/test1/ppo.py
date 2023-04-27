@@ -14,6 +14,7 @@ from rl_tools.logx import EpochLogger # type: ignore
 from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params,synchronize, mpi_avg_grads, sync_params_stats # type: ignore
 from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar,mpi_statistics_vector, num_procs, mpi_min_max_scalar # type: ignore
 
+BATCHED_UPDATE = False
 
 def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
@@ -77,7 +78,18 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     save_gif_freq = epochs // 3
     if proc_id() == 0:
         print(f'Local steps per epoch: {local_steps_per_epoch}')
-            
+
+    def sample(data, minibatch=1):
+        """Get sample indexes of episodes to train on"""
+
+        # Randomize and sample observation batch indexes
+        ep_length = data["ep_len"].item()
+        indexes = np.arange(0, ep_length, dtype=np.int32)
+        number_of_samples = int((ep_length / minibatch))
+        return np.random.choice(
+            indexes, size=number_of_samples, replace=False
+        )  # Uniform
+ 
     def compute_loss_pi(data, pi_maps, step):
         act = data['act']
         adv = data['adv']
@@ -106,12 +118,39 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         
         return loss
 
-    # Set up optimizers and learning rate decay for policy and localization module
-    # pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
-    # model_optimizer = Adam(ac.model.parameters(), lr=vf_lr)
-    # pi_scheduler = torch.optim.lr_scheduler.StepLR(pi_optimizer,step_size=100,gamma=0.99)
-    # model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer,step_size=100,gamma=0.99)
-    # loss = torch.nn.MSELoss(reduction='mean')
+    def compute_batched_losses_pi(self, sample, data, mapstacks_buffer, minibatch=None):
+        """Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi"""
+
+        # TODO make more concise
+        # Due to linear layer in CNN, this must be run individually
+        pi_loss_list = []
+        kl_list = []
+        entropy_list = []
+        clip_fraction_list = []
+
+        # Get sampled returns from actor and critic
+        for index in sample:
+            # Reset existing episode maps
+            self.reset_agent()
+            single_pi_l, single_pi_info = self.compute_loss_pi(
+                data=data, index=index, map_stack=mapstacks_buffer[index]
+            )
+
+            pi_loss_list.append(single_pi_l)
+            kl_list.append(single_pi_info["kl"])
+            entropy_list.append(single_pi_info["entropy"])
+            clip_fraction_list.append(single_pi_info["clip_fraction"])
+
+        # take mean of everything for batch update
+        # TODO Check if better to just take a gradient step with every sample
+        results = {
+            "pi_loss": torch.stack(pi_loss_list).mean(),
+            "kl": np.mean(kl_list),
+            "entropy": np.mean(entropy_list),
+            "clip_fraction": np.mean(clip_fraction_list),
+        }
+        return results
+
     
     optimization = ppo_tools.OptimizationStorage(
         pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
@@ -133,23 +172,28 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         #Update function if using the regression GRU
         #loss_mod = update_loc_rnn(data,env,loss)
 
+        sample_indexes = sample(data=data)
+
         #ac.model.eval()
         min_iters = len(data['ep_form'])
         kk = 0; 
         term = False
 
         for i in range(train_pi_iters):
-            for step in range(len(data['obs'])):
-                optimization.pi_optimizer.zero_grad()
-                loss_pi, pi_info = compute_loss_pi(data, pi_maps, step)
-                kl = mpi_avg(pi_info['kl'])
+            if BATCHED_UPDATE:
+                pass
+            elif not BATCHED_UPDATE:
+                for step in sample_indexes:
+                    optimization.pi_optimizer.zero_grad()
+                    loss_pi, pi_info = compute_loss_pi(data, pi_maps, step)
+                    kl = mpi_avg(pi_info['kl'])
 
-                loss_pi.backward()
-                mpi_avg_grads(ac.pi)    # average grads across MPI processes
-                optimization.pi_optimizer.step()        
-            if kl > 1.5 * target_kl:
-                logger.log('Early stopping at step %d due to reaching max kl.'%i)
-                break    
+                    loss_pi.backward()
+                    mpi_avg_grads(ac.pi)    # average grads across MPI processes
+                    optimization.pi_optimizer.step()        
+                if kl > 1.5 * target_kl:
+                    logger.log('Early stopping at step %d due to reaching max kl.'%i)
+                    break    
 
         # Update value function 
         for i in range(train_v_iters):

@@ -1898,11 +1898,10 @@ class CNNBase:
         :param id: (int) ID of the agent who's observation is being processed. This allows any agent to recreate mapbuffers for any other agent
         """
         with torch.no_grad():
-            # Extract all observations for PFGRU
-            obs_list = [state_observation[i][:3] for i in range(self.number_of_agents)] # Create a list of just readings and locations for all agents
-            obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)
-
             if not SMALL_VERSION:
+                # Extract all observations for PFGRU
+                obs_list = [state_observation[i][:3] for i in range(self.number_of_agents)] # Create a list of just readings and locations for all agents
+                obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)                
                 location_prediction, new_hidden = self.model(obs_tensor, hidden)
             
                 prediction_tuple: Tuple[float, float] = tuple(location_prediction.tolist()) # type: ignore
