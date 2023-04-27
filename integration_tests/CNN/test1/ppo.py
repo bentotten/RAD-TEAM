@@ -90,32 +90,89 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             indexes, size=number_of_samples, replace=False
         )  # Uniform
  
-    def compute_loss_pi(data, pi_maps, step):
-        act = data['act']
-        adv = data['adv']
-        logp_old = data['logp']
+    def compute_loss_pi(
+        agent,
+        data,
+        index,
+        map_stack,
+    ):
+        """
+        Compute loss for actor network. Loss is the difference between the probability of taking the action according to the current policy
+        and the probability of taking the action according to the old policy, multiplied by the advantage of the action.
 
-        # Policy loss
-        logp, dist_entropy = ac.step_keep_gradient_for_actor(actor_mapstack=pi_maps[step], action_taken=act[step])
-        ratio = torch.exp(logp - logp_old)
-        clip_adv = torch.clamp(ratio, 1-clip_ratio, 1+clip_ratio) * adv # Alpha and entropy here?
-        loss_pi = -(torch.min(ratio * adv, clip_adv)).mean()
+        Process:
+            #. Calculate how much the policy has changed:  ratio = policy_new / policy_old
+            #. Take log form of this:  ratio = [log(policy_new) - log(policy_old)].exp()
+            #. Calculate Actor loss as the minimum of two functions:
+                #. p1 = ratio * advantage
+                #. p2 = clip(ratio, 1-epsilon, 1+epsilon) * advantage
+                #. actor_loss = min(p1, p2)
+
+        :param data: (array) data from PPO buffer. Contains:
+            * obs: (tensor) Unused: batch of observations from the PPO buffer. Currently only used to ensure map buffer observations are correct.
+            * act: (tensor) batch of actions taken.
+            * adv: (tensor) batch of advantages cooresponding to actions. These are the difference between the expected reward for taking that action and the true reward (See: TD Error, GAE).
+            * logp: (tensor) batch of action logprobabilities.
+            * loc_pred: (tensor) batch of predicted location by PFGRU.
+            * ep_len: (tensor[int]) single dimension int of length of episode.
+            * ep_form: (List) # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
+        :param index: (int) If doing a single observation at a time, index for data[]
+        """
+        # NOTE: Not using observation tensor, using internal map buffer
+        obs, act, adv, logp_old = data["obs"], data["act"], data["adv"], data["logp"]
+
+        # Get action probabilities and entropy for an state's mapstack and action, then put the action probabilities on the CPU (if on the GPU)
+        action_logprobs, dist_entropy = agent.step_keep_gradient_for_actor(
+            map_stack, act[index]
+        )
+        action_logprobs = action_logprobs.cpu()
+
+        # Get how much change is about to be made, then clip it if it exceeds our threshold (PPO-CLIP)
+        # NOTE: Loss will be averaged in the wrapper function, not here, as this is for a single observation/mapstack
+        ratio = torch.exp(action_logprobs - logp_old[index])
+        clip_adv = (
+            torch.clamp(ratio, 1 - clip_ratio, 1 + clip_ratio) * adv[index]
+        )  # Objective surrogate
+        loss_pi = -(torch.min(ratio * adv[index], clip_adv))
 
         # Useful extra info
-        approx_kl = (logp_old - logp).mean().item()
-        ent = dist_entropy.mean().item()
-        clipped = ratio.gt(1+clip_ratio) | ratio.lt(1-clip_ratio)
-        clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
+        approx_kl = (logp_old[index] - action_logprobs).item()
+        ent = dist_entropy.item()
+        clipped = ratio.gt(1 + clip_ratio) | ratio.lt(1 - clip_ratio)
+        clipfrac = torch.as_tensor(clipped, dtype=torch.float32).item()
+        # pi_info = dict(kl=approx_kl, entropy=ent, clip_fraction=clipfrac)
 
-        return loss_pi, approx_kl, ent, clipfrac
+        #return loss_pi, pi_info
+        return loss_pi, approx_kl, ent, clipfrac        
+
 
     # Set up function for computing value loss
-    def compute_loss_v(data, v_maps, step):
-        ret = torch.unsqueeze(data['ret'][step], 0)        
-        value = ac.step_keep_gradient_for_critic(critic_mapstack=v_maps[step])
-        loss = optimization.MSELoss(value, ret)
-        
-        return loss
+    def compute_loss_critic(
+        agent,
+        index,
+        data,
+        map_stack,
+    ):
+        """Compute loss for state-value approximator (critic network) using MSE. Calculates the MSE of the
+        predicted state value from the critic and the true state value
+
+        data (array): data from PPO buffer
+            ret (tensor): batch of returns
+
+        map_stack (tensor): Either a single observations worth of maps, or a batch of maps
+        index (int): If doing a single observation at a time, index for data[]
+
+        Adapted from https://github.com/nikhilbarhate99/PPO-PyTorch
+
+        Calculate critic loss with MSE between returns and critic value
+            critic_loss = (R - V(s))^2
+        """
+        true_return = data["ret"][index]
+
+        # Compare predicted return with true return and use MSE to indicate loss
+        predicted_value = agent.step_keep_gradient_for_critic(map_stack)
+        critic_loss = optimization.MSELoss(torch.squeeze(predicted_value), true_return)
+        return critic_loss
 
     def compute_batched_losses_pi(agent, sample, data, mapstacks_buffer, minibatch=None):
         """Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi"""
@@ -132,7 +189,10 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             # Reset existing episode maps
             agent.reset()
             loss_pi, approx_kl, ent, clipfrac = compute_loss_pi(
-                data=data, step=index, pi_maps=mapstacks_buffer
+                agent=agent,
+                data=data, 
+                index=index, 
+                mapstack=mapstacks_buffer
             )
 
             pi_loss_list.append(loss_pi)
@@ -151,7 +211,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         for index in sample:
             # Reset existing episode maps
             agent.reset()
-            critic_loss_list.append(compute_loss_v(data=data, v_maps=map_buffer_maps, step=index))
+            critic_loss_list.append(compute_loss_critic(data=data, v_maps=map_buffer_maps, step=index))
 
         # take mean of everything for batch update
         return torch.stack(critic_loss_list).mean()
@@ -227,7 +287,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     ac.reset()
 
                     optimization.critic_optimizer.zero_grad()
-                    loss_v = compute_loss_v(data, v_maps, step)
+                    loss_v = compute_loss_critic(agent=ac, index=step, data=data, map_stack=v_maps)
                     loss_v.backward()
                     mpi_avg_grads(ac.critic)    # average grads across MPI processes
                     optimization.critic_optimizer.step()            
