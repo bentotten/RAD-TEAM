@@ -820,14 +820,14 @@ class AgentPPO:
                 actor_maps_buffer = self.ppo_buffer.heatmap_buffer["actor"]
                 critic_maps_buffer = self.ppo_buffer.heatmap_buffer["critic"]
 
+            # Get indexes of episodes that will be sampled
+            sample_indexes = sample(self, data=data)
+
             # Train Actor policy with multiple steps of gradient descent. train_pi_iters == k_epochs
             # for k_epoch in range(self.train_pi_iters):            
             while not kl_reached and kk < self.train_pi_iters:            
                 # Reset gradients
                 self.agent_optimizer.pi_optimizer.zero_grad()
-
-                # Get indexes of episodes that will be sampled
-                sample_indexes = sample(self, data=data)
 
                 # actor_loss_results = self.compute_batched_losses_pi(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
                 actor_loss_results = self.compute_batched_losses_pi(

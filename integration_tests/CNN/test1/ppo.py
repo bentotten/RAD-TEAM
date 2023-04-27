@@ -118,7 +118,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         
         return loss
 
-    def compute_batched_losses_pi(self, sample, data, mapstacks_buffer, minibatch=None):
+    def compute_batched_losses_pi(agent, sample, data, mapstacks_buffer, minibatch=None):
         """Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi"""
 
         # TODO make more concise
@@ -131,8 +131,8 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         # Get sampled returns from actor and critic
         for index in sample:
             # Reset existing episode maps
-            self.reset_agent()
-            single_pi_l, single_pi_info = self.compute_loss_pi(
+            agent.reset()
+            single_pi_l, single_pi_info = compute_loss_pi(
                 data=data, index=index, map_stack=mapstacks_buffer[index]
             )
 
@@ -141,16 +141,21 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             entropy_list.append(single_pi_info["entropy"])
             clip_fraction_list.append(single_pi_info["clip_fraction"])
 
-        # take mean of everything for batch update
-        # TODO Check if better to just take a gradient step with every sample
-        results = {
-            "pi_loss": torch.stack(pi_loss_list).mean(),
-            "kl": np.mean(kl_list),
-            "entropy": np.mean(entropy_list),
-            "clip_fraction": np.mean(clip_fraction_list),
-        }
-        return results
+        # pi_loss, kl, entropy, clip_fraction - removed dict to improve speed
+        return torch.stack(pi_loss_list).mean(), np.mean(kl_list), np.mean(entropy_list),  np.mean(clip_fraction_list)
 
+    def compute_batched_losses_critic(agent, data, map_buffer_maps, sample):
+        """Simulates batched processing through CNN. Wrapper for single-batch computing critic loss"""
+        critic_loss_list = []
+
+        # Get sampled returns from actor and critic
+        for index in sample:
+            # Reset existing episode maps
+            agent.reset()
+            critic_loss_list.append(compute_loss_v(data=data, map_stack=map_buffer_maps[index], index=index))
+
+        # take mean of everything for batch update
+        return torch.stack(critic_loss_list).mean()
     
     optimization = ppo_tools.OptimizationStorage(
         pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
@@ -159,10 +164,10 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         MSELoss=torch.nn.MSELoss(reduction="mean"),
     )    
 
-
     def update(env, args, loss_fcn=optimization.MSELoss):
         """Update for the localization and A2C modules"""
         #data = buf.get(logger=logger)
+        ac.set_mode("train")
         data, pi_maps, v_maps = buf.get() # TODO use arrays not dicts for faster processing
 
         #Update function if using the PFGRU, fcn. performs multiple updates per call
@@ -174,36 +179,52 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
 
         sample_indexes = sample(data=data)
 
-        #ac.model.eval()
-        min_iters = len(data['ep_form'])
-        kk = 0; 
-        term = False
-
-        for i in range(train_pi_iters):
+        for kk in range(train_pi_iters):
             if BATCHED_UPDATE:
-                pass
+                optimization.pi_optimizer.zero_grad()           
+                                     
+                loss_pi, kl, entropy, clip_fraction = compute_batched_losses_pi(agent=ac, data=data, sample=sample_indexes, mapstacks_buffer=pi_maps)
+                pi_info = dict(kl = kl, ent = entropy, cf = clip_fraction)
+
+                if kl < 1.5 * target_kl:
+                    logger.log('Early stopping at step %d due to reaching max kl.'%i)
+                    loss_pi.backward()
+                    optimization.pi_optimizer.step()
+                else:
+                    kk = train_pi_iters # Avoid messy for-loop breaking
+                
             elif not BATCHED_UPDATE:
                 for step in sample_indexes:
+                    ac.reset()
                     optimization.pi_optimizer.zero_grad()
+                    
                     loss_pi, pi_info = compute_loss_pi(data, pi_maps, step)
-                    kl = mpi_avg(pi_info['kl'])
-
-                    loss_pi.backward()
-                    mpi_avg_grads(ac.pi)    # average grads across MPI processes
-                    optimization.pi_optimizer.step()        
-                if kl > 1.5 * target_kl:
-                    logger.log('Early stopping at step %d due to reaching max kl.'%i)
-                    break    
+ 
+                    if kl < 1.5 * target_kl:
+                        logger.log('Early stopping at step %d due to reaching max kl.'%i)
+                        loss_pi.backward()
+                        optimization.pi_optimizer.step()
+                    else:
+                        kk = train_pi_iters # Avoid messy for-loop breaking 
 
         # Update value function 
         for i in range(train_v_iters):
-            for step in range(len(data['obs'])):
-            
+            if BATCHED_UPDATE:
                 optimization.critic_optimizer.zero_grad()
-                loss_v = compute_loss_v(data, v_maps, step)
-                loss_v.backward()
-                mpi_avg_grads(ac.critic)    # average grads across MPI processes
-                optimization.critic_optimizer.step()            
+                critic_loss = compute_batched_losses_critic(agent=ac, data=data, sample=sample_indexes, map_buffer_maps=v_maps)
+                
+                critic_loss.backward()
+                optimization.critic_optimizer.step()
+                
+            else:
+                for step in sample_indexes:
+                    ac.reset()
+
+                    optimization.critic_optimizer.zero_grad()
+                    loss_v = compute_loss_v(data, v_maps, step)
+                    loss_v.backward()
+                    mpi_avg_grads(ac.critic)    # average grads across MPI processes
+                    optimization.critic_optimizer.step()            
         
         #Reduce learning rate
         #pi_scheduler.step()
@@ -234,6 +255,10 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             LocLoss=0,
             VarExplain=0,
         )
+        
+        ac.set_mode("val")
+        ########################
+
 
     # Prepare for interaction with environment
     start_time = time.time()
