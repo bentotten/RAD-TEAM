@@ -51,6 +51,9 @@ from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 import RADTEAM_core as RADCNN_core  # type: ignore
 # import RADA2C_core as RADA2C_core  # type: ignore
 
+# TODO delete this after new run done with all ac_kwargs saved
+ALL_ACKWARGS_SAVED = False
+
 # Helpful functions
 def median(data: List) -> np.float32:
     return np.median(data) if len(data) > 0 else np.nan
@@ -166,12 +169,13 @@ class EpisodeRunner:
     episodes: int = field(default=100)
     montecarlo_runs: int = field(default=100)
     snr: str = field(default="high")
+    env_dict: Dict = field(default_factory=lambda: dict())    
 
     render_first_episode: bool = field(default=True)
 
     # Initialized elsewhere
     #: Object that holds agents
-    agents: Dict[int, Union[RADCNN_core.CNNBase, RADA2C_core.RNNModelActorCritic]] = field(default_factory=lambda: dict())
+    agents: Dict[int, RADCNN_core.CNNBase] = field(default_factory=lambda: dict())
 
     def __post_init__(self) -> None:
         # Change to correct directory
@@ -247,26 +251,27 @@ class EpisodeRunner:
             assert self.team_mode == "individual"  # No global critic for RAD-A2C
 
         # Check current important parameters match parameters read in
-        for arg in actor_critic_args:
-            if arg != "no_critic" and arg != "GlobalCritic" and arg != "save_path":
-                if (
-                    type(original_configs[arg]) == int
-                    or type(original_configs[arg]) == float
-                    or type(original_configs[arg]) == bool
-                ):
-                    assert ( actor_critic_args[arg] == original_configs[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
-                elif type(original_configs[arg]) is str:
-                    if arg == "net_type":
-                        assert actor_critic_args[arg] == original_configs[arg]
+        if ALL_ACKWARGS_SAVED:
+            for arg in actor_critic_args:
+                if arg != "no_critic" and arg != "GlobalCritic" and arg != "save_path":
+                    if (
+                        type(original_configs[arg]) == int
+                        or type(original_configs[arg]) == float
+                        or type(original_configs[arg]) == bool
+                    ):
+                        assert ( actor_critic_args[arg] == original_configs[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                    elif type(original_configs[arg]) is str:
+                        if arg == "net_type":
+                            assert actor_critic_args[arg] == original_configs[arg]
+                        else:
+                            to_list = original_configs[arg].strip("][").split(" ")
+                            config = np.array([float(x) for x in to_list], dtype=np.float32)
+                            assert np.array_equal(config, actor_critic_args[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                    elif type(original_configs[arg]) is list:
+                        for a, b in zip(original_configs[arg], actor_critic_args[arg]):
+                            assert (a == b), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                     else:
-                        to_list = original_configs[arg].strip("][").split(" ")
-                        config = np.array([float(x) for x in to_list], dtype=np.float32)
-                        assert np.array_equal(config, actor_critic_args[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
-                elif type(original_configs[arg]) is list:
-                    for a, b in zip(original_configs[arg], actor_critic_args[arg]):
-                        assert (a == b), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
-                else:
-                    assert (actor_critic_args[arg] == original_configs[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                        assert (actor_critic_args[arg] == original_configs[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
 
         # Initialize agents and load agent models
         for i in range(self.number_of_agents):
@@ -279,10 +284,7 @@ class EpisodeRunner:
 
             elif self.actor_critic_architecture == "rnn":
                 self.agents[i] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
-                if DELETE_PI_AFTER_NEW_MODEL_TRAINED:
-                    self.agents[i].pi.load_state_dict(torch.load(f"{agent_models[i]}/pyt_save/model.pt"))
-                else:
-                    self.agents[i].load_state_dict(torch.load(f"{agent_models[i]}/pyt_save/model.pt"))
+                self.agents[i].load_state_dict(torch.load(f"{agent_models[i]}/pyt_save/model.pt"))
             elif self.actor_critic_architecture == "og":
                 # Add in needed params
                 actor_critic_args['obs_dim'] = self.env.observation_space.shape[0]
@@ -353,7 +355,7 @@ class EpisodeRunner:
                     else:
                         agent_thoughts[id], heatmaps = ac.step(observations, hiddens)
 
-                hiddens[id] = agent_thoughts[id].hiddens  # For RAD-A2C - save latest hiddens for use in next steps.
+                hiddens[id] = agent_thoughts[id].hidden  # For RAD-A2C - save latest hiddens for use in next steps.
 
             # Create action list to send to environment
             agent_action_decisions = {id: int(agent_thoughts[id].action) for id in agent_thoughts}
@@ -668,7 +670,7 @@ if __name__ == "__main__":
         model_path=(lambda: os.getcwd())(),
         episodes=100,  # Number of episodes to test on [1 - 1000]
         montecarlo_runs=100,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
-        actor_critic_architecture='rnn',  # Neural network type (control)
+        actor_critic_architecture='cnn',  # Neural network type (control)
         snr="none",  # signal to noise ratio [none, low, medium, high]
         obstruction_count = 0,  # number of obstacles [0 - 7] (num_obs)
         steps_per_episode = 120,

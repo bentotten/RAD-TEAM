@@ -1681,7 +1681,7 @@ class CNNBase:
     environment_scale: int
     bounds_offset: tuple  # No default to ensure changes to environment are propogated to this function
     enforce_boundaries: bool  # No default due to the increased computation needs for non-enforced boundaries. Ensures this was done intentionally.
-    predictor_hidden_size: int #
+    predictor_hidden_size: int = field(default=24)
     grid_bounds: Tuple[int, int] = field(default_factory=lambda: (1, 1))
     resolution_multiplier: float = field(default=0.01)
     GlobalCritic: Union[Critic, None] = field(default=None)

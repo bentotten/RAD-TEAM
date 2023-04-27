@@ -50,7 +50,7 @@ Metadata = TypedDict(
 )
 
 MAX_CREATION_TRIES = 1000000000
-LIST_MODE = True
+LIST_MODE = False
 
 # These actions correspond to:
 # -1: stay idle
