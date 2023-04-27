@@ -402,18 +402,19 @@ class RNNModelActorCritic(nn.Module):
         #self.model   = SeqLoc(obs_dim-8,[hidden_sizes_rec]+[[24]],1)
         self.model  = PFGRUCell(self.num_particles,obs_dim-8,obs_dim-8,self.bpf_hsize,self.alpha,True, 'tanh') #obs_dim, hidden_sizes_pol[0]
 
-    def step(self, obs, hidden=None):
+    def step(self, obs, id, obs_count, hidden=None):
         with torch.no_grad():
-            obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(0)
-            loc_pred, hidden_part = self.model(obs_t[:,:3], hidden[0])
-            obs_t = torch.cat((obs_t,loc_pred.unsqueeze(0)),dim=1)
+            obs_t = torch.as_tensor(obs, dtype=torch.float32) #.unsqueeze(0)  # Assuming a list of observations from all agents
+            loc_pred, hidden_part = self.model(obs_t[id,:3], hidden[0]) # TODO make work with multiple observations
+            unsqueezed_loc_pred = loc_pred.repeat(obs_count, 1)
+            obs_t = torch.cat((obs_t, unsqueezed_loc_pred),dim=1)
             pi, hidden2, v  = self.pi._distribution(obs_t.unsqueeze(0), hidden[1])
             a = pi.sample()
             logp_a = self.pi._log_prob_from_distribution(pi, a)
             hidden = (hidden_part,hidden2)
         return a.numpy(), v.numpy(), logp_a.numpy(), hidden, loc_pred.numpy()
 
-    def grad_step(self, obs,act, hidden=None):
+    def grad_step(self, obs, act, hidden=None):
         obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(1)
         loc_pred = torch.empty((obs_t.shape[0],2))
         hidden_part = hidden[0]

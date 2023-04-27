@@ -323,9 +323,11 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             
             for id in range(len(agents)):
                 obs_std[id][0] = stat_buffers[id].standardize(o[id][0])
-            
+
+            for id in range(len(agents)):
+                obs_std[id][0] = stat_buffers[id].standardize(o[id][0])            
                 #compute action and logp (Actor), compute value (Critic)
-                actions[id], v, logp, hidden[id], _ = agents[id].step(obs_std[id], hidden=hidden[id]) # TODO make take a batch of observations from all agents
+                actions[id], v, logp, hidden[id], _ = agents[id].step(obs_std, hidden=hidden[id], id=id, obs_count=number_of_agents)
                 values.append(v)
                 logprobs.append(logp)
                 
@@ -547,7 +549,7 @@ if __name__ == '__main__':
         'bbox':args.dims,
         'observation_area':args.area_obs, 
         'obstruction_count':args.obstruct,
-        "number_agents": 1, 
+        "number_agents": args.agents, 
         "enforce_grid_boundaries": True,
         "DEBUG": True,
         "TEST": 1
