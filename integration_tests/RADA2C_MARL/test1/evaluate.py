@@ -194,7 +194,7 @@ class EpisodeRunner:
                     assert (actor_critic_args[arg] == original_configs[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
 
         # Initialize agents and load agent models
-        actor_critic_args['observation_space'] = self.env.observation_space 
+        actor_critic_args['obs_dim'] = self.env.observation_space.shape[0] 
         actor_critic_args['action_space'] = self.env.action_space
         actor_critic_args['seed'] = self.seed
         actor_critic_args['pad_dim'] = 2
@@ -245,7 +245,8 @@ class EpisodeRunner:
             agent_thoughts[id] = {}
             for id, ac in self.agents.items():
                 with torch.no_grad():
-                    a, v, logp, hidden, out_pred = ac.step(observations[id], hiddens[id])
+                    # a, v, logp, hidden, out_pred = ac.step(observations, hiddens[id])
+                    a, v, logp, hidden, out_pred = ac.step(observations, hidden=hiddens[id], id=id, obs_count=self.number_of_agents)
                     agent_thoughts[id]['action'] = a
 
 

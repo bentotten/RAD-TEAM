@@ -403,7 +403,7 @@ class RNNModelActorCritic(nn.Module):
         #self.model   = SeqLoc(obs_dim-8,[hidden_sizes_rec]+[[24]],1)
         self.model  = PFGRUCell(self.num_particles,obs_dim_pfgru-8,obs_dim_pfgru-8,self.bpf_hsize,self.alpha,True, 'tanh') #obs_dim, hidden_sizes_pol[0]
 
-    def step(self, obs, hidden=None, id=None, obs_count=1):
+    def step(self, obs, hidden=None, id=0, obs_count=1):
         with torch.no_grad():            
             obs_t = torch.as_tensor(obs, dtype=torch.float32).flatten().unsqueeze(0)
             obs_for_pfgru = torch.as_tensor(obs[id], dtype=torch.float32).unsqueeze(0)

@@ -52,8 +52,8 @@ Metadata = TypedDict(
 MAX_CREATION_TRIES = 1000000000
 LIST_MODE = True
 
-GLOBAL_REWARD = True # Beat the global minimum shortest path distance or get punished
-PROPORTIONAL_REWARD = False if GLOBAL_REWARD else True # Get rewarded for improving your own shortest path, proportional to last time. Closest agent gets saved.
+GLOBAL_REWARD = False # Beat the global minimum shortest path distance or get punished
+PROPORTIONAL_REWARD = False if GLOBAL_REWARD else False # Get rewarded for improving your own shortest path, proportional to last time. Closest agent gets saved.
 BASIC_REWARD = False if (GLOBAL_REWARD or PROPORTIONAL_REWARD) else True # -0.1 for every step
 ORIGINAL_REWARD = False if (GLOBAL_REWARD or PROPORTIONAL_REWARD or BASIC_REWARD) else True # +0.1 for every step that is closer than prev shortest path. Unfortunately rewards agent for extending episode
 
@@ -594,7 +594,7 @@ class RadSearch(gym.Env):
                             reward = -0.5 * agent.sp_dist / self.max_dist
                 elif BASIC_REWARD:
                     if agent.sp_dist < 110:
-                        reward = 0.1  # NOTE: must be the same value as a non-terminal step in correct direction, as episodes can be cut off prematurely by epoch ending.
+                        reward = -0.1 + 0.1 
                         self.done = True
                         agent.terminal_sto.append(True)
                     elif agent.sp_dist < agent.prev_det_dist:

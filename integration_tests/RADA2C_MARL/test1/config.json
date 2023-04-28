@@ -33,51 +33,51 @@
                 0.0
             ],
             [
-                1500.0,
+                2700.0,
                 0.0
             ],
             [
-                1500.0,
-                1500.0
+                2700.0,
+                2700.0
             ],
             [
                 0.0,
-                1500.0
+                2700.0
             ]
         ],
         "enforce_grid_boundaries":	true,
         "np_random":	"Generator(PCG64)",
         "number_agents":	1,
         "observation_area":	[
-            100.0,
-            100.0
+            200.0,
+            500.0
         ],
-        "obstruction_count":	0
+        "obstruction_count":	-1
     },
-    "env_fn":	"<function <lambda> at 0x7f39044270a0>",
+    "env_fn":	"<function <lambda> at 0x7f6dd727b2e0>",
     "epochs":	100,
-    "exp_name":	"rada2c_marl_test1_saane",
+    "exp_name":	"RADA2C-MARL_test1_1agent_birs",
     "gamma":	0.99,
     "lam":	0.9,
     "load_model":	0,
     "logger":	{
-        "<rl_tools.logx.EpochLogger object at 0x7f39043ff640>":	{
+        "<rl_tools.logx.EpochLogger object at 0x7f6dd72764d0>":	{
             "epoch_dict":	{},
-            "exp_name":	"rada2c_marl_test1_saane",
+            "exp_name":	"RADA2C-MARL_test1_1agent_birs",
             "first_row":	true,
             "log_current_row":	{},
             "log_headers":	[],
-            "output_dir":	"../../models/train/stage_1/rada2c_marl_test1_saane_s12647",
+            "output_dir":	"../../models/train/stage_1/RADA2C-MARL_test1_1agent_birs_s2",
             "output_file":	{
-                "<_io.TextIOWrapper name='../../models/train/stage_1/rada2c_marl_test1_saane_s12647/progress.txt' mode='w' encoding='UTF-8'>":	{
+                "<_io.TextIOWrapper name='../../models/train/stage_1/RADA2C-MARL_test1_1agent_birs_s2/progress.txt' mode='w' encoding='UTF-8'>":	{
                     "mode":	"w"
                 }
             }
         }
     },
     "logger_kwargs":	{
-        "exp_name":	"rada2c_marl_test1_saane",
-        "output_dir":	"../../models/train/stage_1/rada2c_marl_test1_saane_s12647"
+        "exp_name":	"RADA2C-MARL_test1_1agent_birs",
+        "output_dir":	"../../models/train/stage_1/RADA2C-MARL_test1_1agent_birs_s2"
     },
     "max_ep_len":	120,
     "mp_mm":	[
@@ -89,7 +89,7 @@
     "render":	false,
     "save_freq":	500,
     "save_gif":	false,
-    "seed":	3751331691,
+    "seed":	289714752,
     "steps_per_epoch":	480,
     "target_kl":	0.07,
     "train_pi_iters":	40,
