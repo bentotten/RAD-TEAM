@@ -50,7 +50,7 @@ Metadata = TypedDict(
 )
 
 MAX_CREATION_TRIES = 1000000000
-LIST_MODE = False
+LIST_MODE = True
 
 # These actions correspond to:
 # -1: stay idle
@@ -680,13 +680,12 @@ class RadSearch(gym.Env):
         if LIST_MODE:
             aggregate_observation_result = np.zeros(combined_shape(self.number_agents, self.observation_space.shape[0]), dtype=np.float32)
             aggregate_reward_result = np.zeros((self.number_agents), dtype=np.float32)
-            aggregate_success_result = np.zeros((self.number_agents), dtype=np.float32)
       
         elif not LIST_MODE:
             aggregate_observation_result = {_: None for _ in self.agents}
             aggregate_reward_result = {_: None for _ in self.agents}
-            aggregate_success_result = {_: None for _ in self.agents}
-        
+            
+        aggregate_success_result = {_: None for _ in self.agents}
         aggregate_info_result: Dict = {_: None for _ in self.agents}
         max_reward: Union[float, None] = None
 

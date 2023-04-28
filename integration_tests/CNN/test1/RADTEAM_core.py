@@ -1921,9 +1921,7 @@ class CNNBase:
             )
 
             # Get actions and values
-            action, action_logprob = self.pi.act(
-                batched_actor_mapstack
-            )  # Choose action
+            action, action_logprob = self.pi.act(batched_actor_mapstack)  # Choose action
 
             state_value: Union[torch.Tensor, None] = self.critic.forward(
                 batched_critic_mapstack

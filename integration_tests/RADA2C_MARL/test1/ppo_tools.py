@@ -228,7 +228,7 @@ class PPOBuffer:
 
         # TODO delete once full_observation_buffer is done
         self.obs_buf = np.zeros(
-            combined_shape(self.max_size, self.observation_dimension), dtype=np.float32
+            combined_shape(self.max_size, (self.number_agents * self.observation_dimension)), dtype=np.float32
         )
         self.act_buf = np.zeros(combined_shape(self.max_size), dtype=np.float32)
         self.adv_buf = np.zeros(self.max_size, dtype=np.float32)
@@ -274,7 +274,7 @@ class PPOBuffer:
         """
 
         assert self.ptr < self.max_size
-        self.obs_buf[self.ptr, :] = obs
+        self.obs_buf[self.ptr, :] = obs.flatten()
         self.act_buf[self.ptr] = act
         self.rew_buf[self.ptr] = rew
         self.val_buf[self.ptr] = val

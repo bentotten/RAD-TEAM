@@ -16,16 +16,16 @@ from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar
 
 
 
-def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logger, clip_ratio, target_kl, alpha):
+def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logger, clip_ratio, target_kl, alpha, number_agents, id):
     """Update for the localization and A2C modules"""
     
     def update_a2c(data, env_sim, minibatch=None,iter=None):
-        observation_idx = 11
-        action_idx = 14
-        logp_old_idx = 13
-        advantage_idx = 11
-        return_idx = 12
-        source_loc_idx = 15
+        observation_idx = 11 * number_agents  # Go up to this number in array
+        advantage_idx = 11 * number_agents  # Actual value at this index
+        return_idx = 1 + observation_idx
+        logp_old_idx = 2 + observation_idx   
+        action_idx = 3 + observation_idx          
+        source_loc_idx = 4 + observation_idx
         
         ep_form= data['ep_form']
         pi_info = dict(kl=[], ent=[], cf=[], val= np.array([]), val_loss = [])
@@ -39,10 +39,15 @@ def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logg
             #For each set of episodes per process from an epoch, compute loss 
             trajectories = ep[0]
             hidden = ac.reset_hidden()
-            obs, act, logp_old, adv, ret, src_tar = trajectories[:,:observation_idx], trajectories[:,action_idx],trajectories[:,logp_old_idx], \
-                                                     trajectories[:,advantage_idx], trajectories[:,return_idx,None], trajectories[:,source_loc_idx:].clone()
+            obs = trajectories[:,:observation_idx]
+            act = trajectories[:, action_idx]
+            logp_old = trajectories[:, logp_old_idx]
+            adv = trajectories[:, advantage_idx]
+            ret= trajectories[:, return_idx,None]
+            src_tar = trajectories[:, source_loc_idx:].clone()
+            
             #Calculate new log prob.
-            pi, val, logp, loc = ac.grad_step(obs, act, hidden=hidden)
+            pi, val, logp, loc = ac.grad_step(obs, act, id=id, hidden=hidden)
             logp_diff = logp_old - logp 
             ratio = torch.exp(logp - logp_old)
 
@@ -92,8 +97,10 @@ def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logg
         #Update the PFGRU, see Ma et al. 2020 for more details
         ep_form= data['ep_form']
         model_loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
-        source_loc_idx = 15
-        o_idx = 3
+        # source_loc_idx = 15
+        source_loc_idx = 4 + (11 * number_agents)
+        o_inx_start = 11 * id
+        o_idx_end = 3 + (11 * id) # Offset to the correct observation
 
         for jj in range(train_v_iters):
             model_loss_arr_buff.zero_()
@@ -103,13 +110,13 @@ def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logg
                 hidden = ac.reset_hidden()[0]
                 src_tar =  ep[0][:,source_loc_idx:].clone()
                 src_tar[:,:2] = src_tar[:,:2]/args['area_scale']
-                obs_t = torch.as_tensor(ep[0][:,:o_idx], dtype=torch.float32)
+                obs_t = torch.as_tensor(ep[0][:,o_inx_start:o_idx_end], dtype=torch.float32)
                 loc_pred = torch.empty_like(src_tar)
                 particle_pred = torch.empty((sl,ac.model.num_particles,src_tar.shape[1]))
                 
                 bpdecay_params = np.exp(args['bp_decay'] * np.arange(sl))
                 bpdecay_params = bpdecay_params / np.sum(bpdecay_params)
-                for zz,meas in enumerate(obs_t):
+                for zz, meas in enumerate(obs_t):
                     loc, hidden = ac.model(meas, hidden)
                     particle_pred[zz] = ac.model.hid_obs(hidden[0])
                     loc_pred[zz,:] = loc
@@ -178,7 +185,8 @@ def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logg
 
     ac.model.eval()
     min_iters = len(data['ep_form'])
-    kk = 0; term = False
+    kk = 0; 
+    term = False
 
     # Train policy with multiple steps of gradient descent (mini batch)
     while (not term and kk < train_pi_iters):
@@ -235,12 +243,14 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     env = env_fn()
     ac_kwargs['seed'] = seed
     ac_kwargs['pad_dim'] = 2
+    ac_kwargs['num_agents'] = number_of_agents
 
     obs_dim = env.observation_space.shape[0]
 
     #Instantiate A2C
     #ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
-    agents = [actor_critic(env.observation_space, env.action_space, **ac_kwargs) for _ in range(number_of_agents)]
+    observation_size = obs_dim * number_of_agents
+    agents = [actor_critic(observation_size, env.action_space, **ac_kwargs) for _ in range(number_of_agents)]
     
     if load_model != 0:
         for id in range(len(agents)):
@@ -265,7 +275,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     local_steps_per_epoch = int(steps_per_epoch / num_procs())
     #buf = PPOBuffer(obs_dim, act_dim, local_steps_per_epoch, gamma, lam, ac_kwargs['hidden_sizes_rec'][0])
     buffer = [
-        ppo_tools.PPOBuffer(observation_dimension=obs_dim, max_size=local_steps_per_epoch, max_episode_length=120, number_agents=1)
+        ppo_tools.PPOBuffer(observation_dimension=obs_dim, max_size=local_steps_per_epoch, max_episode_length=120, number_agents=number_of_agents)
         for _ in range(len(agents))
     ]
     
@@ -325,7 +335,6 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 obs_std[id][0] = stat_buffers[id].standardize(o[id][0])
 
             for id in range(len(agents)):
-                obs_std[id][0] = stat_buffers[id].standardize(o[id][0])            
                 #compute action and logp (Actor), compute value (Critic)
                 actions[id], v, logp, hidden[id], _ = agents[id].step(obs_std, hidden=hidden[id], id=id, obs_count=number_of_agents)
                 values.append(v)
@@ -341,7 +350,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             #buf.store(obs_std, a, r, v, logp, env.src_coords)
             for id in range(len(agents)):
                 buffer[id].store(
-                    obs=obs_std[id], 
+                    obs=obs_std, 
                     act=actions[id],
                     rew=r['team_reward'],
                     val=values[id], 
@@ -379,7 +388,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                     for id in range(len(agents)):
                         obs_std[id][0] = stat_buffers[id].standardize(o[id][0])                    
                     
-                        _, v, _, _, _ = agents[id].step(obs_std[id], hidden=hidden[id])
+                        _, v, _, _, _ = agents[id].step(obs_std, hidden=hidden[id], id=id, obs_count=number_of_agents)
                         values.append(v)
                     if epoch_ended:
                         #Set flag to sample new environment parameters
@@ -468,7 +477,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 logger=logger,
                 clip_ratio=clip_ratio,
                 target_kl=target_kl,
-                alpha=alpha
+                alpha=alpha,
+                number_agents=number_of_agents,
+                id=id
                 )
         
         logger.store(StopIter=stop_iteration.mean().item())
