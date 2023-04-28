@@ -50,7 +50,9 @@ Metadata = TypedDict(
 )
 
 MAX_CREATION_TRIES = 1000000000
-LIST_MODE = True
+LIST_MODE = False
+
+PROPORTIONAL_REWARD = False
 
 # These actions correspond to:
 # -1: stay idle
@@ -347,9 +349,10 @@ class RadSearch(gym.Env):
     bkg_intensity: int = field(init=False)
     obs_coord: List[List[Point]] = field(init=False)
 
-    # Detector
+    # Agents
     agents: Dict[int, Agent] = field(init=False)
     step_size = DET_STEP
+    global_min_shortest_path: float = field(init=False)
 
     # Source
     # TODO move into own class to easily handle multi-source
@@ -471,14 +474,14 @@ class RadSearch(gym.Env):
         self.max_dist: float = dist_p(
             self.search_area[2], self.search_area[1]
         )  # Maximum distance between two points within search area
-        # if self.seed != None:
-        #     np.random.seed(self.seed)
-        #     self.np_random: npr.Generator = npr.default_rng(self.seed)
-        # Sanity Check
+
         # Assure there is room to spawn detectors and source with proper spacing
         assert (self.max_dist > self.MIN_STARTING_DISTANCE), "Maximum distance available is too small, unable to spawn source and detector 1000 cm apart"
 
         self.scale = 1 / self.search_area[2][1]  # Needed for CNN network scaling
+        
+        # Set initial shortest path to be zero
+        self.global_min_shortest_path = 0
 
         self.reset()
 
@@ -549,23 +552,41 @@ class RadSearch(gym.Env):
 
                 assert measurement >= 0
 
-                # Reward logic
-                if agent.sp_dist < 110:
-                    reward = 0.1  # NOTE: must be the same value as "step in correct direction", as episodes can be cut off prematurely by epoch ending.
-                    self.done = True
-                    agent.terminal_sto.append(True)
-                elif agent.sp_dist < agent.prev_det_dist:
-                    reward = 0.1
-                    agent.prev_det_dist = agent.sp_dist
-                    agent.terminal_sto.append(False)
-                else:
-                    agent.terminal_sto.append(False)
-                    if action == max(get_args(Action)):
-                        reward = (
-                            -1.0 * agent.sp_dist / self.max_dist
-                        )  # If idle, extra penalty
+                if PROPORTIONAL_REWARD:
+                    if agent.sp_dist < 110:
+                        reward = 0.1  # NOTE: must be the same value as a non-terminal step in correct direction, as episodes can be cut off prematurely by epoch ending.
+                        self.done = True
+                        agent.terminal_sto.append(True)
+                    elif agent.sp_dist < agent.prev_det_dist:
+                        reward = 0.1 * -1 * (agent.sp_dist - agent.prev_det_dist)
+                        agent.prev_det_dist = agent.sp_dist
+                        agent.terminal_sto.append(False)
                     else:
-                        reward = -0.5 * agent.sp_dist / self.max_dist
+                        agent.terminal_sto.append(False)
+                        if action == max(get_args(Action)):
+                            reward = (
+                                -1.0 * agent.sp_dist / self.max_dist
+                            )  # If idle, extra penalty
+                        else:
+                            reward = -0.5 * agent.sp_dist / self.max_dist
+                # If using global reward
+                if not PROPORTIONAL_REWARD:
+                    if agent.sp_dist < 110:
+                        reward = 0.1  # NOTE: must be the same value as a non-terminal step in correct direction, as episodes can be cut off prematurely by epoch ending.
+                        self.done = True
+                        agent.terminal_sto.append(True)
+                    elif agent.sp_dist < self.global_min_shortest_path:
+                        self.global_min_shortest_path = self.sp_dist
+                        reward = 0.1 
+                        agent.prev_det_dist = agent.sp_dist
+                        agent.terminal_sto.append(False)
+                    else:
+                        agent.terminal_sto.append(False)
+                        # If idle, extra penalty                        
+                        if action == max(get_args(Action)):
+                            reward = (-1.0 * agent.sp_dist / self.max_dist)  
+                        else:
+                            reward = -0.5 * agent.sp_dist / self.max_dist                    
 
             # If take_action is false, usually due to agent being in obstacle or empty action on env reset.
             else:
@@ -688,12 +709,15 @@ class RadSearch(gym.Env):
         aggregate_success_result = {_: None for _ in self.agents}
         aggregate_info_result: Dict = {_: None for _ in self.agents}
         max_reward: Union[float, None] = None
+        min_distance: Union[float, None] = None   
+        winning_id: Union[int, None] = None    
 
         if action_list:
             proposed_coordinates = [
                 sum_p(self.agents[agent_id].det_coords, get_step(action))
                 for agent_id, action in action_list.items()
             ]
+            
             for agent_id, a in action_list.items():
                 (
                     aggregate_observation_result[agent_id],
@@ -706,20 +730,6 @@ class RadSearch(gym.Env):
                     proposed_coordinates=proposed_coordinates,
                 )
 
-                if not LIST_MODE:
-                    # Calculate team reward
-                    if not max_reward:
-                        max_reward = aggregate_reward_result[agent_id]
-                    elif max_reward < aggregate_reward_result[agent_id]:
-                        max_reward = aggregate_reward_result[agent_id]
-            if LIST_MODE:
-                max_reward = aggregate_reward_result.max() # type: ignore
-            
-            # Save cumulative team reward for rendering
-            for agent in self.agents.values():
-                if max_reward:
-                    agent.team_reward_sto.append(max_reward + agent.team_reward_sto[-1] if len(agent.team_reward_sto) > 0 else max_reward )
-                    
             self.iter_count += 1
             # return {k: asdict(v) for k, v in aggregate_step_result.items()}
         elif not action or type(action) is int:
@@ -738,7 +748,14 @@ class RadSearch(gym.Env):
                     aggregate_info_result[agent_id],
                 ) = agent_step( action=action, agent=agent)  # type: ignore
 
-                if not LIST_MODE:
+            self.iter_count += 1
+        else:
+            raise ValueError("Incompatible Action type")
+        # Parse rewards
+        if not PROPORTIONAL_REWARD: 
+            # if Global shortest path was used as min shortest path distance        
+            if not LIST_MODE:
+                for agent_id in self.agents:
                     # Calculate team reward
                     if not max_reward:
                         max_reward = aggregate_reward_result[agent_id]
@@ -746,18 +763,22 @@ class RadSearch(gym.Env):
                         max_reward = aggregate_reward_result[agent_id]
             if LIST_MODE:
                 max_reward = aggregate_reward_result.max() # type: ignore
+                            
+        if PROPORTIONAL_REWARD:
+            # If rewards were calculated based on the proportional difference between last and current
+            for id, agent in self.agents.items():
+                if not min_distance:
+                    min_distance = agent.sp_dist
+                    winning_id = id                    
+                elif min_distance > agent.sp_dist:
+                    min_distance = agent.sp_dist
+                    winning_id = id
+            max_reward = np.round(aggregate_reward_result[winning_id].item(), decimals=2) if LIST_MODE else aggregate_reward_result[winning_id]
             
-            # Save cumulative team reward for rendering
-            for agent in self.agents.values():
-                if max_reward:
-                    agent.team_reward_sto.append(
-                        max_reward + agent.team_reward_sto[-1]
-                        if len(agent.team_reward_sto) > 0
-                        else max_reward
-                    )
-            self.iter_count += 1
-        else:
-            raise ValueError("Incompatible Action type")
+        # Save cumulative team reward for rendering
+        for agent in self.agents.values():
+            if max_reward:
+                agent.team_reward_sto.append(max_reward + agent.team_reward_sto[-1] if len(agent.team_reward_sto) > 0 else max_reward )            
 
         return (
             aggregate_observation_result,
@@ -813,7 +834,10 @@ class RadSearch(gym.Env):
             agent.prev_det_dist: float = self.world.shortest_path(  # type: ignore
                 self.source, agent.detector, self.vis_graph, EPSILON
             ).length()
-
+        
+        # Set first shortest path - assumes all agents start in the same location
+        self.global_min_shortest_path = self.agents[0].prev_det_dist
+        
         self.intensity = self.np_random.integers(self.radiation_intensity_bounds[0], self.radiation_intensity_bounds[1])  # type: ignore
         self.bkg_intensity = self.np_random.integers(self.background_radiation_bounds[0], self.background_radiation_bounds[1])  # type: ignore
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -831,8 +855,10 @@ class RadSearch(gym.Env):
 
         # Get current states
         step = self.step(action=None)
+        
         # Reclear iteration count
         self.iter_count = 0
+            
         return step
 
     def refresh_environment(self, env_dict: Dict, id: int, num_obs: int = 0) -> Dict:

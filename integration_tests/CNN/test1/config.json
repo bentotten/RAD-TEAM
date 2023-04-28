@@ -1,27 +1,8 @@
 {
     "ac_kwargs":	{
-        "batch_s":	1,
-        "hidden":	[
-            [
-                24
-            ]
-        ],
-        "hidden_sizes_pol":	[
-            [
-                32
-            ]
-        ],
-        "hidden_sizes_rec":	[
-            24
-        ],
-        "hidden_sizes_val":	[
-            [
-                32
-            ]
-        ],
-        "net_type":	"rnn"
+        "predictor_hidden_size":	24
     },
-    "actor_critic":	"RNNModelActorCritic",
+    "actor_critic":	"CNNBase",
     "alpha":	0.1,
     "clip_ratio":	0.2,
     "dims":	{
@@ -54,45 +35,44 @@
         ],
         "obstruction_count":	0
     },
-    "env_fn":	"<function <lambda> at 0x7f39044270a0>",
+    "env_fn":	"<function <lambda> at 0x7f6cab83eef0>",
     "epochs":	100,
-    "exp_name":	"rada2c_marl_test1_saane",
+    "exp_name":	"cnn_test1_rhine_not_batched",
     "gamma":	0.99,
     "lam":	0.9,
     "load_model":	0,
     "logger":	{
-        "<rl_tools.logx.EpochLogger object at 0x7f39043ff640>":	{
+        "<rl_tools.logx.EpochLogger object at 0x7f6cab848070>":	{
             "epoch_dict":	{},
-            "exp_name":	"rada2c_marl_test1_saane",
+            "exp_name":	"cnn_test1_rhine_not_batched",
             "first_row":	true,
             "log_current_row":	{},
             "log_headers":	[],
-            "output_dir":	"../../models/train/stage_1/rada2c_marl_test1_saane_s12647",
+            "output_dir":	"../../models/train/stage_1/cnn_test1_rhine_not_batched_s24465",
             "output_file":	{
-                "<_io.TextIOWrapper name='../../models/train/stage_1/rada2c_marl_test1_saane_s12647/progress.txt' mode='w' encoding='UTF-8'>":	{
+                "<_io.TextIOWrapper name='../../models/train/stage_1/cnn_test1_rhine_not_batched_s24465/progress.txt' mode='w' encoding='UTF-8'>":	{
                     "mode":	"w"
                 }
             }
         }
     },
     "logger_kwargs":	{
-        "exp_name":	"rada2c_marl_test1_saane",
-        "output_dir":	"../../models/train/stage_1/rada2c_marl_test1_saane_s12647"
+        "exp_name":	"cnn_test1_rhine_not_batched",
+        "output_dir":	"../../models/train/stage_1/cnn_test1_rhine_not_batched_s24465"
     },
     "max_ep_len":	120,
     "mp_mm":	[
         5,
         5
     ],
-    "number_of_agents":	1,
     "pi_lr":	0.0003,
     "render":	false,
     "save_freq":	500,
     "save_gif":	false,
-    "seed":	3751331691,
+    "seed":	3118735836,
     "steps_per_epoch":	480,
     "target_kl":	0.07,
     "train_pi_iters":	40,
-    "train_v_iters":	15,
-    "vf_lr":	0.005
+    "train_v_iters":	40,
+    "vf_lr":	0.0003
 }

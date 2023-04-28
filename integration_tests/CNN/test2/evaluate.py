@@ -375,7 +375,7 @@ class EpisodeRunner:
 
             # Incremement Counters and save new (individual) cumulative returns
             if self.team_mode == "individual":
-                for id in rewards["individual_reward"]:
+                for id in range(self.number_of_agents):
                     episode_return[id] += np.array(rewards["individual_reward"][id], dtype="float32").item()
             else:
                 for id in self.agents:
@@ -660,7 +660,7 @@ if __name__ == "__main__":
         "enforce_grid_boundaries": True,
         "DEBUG": True,
         "np_random": rng,
-        "TEST": 1
+        "TEST": 2
         }    
     
     eval_kwargs = dict(

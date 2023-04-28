@@ -230,7 +230,17 @@
       "justMyCode": false,
 
       "cwd": "${workspaceFolder}/integration_tests/CNN/test1"
-    },           
+    },          
+    {
+      "name": "Test CNN Stage 1 - Test 2",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/integration_tests/CNN/test2/evaluate.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+
+      "cwd": "${workspaceFolder}/integration_tests/CNN/test2"
+    },            
     {
       "name": "Test RADA2C MARL Stage 1 - Test 1",
       "type": "python",

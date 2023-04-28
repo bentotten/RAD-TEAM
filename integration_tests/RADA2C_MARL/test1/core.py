@@ -416,7 +416,7 @@ class RNNModelActorCritic(nn.Module):
         return a.numpy(), v.numpy(), logp_a.numpy(), hidden, loc_pred.numpy()
 
     def grad_step(self, obs, act, id, hidden=None):
-        obs_t = torch.as_tensor(obs, dtype=torch.float32).flatten(start_dim=1).unsqueeze(1)
+        obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(1) # Obs is already flat
         agent_observation = obs[:, (id * 11): (id * 11) + 11] # offset to the correct starting spot  # TODO change 11 to a observation space variable
         obs_for_pfgru = torch.as_tensor(agent_observation, dtype=torch.float32).unsqueeze(1)
         loc_pred = torch.empty((obs_for_pfgru.shape[0],2))
