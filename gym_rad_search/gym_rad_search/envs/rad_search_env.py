@@ -52,7 +52,9 @@ Metadata = TypedDict(
 MAX_CREATION_TRIES = 1000000000
 LIST_MODE = False
 
-PROPORTIONAL_REWARD = False
+GLOBAL_REWARD = False # Beat the global minimum shortest path distance or get punished
+PROPORTIONAL_REWARD = False if GLOBAL_REWARD else True # Get rewarded for improving your own shortest path, proportional to last time. Closest agent gets saved.
+BASIC_REWARD = False if (GLOBAL_REWARD or PROPORTIONAL_REWARD) else True # -0.1 for every step
 
 # These actions correspond to:
 # -1: stay idle
@@ -570,13 +572,13 @@ class RadSearch(gym.Env):
                         else:
                             reward = -0.5 * agent.sp_dist / self.max_dist
                 # If using global reward
-                if not PROPORTIONAL_REWARD:
+                elif GLOBAL_REWARD:
                     if agent.sp_dist < 110:
                         reward = 0.1  # NOTE: must be the same value as a non-terminal step in correct direction, as episodes can be cut off prematurely by epoch ending.
                         self.done = True
                         agent.terminal_sto.append(True)
                     elif agent.sp_dist < self.global_min_shortest_path:
-                        self.global_min_shortest_path = self.sp_dist
+                        self.global_min_shortest_path = agent.sp_dist
                         reward = 0.1 
                         agent.prev_det_dist = agent.sp_dist
                         agent.terminal_sto.append(False)
@@ -586,7 +588,26 @@ class RadSearch(gym.Env):
                         if action == max(get_args(Action)):
                             reward = (-1.0 * agent.sp_dist / self.max_dist)  
                         else:
-                            reward = -0.5 * agent.sp_dist / self.max_dist                    
+                            reward = -0.5 * agent.sp_dist / self.max_dist
+                elif BASIC_REWARD:
+                    if agent.sp_dist < 110:
+                        reward = 0.1  # NOTE: must be the same value as a non-terminal step in correct direction, as episodes can be cut off prematurely by epoch ending.
+                        self.done = True
+                        agent.terminal_sto.append(True)
+                    elif agent.sp_dist < agent.prev_det_dist:
+                        reward = -0.1 + 0.1 
+                        agent.prev_det_dist = agent.sp_dist
+                        agent.terminal_sto.append(False)
+                    else:
+                        agent.terminal_sto.append(False)
+                        if action == max(get_args(Action)):
+                            reward = (
+                                -0.1 + -1.0 * agent.sp_dist / self.max_dist
+                            )  # If idle, extra penalty
+                        else:
+                            reward = -0.5 * agent.sp_dist / self.max_dist                 
+                else:
+                    raise ValueError("Reward scheme error.")
 
             # If take_action is false, usually due to agent being in obstacle or empty action on env reset.
             else:
@@ -708,7 +729,7 @@ class RadSearch(gym.Env):
             
         aggregate_success_result = {_: None for _ in self.agents}
         aggregate_info_result: Dict = {_: None for _ in self.agents}
-        max_reward: Union[float, None] = None
+        max_reward: Union[float, npt.Floating, None] = None
         min_distance: Union[float, None] = None   
         winning_id: Union[int, None] = None    
 
