@@ -465,7 +465,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         # Save model
         if (epoch % save_freq == 0) or (epoch == epochs-1):
             for id in range(len(agents)):
-                agent_loggers[id].save_state(None, None)
+                agent_loggers[id].save_state(itr=id, state_dict=None)
 
         #Reduce localization module training iterations after 100 epochs to speed up training
         if reduce_v_iters and epoch > 99:
