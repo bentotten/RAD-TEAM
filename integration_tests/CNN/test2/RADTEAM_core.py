@@ -1761,14 +1761,14 @@ class CNNBase:
             self.pi = Actor(
                     map_dim=self.maps.map_dimensions, 
                     action_dim=self.action_space, 
-                    map_count=3
+                    map_count=4
                 )
             if self.GlobalCritic:
                 self.critic = self.GlobalCritic
             elif self.no_critic:
-                self.critic = EmptyCritic(map_count=3)
+                self.critic = EmptyCritic(map_count=4)
             else:
-                self.critic = Critic(map_dim=self.maps.map_dimensions, map_count=3)  
+                self.critic = Critic(map_dim=self.maps.map_dimensions, map_count=4)  
         else:
             raise ValueError("Problem in actor intit")
 
@@ -1857,7 +1857,7 @@ class CNNBase:
                     location_map,
                     _,
                     readings_map,
-                    _,
+                    visit_counts_map,
                     obstacles_map,
                     _,
                 ) = self.maps.observation_to_map(state_observation, id, location_prediction)
@@ -1867,6 +1867,7 @@ class CNNBase:
                     [
                         torch.tensor(location_map),
                         torch.tensor(readings_map),
+                        torch.tensor(visit_counts_map),                        
                         torch.tensor(obstacles_map),
                     ]
                 )
@@ -1875,6 +1876,7 @@ class CNNBase:
                     [
                         torch.tensor(location_map),
                         torch.tensor(readings_map),
+                        torch.tensor(visit_counts_map),                        
                         torch.tensor(obstacles_map),
                     ]
                 )      
