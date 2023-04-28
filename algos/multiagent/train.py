@@ -365,7 +365,8 @@ class train_PPO:
 
                 # Incremement Counters and save new cumulative returns
                 if not self.global_critic_flag:
-                    for id in rewards["individual_reward"]:
+                    for id in range(self.number_of_agents):
+
                         episode_return[id] += np.array(
                             rewards["individual_reward"][id], dtype="float32"
                         ).item()

@@ -50,9 +50,9 @@ Metadata = TypedDict(
 )
 
 MAX_CREATION_TRIES = 1000000000
-LIST_MODE = False
+LIST_MODE = True
 
-GLOBAL_REWARD = False # Beat the global minimum shortest path distance or get punished
+GLOBAL_REWARD = True # Beat the global minimum shortest path distance or get punished
 PROPORTIONAL_REWARD = False if GLOBAL_REWARD else True # Get rewarded for improving your own shortest path, proportional to last time. Closest agent gets saved.
 BASIC_REWARD = False if (GLOBAL_REWARD or PROPORTIONAL_REWARD) else True # -0.1 for every step
 

@@ -266,7 +266,8 @@ class EpisodeRunner:
                 observations[id][0] = np.clip((observations[id][0]-stat_buffers[id].mu)/stat_buffers[id].sig_obs,-8,8)
 
             # Incremement Counters and save new (individual) cumulative returns
-            for id in rewards["individual_reward"]:
+            for id in range(self.number_of_agents):
+
                 episode_return[id] += np.array(rewards["individual_reward"][id], dtype="float32").item()
 
             steps_in_episode += 1

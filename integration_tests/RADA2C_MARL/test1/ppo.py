@@ -1,4 +1,6 @@
 import numpy as np
+import numpy.typing as npt
+
 import torch
 from torch.optim import Adam
 import gym # type: ignore
@@ -279,7 +281,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         for _ in range(len(agents))
     ]
     
-    save_gif_freq = epochs // 3
+    save_gif_freq = epochs // 100
     if proc_id() == 0:
         print(f'Local steps per epoch: {local_steps_per_epoch}')
 
@@ -300,6 +302,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     # Prepare for interaction with environment
     start_time = time.time()
     o, _, _, _ = env.reset()
+    if isinstance(o, dict):
+        raise ValueError("Env not giving observations in np array form. Must be in a np array.")
+    
     ep_ret, ep_len, done_count, a = 0, 0, 0, -1
 
     stat_buffers = list()
@@ -559,6 +564,12 @@ if __name__ == '__main__':
         default=True,
         help="Indicate if each agent should have their own critic or a global.",
     )        
+    parser.add_argument(
+        "--render",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Indicate if each agent should have their own critic or a global.",
+    )      
     args = parser.parse_args()
 
     #Change mini-batch size, only been tested with size of 1
@@ -599,5 +610,5 @@ if __name__ == '__main__':
         ac_kwargs=dict(hidden_sizes_pol=[args.hid_pol]*args.l_pol,hidden_sizes_val=[args.hid_val]*args.l_val,
         hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch), gamma=args.gamma, alpha=args.alpha,
         seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,
-        logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model, number_of_agents=args.agents)
+        logger_kwargs=logger_kwargs,render=args.render, save_gif=args.render, load_model=args.load_model, number_of_agents=args.agents)
     

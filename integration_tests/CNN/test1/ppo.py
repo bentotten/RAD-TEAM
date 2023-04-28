@@ -243,13 +243,12 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                 optimization.pi_optimizer.zero_grad()           
                                      
                 loss_pi, kl, entropy, clip_fraction = compute_batched_losses_pi(agent=ac, data=data, sample=sample_indexes, mapstacks_buffer=pi_maps)
-                pi_info = dict(kl = kl, ent = entropy, cf = clip_fraction)
 
                 if kl < 1.5 * target_kl:
                     loss_pi.backward()
                     optimization.pi_optimizer.step()
                 else:
-                    logger.log('Early stopping at step %d due to reaching max kl.'%kk)                    
+                    logger.log('Early stopping at update iteration %d due to reaching max kl.'%kk)                    
                     kl_bound_flag = True
                     break
                 
@@ -263,13 +262,14 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     loss_pi.backward()
                     optimization.pi_optimizer.step()
                 if kl < 1.5 * target_kl:
-                    logger.log('Early stopping at step %d due to reaching max kl.'%kk)                        
+                    logger.log('Early stopping at update iteration %d due to reaching max kl.'%kk)                        
                     kl_bound_flag = True
-                    break
-                    
-                pi_info = dict(kl = kl, ent = entropy, cf = clip_fraction) # Just for last step
+                    break       
+            else:
+                raise ValueError("Batched update problem")
             kk += 1
-                        
+        
+        pi_info = dict(kl = kl, ent = entropy, cf = clip_fraction) # Just for last step          
 
         # Update value function 
         for i in range(train_v_iters):
@@ -288,7 +288,9 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     loss_v = compute_loss_critic(agent=ac, index=step, data=data, map_stack=v_maps)
                     loss_v.backward()
                     mpi_avg_grads(ac.critic)    # average grads across MPI processes
-                    optimization.critic_optimizer.step()            
+                    optimization.critic_optimizer.step()    
+            else:
+                raise ValueError("Batched update problem")                            
         
         #Reduce learning rate
         #pi_scheduler.step()
