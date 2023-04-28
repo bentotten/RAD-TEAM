@@ -306,6 +306,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         raise ValueError("Env not giving observations in np array form. Must be in a np array.")
     
     ep_ret, ep_len, done_count, a = 0, 0, 0, -1
+    ep_count = 0
 
     stat_buffers = list()
     for id in range(len(agents)):
@@ -339,13 +340,17 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             for id in range(len(agents)):
                 obs_std[id][0] = stat_buffers[id].standardize(o[id][0])
 
+            actions_for_env = {}
             for id in range(len(agents)):
                 #compute action and logp (Actor), compute value (Critic)
                 actions[id], v, logp, hidden[id], _ = agents[id].step(obs_std, hidden=hidden[id], id=id, obs_count=number_of_agents)
                 values.append(v)
                 logprobs.append(logp)
                 
-            next_o, r, d, _ = env.step(actions)
+                actions_for_env[id] = actions[id].item()
+                
+                                
+            next_o, r, d, _ = env.step(actions_for_env)
             d = True if True in d.values() else False
             
             ep_ret += r['team_reward']
@@ -380,6 +385,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             epoch_ended = t==local_steps_per_epoch-1
             
             if terminal or epoch_ended:
+                ep_count += 1
                 if d and not timeout:
                     done_count += 1
 
@@ -414,8 +420,23 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1 ) == epochs)):
                     #Check agent progress during training
                     if proc_id() == 0 and epoch != 0:
-                        env.render(save_gif=save_gif,path=logger.output_dir,epoch_count=epoch,
-                                   ep_rew=ep_ret_ls)
+                        # Render gif
+                        env.render(
+                            path=logger.output_dir,
+                            epoch_count=epoch,
+                            episode_count=ep_count,
+                            silent=False,
+                        )
+                        # Render environment image
+                        env.render(
+                            path=logger.output_dir,
+                            epoch_count=epoch,
+                            just_env=True,
+                            episode_count=ep_count,
+                            silent=False,
+                        )   
+                if epoch_ended:
+                    ep_count = 0                     
                 
                 ep_ret_ls = []
                 # stat_buff.reset()

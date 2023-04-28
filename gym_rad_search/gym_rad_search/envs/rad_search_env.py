@@ -55,6 +55,7 @@ LIST_MODE = True
 GLOBAL_REWARD = True # Beat the global minimum shortest path distance or get punished
 PROPORTIONAL_REWARD = False if GLOBAL_REWARD else True # Get rewarded for improving your own shortest path, proportional to last time. Closest agent gets saved.
 BASIC_REWARD = False if (GLOBAL_REWARD or PROPORTIONAL_REWARD) else True # -0.1 for every step
+ORIGINAL_REWARD = False if (GLOBAL_REWARD or PROPORTIONAL_REWARD or BASIC_REWARD) else True # +0.1 for every step that is closer than prev shortest path. Unfortunately rewards agent for extending episode
 
 # These actions correspond to:
 # -1: stay idle
@@ -406,6 +407,8 @@ class RadSearch(gym.Env):
     def __post_init__(self) -> None:
         # Debugging tests
         # Test 1: 15x15 grid, no obstructions, fixed start and stop points
+        if self.DEBUG:
+            print(f"Reward Mode - Global: {GLOBAL_REWARD}. Proportional: {PROPORTIONAL_REWARD}. Basic {BASIC_REWARD}. Original: {ORIGINAL_REWARD}")        
         if self.TEST == 1:
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 1 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0,1500.0)), Point((0.0,1500.0))))
@@ -605,7 +608,24 @@ class RadSearch(gym.Env):
                                 -0.1 + -1.0 * agent.sp_dist / self.max_dist
                             )  # If idle, extra penalty
                         else:
-                            reward = -0.5 * agent.sp_dist / self.max_dist                 
+                            reward = -0.5 * agent.sp_dist / self.max_dist
+                elif ORIGINAL_REWARD:
+                    if agent.sp_dist < 110:
+                        reward = 0.1  # NOTE: must be the same value as a non-terminal step in correct direction, as episodes can be cut off prematurely by epoch ending.
+                        self.done = True
+                        agent.terminal_sto.append(True)
+                    elif agent.sp_dist < agent.prev_det_dist:
+                        reward = 0.1 
+                        agent.prev_det_dist = agent.sp_dist
+                        agent.terminal_sto.append(False)
+                    else:
+                        agent.terminal_sto.append(False)
+                        if action == max(get_args(Action)):
+                            reward = (
+                                -0.1 + -1.0 * agent.sp_dist / self.max_dist
+                            )  # If idle, extra penalty
+                        else:
+                            reward = -0.5 * agent.sp_dist / self.max_dist                                
                 else:
                     raise ValueError("Reward scheme error.")
 

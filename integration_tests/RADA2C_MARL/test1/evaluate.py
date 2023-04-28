@@ -264,7 +264,6 @@ class EpisodeRunner:
 
             # Incremement Counters and save new (individual) cumulative returns
             for id in range(self.number_of_agents):
-
                 episode_return[id] += np.array(rewards["individual_reward"][id], dtype="float32").item()
 
             steps_in_episode += 1
