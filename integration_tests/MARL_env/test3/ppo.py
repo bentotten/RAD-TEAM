@@ -569,3 +569,5 @@ if __name__ == '__main__':
         seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,
         logger_kwargs=logger_kwargs,render=render, save_gif=render, load_model = args.load_model)
     
+    print("Done! Seed:")
+    print(args.seed)    
