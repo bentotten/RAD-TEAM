@@ -54,7 +54,7 @@ LIST_MODE = True
 
 GLOBAL_REWARD = False # Beat the global minimum shortest path distance or get punished
 PROPORTIONAL_REWARD = False if GLOBAL_REWARD else False # Get rewarded for improving your own shortest path, proportional to last time. Closest agent gets saved.
-BASIC_REWARD = False if (GLOBAL_REWARD or PROPORTIONAL_REWARD) else True # -0.1 for every step
+BASIC_REWARD = False if (GLOBAL_REWARD or PROPORTIONAL_REWARD) else True # 0 for every good step; prevents agent from gaining rewards by maximizing the episode length
 ORIGINAL_REWARD = False if (GLOBAL_REWARD or PROPORTIONAL_REWARD or BASIC_REWARD) else True # +0.1 for every step that is closer than prev shortest path. Unfortunately rewards agent for extending episode
 
 # These actions correspond to:
@@ -430,12 +430,12 @@ class RadSearch(gym.Env):
         # Test 3: 15x15 grid, no obstructions, fixed start point
         elif self.TEST == 3:
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 3 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            self.bbox = BBox((Point((0.0,0.0)),Point((500.0,0.0)),Point((500.0,500.0)), Point((0.0,500.0))))
+            self.bbox = BBox((Point((0.0,0.0)),Point((1000.0,0.0)),Point((1000.0, 1000.0)), Point((0.0, 1000.0))))
             self.observation_area = Interval((1.0, 1.0))
             self.obstruction_count = 0
             self.DEBUG = True
-            self.DEBUG_DETECTOR_LOCATION = Point((499.0, 499.0))
-            self.MIN_STARTING_DISTANCE = 200 # cm
+            self.DEBUG_DETECTOR_LOCATION = Point((999.0, 999.0))
+            self.MIN_STARTING_DISTANCE = 500 # cm
 
         # Test 2: 15x15 grid, no obstructions
         elif self.TEST == 4:
@@ -594,18 +594,18 @@ class RadSearch(gym.Env):
                             reward = -0.5 * agent.sp_dist / self.max_dist
                 elif BASIC_REWARD:
                     if agent.sp_dist < 110:
-                        reward = -0.1 + 0.1 
+                        reward =  0.0 
                         self.done = True
                         agent.terminal_sto.append(True)
                     elif agent.sp_dist < agent.prev_det_dist:
-                        reward = -0.1 + 0.1 
+                        reward = 0.0
                         agent.prev_det_dist = agent.sp_dist
                         agent.terminal_sto.append(False)
                     else:
                         agent.terminal_sto.append(False)
                         if action == max(get_args(Action)):
                             reward = (
-                                -0.1 + -1.0 * agent.sp_dist / self.max_dist
+                                -1.0 * agent.sp_dist / self.max_dist
                             )  # If idle, extra penalty
                         else:
                             reward = -0.5 * agent.sp_dist / self.max_dist
@@ -622,7 +622,7 @@ class RadSearch(gym.Env):
                         agent.terminal_sto.append(False)
                         if action == max(get_args(Action)):
                             reward = (
-                                -0.1 + -1.0 * agent.sp_dist / self.max_dist
+                                -1.0 * agent.sp_dist / self.max_dist
                             )  # If idle, extra penalty
                         else:
                             reward = -0.5 * agent.sp_dist / self.max_dist                                

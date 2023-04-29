@@ -342,8 +342,8 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     print(f'Proc id: {proc_id()} -> Starting main training loop!', flush=True)
     for epoch in range(epochs):
         #Reset hidden state
-        #hidden = ac.reset_hidden()
-        hidden = []
+        hidden = ac.reset_hidden()
+        #hidden = []
         for t in range(local_steps_per_epoch):
             #Standardize input using running statistics per episode
             obs_std = o
@@ -412,7 +412,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                 ep_ret_ls = []
                 if not env.epoch_end:
                     #Reset detector position and episode tracking
-                    #hidden = ac.reset_hidden()
+                    hidden = ac.reset_hidden()
                     o, _, _, _ = env.reset()
                     o = o[0]
                     ep_ret, ep_len, a = 0, 0, -1    
