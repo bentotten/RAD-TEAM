@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt  # type: ignore
 import warnings
 import json
 
-PFGRU = True # If wanting to use the PFGRU TODO turn this into a parameter
+PFGRU = False # If wanting to use the PFGRU TODO turn this into a parameter
 SMALL_VERSION = False
 
 # Maps
@@ -1163,15 +1163,13 @@ class Actor(nn.Module):
 
     def save_model(self, checkpoint_path: str) -> None:
         """Save model to a file"""
-        torch.save(self.state_dict(), f"{checkpoint_path}/actor.pt")
+        torch.save([self.kwargs, self.state_dict()], f"{checkpoint_path}/actor.pt")
 
-    def load_model(self, checkpoint_path: str) -> None:
-        assert path.isfile(f"{checkpoint_path}/actor.pt"), "Model does not exist"
-        self.load_state_dict(
-            torch.load(
-                f"{checkpoint_path}/actor.pt", map_location=lambda storage, loc: storage
-            )
-        )
+    def load_model(self, checkpoint_path: str, state_dict = None) -> None:
+        if not state_dict:
+            assert path.isfile(f"{checkpoint_path}/actor.pt"), "Model does not exist"        
+            _, state_dict = torch.load(f"{checkpoint_path}/actor.pt", map_location=lambda storage, loc: storage)            
+        self.load_state_dict(state_dict=state_dict)
 
 
 class Critic(nn.Module):
@@ -1318,16 +1316,13 @@ class Critic(nn.Module):
 
     def save_model(self, checkpoint_path: str) -> None:
         """Save model to a file"""
-        torch.save(self.state_dict(), f"{checkpoint_path}/critic.pt")
+        torch.save([self.kwargs, self.state_dict()], f"{checkpoint_path}/critic.pt")
 
-    def load_model(self, checkpoint_path: str) -> None:
-        assert path.isfile(f"{checkpoint_path}/critic.pt"), "Model does not exist"
-        self.load_state_dict(
-            torch.load(
-                f"{checkpoint_path}/critic.pt",
-                map_location=lambda storage, loc: storage,
-            )
-        )
+    def load_model(self, checkpoint_path: str, state_dict = None) -> None:
+        if not state_dict:
+            assert path.isfile(f"{checkpoint_path}/critic.pt"), "Model does not exist"            
+            _, state_dict = torch.load(f"{checkpoint_path}/critic.pt", map_location=lambda storage, loc: storage)            
+        self.load_state_dict(state_dict=state_dict)
 
     def is_mock_critic(self) -> bool:
         return False
@@ -1621,16 +1616,13 @@ class PFGRUCell(PFRNNBaseCell):
         return hidden
 
     def save_model(self, checkpoint_path: str) -> None:
-        torch.save(self.state_dict(), f"{checkpoint_path}/predictor.pt")
+        torch.save([self.kwargs, self.state_dict()], f"{checkpoint_path}/predictor.pt")
 
-    def load_model(self, checkpoint_path: str) -> None:
-        assert path.isfile(f"{checkpoint_path}/predictor.pt"), "Model does not exist"
-        self.load_state_dict(
-            torch.load(
-                f"{checkpoint_path}/predictor.pt",
-                map_location=lambda storage, loc: storage,
-            )
-        )
+    def load_model(self, checkpoint_path: str, state_dict = None) -> None:
+        if not state_dict:
+            assert path.isfile(f"{checkpoint_path}/predictor.pt"), "Model does not exist"        
+            _, state_dict = torch.load(f"{checkpoint_path}/predictor.pt", map_location=lambda storage, loc: storage)            
+        self.load_state_dict(state_dict=state_dict)
 
 
 @dataclass
