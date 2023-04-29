@@ -232,14 +232,14 @@
       "cwd": "${workspaceFolder}/integration_tests/CNN/test1"
     },          
     {
-      "name": "Test CNN Stage 1 - Test 2",
+      "name": "Test CNN Stage 1 - Test 3",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/integration_tests/CNN/test2/ppo.py",
+      "program": "${workspaceFolder}/integration_tests/CNN/test3/ppo.py",
       "console": "integratedTerminal",
       "justMyCode": false,
 
-      "cwd": "${workspaceFolder}/integration_tests/CNN/test2"
+      "cwd": "${workspaceFolder}/integration_tests/CNN/test3"
     },            
     {
       "name": "Test RADA2C MARL Stage 1 - Test 1",

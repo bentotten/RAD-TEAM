@@ -431,7 +431,7 @@ class RadSearch(gym.Env):
         elif self.TEST == 3:
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 3 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0,0.0)),Point((1000.0,0.0)),Point((1000.0, 1000.0)), Point((0.0, 1000.0))))
-            self.observation_area = Interval((1.0, 1.0))
+            self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 0
             self.DEBUG = True
             self.DEBUG_DETECTOR_LOCATION = Point((999.0, 999.0))
