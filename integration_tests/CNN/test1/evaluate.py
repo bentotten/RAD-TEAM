@@ -345,15 +345,7 @@ class EpisodeRunner:
             agent_thoughts.clear()
             for id, ac in self.agents.items():
                 with torch.no_grad():
-                    if (
-                        self.actor_critic_architecture == "rnn"
-                        or self.actor_critic_architecture == "mlp"
-                    ):
-                        agent_thoughts[id], heatmaps = ac.step(
-                            observations[id], hiddens[id]
-                        )
-                    else:
-                        agent_thoughts[id], heatmaps = ac.step(observations, hiddens)
+                    agent_thoughts[id], heatmaps = ac.step(observations, hiddens[id])
 
                 hiddens[id] = agent_thoughts[id].hidden  # For RAD-A2C - save latest hiddens for use in next steps.
 

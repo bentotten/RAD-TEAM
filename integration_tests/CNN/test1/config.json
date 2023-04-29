@@ -81,7 +81,7 @@
                     },
                     "agents":	{
                         "0":	{
-                            "Agent(sp_dist=2118.491916434896, euc_dist=2118.491916434896, det_coords=(1499.0, 1499.0), out_of_bounds=False, out_of_bounds_count=0, collision=False, intersect=False, obstacle_blocking=False, detector=<visilibity.Point; proxy of <Swig Object of type 'VisiLibity::Point *' at 0x7f8dde6dac10> >, prev_det_dist=2118.491916434896, id=0, marker_color=array([1.        , 0.41176471, 0.70588235]), det_sto=[(1499.0, 1499.0)], meas_sto=[490], team_reward_sto=[-0.81], cum_reward_sto=[-0.8148045832441908], action_sto=[None], terminal_sto=[False])":	{
+                            "Agent(sp_dist=2118.491916434896, euc_dist=2118.491916434896, det_coords=(1499.0, 1499.0), out_of_bounds=False, out_of_bounds_count=0, collision=False, intersect=False, obstacle_blocking=False, detector=<visilibity.Point; proxy of <Swig Object of type 'VisiLibity::Point *' at 0x7f0e4d8cd320> >, prev_det_dist=2118.491916434896, id=0, marker_color=array([1.        , 0.41176471, 0.70588235]), det_sto=[(1499.0, 1499.0)], meas_sto=[490], team_reward_sto=[-0.81], cum_reward_sto=[-0.8148045832441908], action_sto=[None], terminal_sto=[False])":	{
                                 "action_sto":	[
                                     null
                                 ],
@@ -100,8 +100,8 @@
                                     ]
                                 ],
                                 "detector":	{
-                                    "<visilibity.Point; proxy of <Swig Object of type 'VisiLibity::Point *' at 0x7f8dde6dac10> >":	{
-                                        "this":	"<Swig Object of type 'VisiLibity::Point *' at 0x7f8dde6dac10>"
+                                    "<visilibity.Point; proxy of <Swig Object of type 'VisiLibity::Point *' at 0x7f0e4d8cd320> >":	{
+                                        "this":	"<Swig Object of type 'VisiLibity::Point *' at 0x7f0e4d8cd320>"
                                     }
                                 },
                                 "euc_dist":	2118.491916434896,
@@ -117,7 +117,7 @@
                                 "prev_det_dist":	2118.491916434896,
                                 "sp_dist":	2118.491916434896,
                                 "team_reward_sto":	[
-                                    -0.81
+                                    "-0.81"
                                 ],
                                 "terminal_sto":	[
                                     false
@@ -242,8 +242,8 @@
                         ]
                     ],
                     "source":	{
-                        "<visilibity.Point; proxy of <Swig Object of type 'VisiLibity::Point *' at 0x7f8dde6dab80> >":	{
-                            "this":	"<Swig Object of type 'VisiLibity::Point *' at 0x7f8dde6dab80>"
+                        "<visilibity.Point; proxy of <Swig Object of type 'VisiLibity::Point *' at 0x7f0e4d8cd290> >":	{
+                            "this":	"<Swig Object of type 'VisiLibity::Point *' at 0x7f0e4d8cd290>"
                         }
                     },
                     "spec":	{
@@ -292,8 +292,8 @@
                         1
                     ],
                     "vis_graph":	{
-                        "<visilibity.Visibility_Graph; proxy of <Swig Object of type 'VisiLibity::Visibility_Graph *' at 0x7f8dde65c4e0> >":	{
-                            "this":	"<Swig Object of type 'VisiLibity::Visibility_Graph *' at 0x7f8dde65c4e0>"
+                        "<visilibity.Visibility_Graph; proxy of <Swig Object of type 'VisiLibity::Visibility_Graph *' at 0x7f0e4d8cd410> >":	{
+                            "this":	"<Swig Object of type 'VisiLibity::Visibility_Graph *' at 0x7f0e4d8cd410>"
                         }
                     },
                     "walls":	[
@@ -315,38 +315,38 @@
                         ]
                     ],
                     "world":	{
-                        "<visilibity.Environment; proxy of <Swig Object of type 'VisiLibity::Environment *' at 0x7f8dde65e430> >":	{
-                            "this":	"<Swig Object of type 'VisiLibity::Environment *' at 0x7f8dde65e430>"
+                        "<visilibity.Environment; proxy of <Swig Object of type 'VisiLibity::Environment *' at 0x7f0e4d8cd1a0> >":	{
+                            "this":	"<Swig Object of type 'VisiLibity::Environment *' at 0x7f0e4d8cd1a0>"
                         }
                     }
                 }
             }
         }
     },
-    "env_fn":	"<function <lambda> at 0x7f8dde656f80>",
+    "env_fn":	"<function <lambda> at 0x7f0e4d892f80>",
     "epochs":	100,
-    "exp_name":	"CNN_test1_batching_vispa",
+    "exp_name":	"CNN_test1_batching_basic_rew_sihl",
     "gamma":	0.99,
     "lam":	0.9,
     "load_model":	0,
     "logger":	{
-        "<rl_tools.logx.EpochLogger object at 0x7f8dde6dacb0>":	{
+        "<rl_tools.logx.EpochLogger object at 0x7f0e4d8cd360>":	{
             "epoch_dict":	{},
-            "exp_name":	"CNN_test1_batching_vispa",
+            "exp_name":	"CNN_test1_batching_basic_rew_sihl",
             "first_row":	true,
             "log_current_row":	{},
             "log_headers":	[],
-            "output_dir":	"../../models/train/stage_1/CNN_test1_batching_vispa_s2",
+            "output_dir":	"../../models/train/stage_1/CNN_test1_batching_basic_rew_sihl_s2",
             "output_file":	{
-                "<_io.TextIOWrapper name='../../models/train/stage_1/CNN_test1_batching_vispa_s2/progress.txt' mode='w' encoding='UTF-8'>":	{
+                "<_io.TextIOWrapper name='../../models/train/stage_1/CNN_test1_batching_basic_rew_sihl_s2/progress.txt' mode='w' encoding='UTF-8'>":	{
                     "mode":	"w"
                 }
             }
         }
     },
     "logger_kwargs":	{
-        "exp_name":	"CNN_test1_batching_vispa",
-        "output_dir":	"../../models/train/stage_1/CNN_test1_batching_vispa_s2"
+        "exp_name":	"CNN_test1_batching_basic_rew_sihl",
+        "output_dir":	"../../models/train/stage_1/CNN_test1_batching_basic_rew_sihl_s2"
     },
     "max_ep_len":	120,
     "mp_mm":	[
