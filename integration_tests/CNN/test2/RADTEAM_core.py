@@ -91,7 +91,7 @@ class ActionChoice(NamedTuple):
     #: Coordinates predicted by the location prediction model (PFGRU).
     loc_pred: Union[torch.Tensor, None]
     #: Hidden state (for compatibility with RAD-PPO)
-    hidden: torch.Tensor
+    hidden: Tuple[torch.Tensor, torch.Tensor]
 
 
 class HeatMaps(NamedTuple):
@@ -1173,7 +1173,10 @@ class Actor(nn.Module):
             )
         )
 
-
+    def get_config(self):
+        return self.__init__()
+        
+        
 class Critic(nn.Module):
     """
     In deep reinforcement learning, a Critic is a neural network architecture that approximates the state-value V^pi(s) for the policy pi. This indicates how "good it is" to be
@@ -1332,6 +1335,9 @@ class Critic(nn.Module):
     def is_mock_critic(self) -> bool:
         return False
 
+    def get_config(self):
+        return self.__init__()
+    
 
 class EmptyCritic:
     """
@@ -1781,7 +1787,6 @@ class CNNBase:
             hidden_size= self.predictor_hidden_size # (bpf_hsize) (hid_rec in cli)
         )              
 
-
     def set_mode(self, mode: str) -> None:
         """
         Set mode for network.
@@ -2195,3 +2200,10 @@ class CNNBase:
 
         self.render_counter += 1
         plt.close(fig)
+    
+    def get_config(self)-> List:
+        pi = self.pi.get_config()
+        v = self.critic.get_config()
+        config = self.__init__()
+        
+        return [pi, v, config]

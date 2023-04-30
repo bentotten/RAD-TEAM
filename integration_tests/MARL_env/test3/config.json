@@ -1,27 +1,24 @@
 {
     "ac_kwargs":	{
-        "batch_s":	1,
-        "hidden":	[
-            [
-                24
-            ]
+        "action_space":	8,
+        "bounds_offset":	[
+            100.0,
+            100.0
         ],
-        "hidden_sizes_pol":	[
-            [
-                32
-            ]
+        "detector_step_size":	100.0,
+        "enforce_boundaries":	true,
+        "environment_scale":	0.0011111111111111111,
+        "grid_bounds":	[
+            1,
+            1
         ],
-        "hidden_sizes_rec":	[
-            24
-        ],
-        "hidden_sizes_val":	[
-            [
-                32
-            ]
-        ],
-        "net_type":	"rnn"
+        "id":	0,
+        "number_of_agents":	1,
+        "observation_space":	11,
+        "predictor_hidden_size":	24,
+        "steps_per_episode":	120
     },
-    "actor_critic":	"RNNModelActorCritic",
+    "actor_critic":	"CNNBase",
     "alpha":	0.1,
     "clip_ratio":	0.2,
     "dims":	{
@@ -54,30 +51,302 @@
         ],
         "obstruction_count":	0
     },
-    "env_fn":	"<function <lambda> at 0x7fb918d3feb0>",
+    "env":	{
+        "<OrderEnforcing<RadSearch<RadSearchMulti-v1>>>":	{
+            "_action_space":	null,
+            "_has_reset":	false,
+            "_metadata":	null,
+            "_observation_space":	null,
+            "_reward_range":	null,
+            "env":	{
+                "<RadSearch<RadSearchMulti-v1>>":	{
+                    "DEBUG":	true,
+                    "DEBUG_DETECTOR_LOCATION":	[
+                        999.0,
+                        999.0
+                    ],
+                    "DEBUG_SOURCE_LOCATION":	[
+                        1,
+                        1
+                    ],
+                    "MIN_STARTING_DISTANCE":	500,
+                    "TEST":	3,
+                    "action_space":	{
+                        "Discrete(9)":	{
+                            "_np_random":	null,
+                            "_shape":	[],
+                            "dtype":	"int64",
+                            "n":	9
+                        }
+                    },
+                    "agents":	{
+                        "0":	{
+                            "Agent(sp_dist=535.9272338666883, euc_dist=535.9272338666883, det_coords=(999.0, 999.0), out_of_bounds=False, out_of_bounds_count=0, collision=False, intersect=False, obstacle_blocking=False, detector=<visilibity.Point; proxy of <Swig Object of type 'VisiLibity::Point *' at 0x7f49a0916d90> >, prev_det_dist=535.9272338666883, id=0, marker_color=array([1.        , 0.41176471, 0.70588235]), det_sto=[(999.0, 999.0)], meas_sto=[1819], team_reward_sto=[-0.33], cum_reward_sto=[-0.3349545211666802], action_sto=[None], terminal_sto=[False])":	{
+                                "action_sto":	[
+                                    null
+                                ],
+                                "collision":	false,
+                                "cum_reward_sto":	[
+                                    -0.3349545211666802
+                                ],
+                                "det_coords":	[
+                                    999.0,
+                                    999.0
+                                ],
+                                "det_sto":	[
+                                    [
+                                        999.0,
+                                        999.0
+                                    ]
+                                ],
+                                "detector":	{
+                                    "<visilibity.Point; proxy of <Swig Object of type 'VisiLibity::Point *' at 0x7f49a0916d90> >":	{
+                                        "this":	"<Swig Object of type 'VisiLibity::Point *' at 0x7f49a0916d90>"
+                                    }
+                                },
+                                "euc_dist":	535.9272338666883,
+                                "id":	0,
+                                "intersect":	false,
+                                "marker_color":	"[1.         0.41176471 0.70588235]",
+                                "meas_sto":	[
+                                    1819
+                                ],
+                                "obstacle_blocking":	false,
+                                "out_of_bounds":	false,
+                                "out_of_bounds_count":	0,
+                                "prev_det_dist":	535.9272338666883,
+                                "sp_dist":	535.9272338666883,
+                                "team_reward_sto":	[
+                                    "-0.33"
+                                ],
+                                "terminal_sto":	[
+                                    false
+                                ]
+                            }
+                        }
+                    },
+                    "all_agent_max_count":	0.0,
+                    "background_radiation_bounds":	[
+                        10,
+                        51
+                    ],
+                    "bbox":	[
+                        [
+                            0.0,
+                            0.0
+                        ],
+                        [
+                            1000.0,
+                            0.0
+                        ],
+                        [
+                            1000.0,
+                            1000.0
+                        ],
+                        [
+                            0.0,
+                            1000.0
+                        ]
+                    ],
+                    "bkg_intensity":	0,
+                    "continuous":	false,
+                    "coord_noise":	false,
+                    "detectable_directions":	8,
+                    "done":	false,
+                    "dwell_time":	1,
+                    "enforce_grid_boundaries":	true,
+                    "env_ls":	[
+                        [
+                            [
+                                0.0,
+                                0.0
+                            ],
+                            [
+                                1000.0,
+                                0.0
+                            ],
+                            [
+                                1000.0,
+                                1000.0
+                            ],
+                            [
+                                0.0,
+                                1000.0
+                            ]
+                        ]
+                    ],
+                    "epoch_cnt":	1,
+                    "epoch_end":	false,
+                    "global_min_shortest_path":	535.9272338666883,
+                    "intensity":	1000000,
+                    "iter_count":	0,
+                    "line_segs":	[],
+                    "max_dist":	800.0,
+                    "metadata":	{
+                        "render.modes":	[
+                            "human"
+                        ],
+                        "video.frames_per_second":	5
+                    },
+                    "np_random":	"Generator(PCG64)",
+                    "num_obs":	0,
+                    "number_actions":	9,
+                    "number_agents":	1,
+                    "obs_coord":	[],
+                    "observation_area":	[
+                        100.0,
+                        100.0
+                    ],
+                    "observation_space":	{
+                        "Box([0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.], [inf inf inf inf inf inf inf inf inf inf inf], (11,), float32)":	{
+                            "_np_random":	null,
+                            "_shape":	[
+                                11
+                            ],
+                            "bounded_above":	"[False False False False False False False False False False False]",
+                            "bounded_below":	"[ True  True  True  True  True  True  True  True  True  True  True]",
+                            "dtype":	"float32",
+                            "high":	"[inf inf inf inf inf inf inf inf inf inf inf]",
+                            "low":	"[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]"
+                        }
+                    },
+                    "obstruction_count":	0,
+                    "poly":	[],
+                    "radiation_intensity_bounds":	[
+                        1000000.0,
+                        10000000.0
+                    ],
+                    "render_counter":	0,
+                    "save_gif":	false,
+                    "scale":	0.0011111111111111111,
+                    "scaled_grid_max":	[
+                        1,
+                        1
+                    ],
+                    "search_area":	[
+                        [
+                            100.0,
+                            100.0
+                        ],
+                        [
+                            900.0,
+                            100.0
+                        ],
+                        [
+                            900.0,
+                            900.0
+                        ],
+                        [
+                            100.0,
+                            900.0
+                        ]
+                    ],
+                    "source":	{
+                        "<visilibity.Point; proxy of <Swig Object of type 'VisiLibity::Point *' at 0x7f49a0916c40> >":	{
+                            "this":	"<Swig Object of type 'VisiLibity::Point *' at 0x7f49a0916c40>"
+                        }
+                    },
+                    "spec":	{
+                        "EnvSpec(RadSearchMulti-v1)":	{
+                            "_env_name":	"RadSearchMulti",
+                            "_kwargs":	{
+                                "DEBUG":	true,
+                                "TEST":	3,
+                                "bbox":	[
+                                    [
+                                        0.0,
+                                        0.0
+                                    ],
+                                    [
+                                        1500.0,
+                                        0.0
+                                    ],
+                                    [
+                                        1500.0,
+                                        1500.0
+                                    ],
+                                    [
+                                        0.0,
+                                        1500.0
+                                    ]
+                                ],
+                                "enforce_grid_boundaries":	true,
+                                "np_random":	"Generator(PCG64)",
+                                "number_agents":	1,
+                                "observation_area":	[
+                                    100.0,
+                                    100.0
+                                ],
+                                "obstruction_count":	0
+                            },
+                            "entry_point":	"gym_rad_search.envs:RadSearch",
+                            "id":	"RadSearchMulti-v1",
+                            "max_episode_steps":	null,
+                            "nondeterministic":	false,
+                            "order_enforce":	true,
+                            "reward_threshold":	null
+                        }
+                    },
+                    "src_coords":	[
+                        476.0,
+                        882.0
+                    ],
+                    "vis_graph":	{
+                        "<visilibity.Visibility_Graph; proxy of <Swig Object of type 'VisiLibity::Visibility_Graph *' at 0x7f49a0881350> >":	{
+                            "this":	"<Swig Object of type 'VisiLibity::Visibility_Graph *' at 0x7f49a0881350>"
+                        }
+                    },
+                    "walls":	[
+                        [
+                            0.0,
+                            0.0
+                        ],
+                        [
+                            1000.0,
+                            0.0
+                        ],
+                        [
+                            1000.0,
+                            1000.0
+                        ],
+                        [
+                            0.0,
+                            1000.0
+                        ]
+                    ],
+                    "world":	{
+                        "<visilibity.Environment; proxy of <Swig Object of type 'VisiLibity::Environment *' at 0x7f49a0881080> >":	{
+                            "this":	"<Swig Object of type 'VisiLibity::Environment *' at 0x7f49a0881080>"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "env_fn":	"<function <lambda> at 0x7f49a0896f80>",
     "epochs":	300,
-    "exp_name":	"env_test3_maggia",
+    "exp_name":	"CNN_test3_basic+0_full",
     "gamma":	0.99,
     "lam":	0.9,
     "load_model":	0,
     "logger":	{
-        "<rl_tools.logx.EpochLogger object at 0x7fb918d64c70>":	{
+        "<rl_tools.logx.EpochLogger object at 0x7f49a0916cb0>":	{
             "epoch_dict":	{},
-            "exp_name":	"env_test3_maggia",
+            "exp_name":	"CNN_test3_basic+0_full",
             "first_row":	true,
             "log_current_row":	{},
             "log_headers":	[],
-            "output_dir":	"../../models/train/stage_1/env_test3_maggia_s14317",
+            "output_dir":	"../../models/train/stage_1/CNN_test3_basic+0_full_s2",
             "output_file":	{
-                "<_io.TextIOWrapper name='../../models/train/stage_1/env_test3_maggia_s14317/progress.txt' mode='w' encoding='UTF-8'>":	{
+                "<_io.TextIOWrapper name='../../models/train/stage_1/CNN_test3_basic+0_full_s2/progress.txt' mode='w' encoding='UTF-8'>":	{
                     "mode":	"w"
                 }
             }
         }
     },
     "logger_kwargs":	{
-        "exp_name":	"env_test3_maggia",
-        "output_dir":	"../../models/train/stage_1/env_test3_maggia_s14317"
+        "exp_name":	"CNN_test3_basic+0_full",
+        "output_dir":	"../../models/train/stage_1/CNN_test3_basic+0_full_s2"
     },
     "max_ep_len":	120,
     "mp_mm":	[
@@ -88,10 +357,10 @@
     "render":	false,
     "save_freq":	500,
     "save_gif":	false,
-    "seed":	3902499954,
+    "seed":	289714752,
     "steps_per_epoch":	480,
     "target_kl":	0.07,
     "train_pi_iters":	40,
-    "train_v_iters":	15,
-    "vf_lr":	0.005
+    "train_v_iters":	40,
+    "vf_lr":	0.0003
 }

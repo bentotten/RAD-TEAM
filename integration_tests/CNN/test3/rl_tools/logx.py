@@ -138,7 +138,7 @@ class Logger:
         assert key not in self.log_current_row, "You already set %s this iteration. Maybe you forgot to call dump_tabular()"%key
         self.log_current_row[key] = val
 
-    def save_config(self, config):
+    def save_config(self, config, text=''):
         """
         Log an experiment configuration.
 
@@ -161,7 +161,7 @@ class Logger:
             output = json.dumps(config_json, separators=(',',':\t'), indent=4, sort_keys=True)
             print(colorize('Saving config:\n', color='cyan', bold=True))
             print(output)
-            with open(osp.join(self.output_dir, "config.json"), 'w') as out:
+            with open(osp.join(self.output_dir, f"config{text}.json"), 'w') as out:
                 out.write(output)
 
     def save_state(self, state_dict, itr=None):

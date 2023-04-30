@@ -51,6 +51,8 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     #Instantiate A2C
     ac = actor_critic(**ac_kwargs)
     
+    logger.save_config(ac.get_config(), text='_agent')
+    
     if load_model != 0:
         ac.load_state_dict(torch.load('model.pt'))           
     

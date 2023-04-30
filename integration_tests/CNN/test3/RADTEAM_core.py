@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt  # type: ignore
 import warnings
 import json
 
-PFGRU = False # If wanting to use the PFGRU TODO turn this into a parameter
+PFGRU = True # If wanting to use the PFGRU TODO turn this into a parameter
 SMALL_VERSION = False
 
 # Maps
@@ -91,7 +91,7 @@ class ActionChoice(NamedTuple):
     #: Coordinates predicted by the location prediction model (PFGRU).
     loc_pred: Union[torch.Tensor, None]
     #: Hidden state (for compatibility with RAD-PPO)
-    hidden: torch.Tensor
+    hidden: Tuple[torch.Tensor, torch.Tensor]
 
 
 class HeatMaps(NamedTuple):
@@ -1163,15 +1163,20 @@ class Actor(nn.Module):
 
     def save_model(self, checkpoint_path: str) -> None:
         """Save model to a file"""
-        torch.save([self.kwargs, self.state_dict()], f"{checkpoint_path}/actor.pt")
+        torch.save(self.state_dict(), f"{checkpoint_path}/actor.pt")
 
-    def load_model(self, checkpoint_path: str, state_dict = None) -> None:
-        if not state_dict:
-            assert path.isfile(f"{checkpoint_path}/actor.pt"), "Model does not exist"        
-            _, state_dict = torch.load(f"{checkpoint_path}/actor.pt", map_location=lambda storage, loc: storage)            
-        self.load_state_dict(state_dict=state_dict)
+    def load_model(self, checkpoint_path: str) -> None:
+        assert path.isfile(f"{checkpoint_path}/actor.pt"), "Model does not exist"
+        self.load_state_dict(
+            torch.load(
+                f"{checkpoint_path}/actor.pt", map_location=lambda storage, loc: storage
+            )
+        )
 
-
+    def get_config(self):
+        return vars(self)
+        
+        
 class Critic(nn.Module):
     """
     In deep reinforcement learning, a Critic is a neural network architecture that approximates the state-value V^pi(s) for the policy pi. This indicates how "good it is" to be
@@ -1316,17 +1321,23 @@ class Critic(nn.Module):
 
     def save_model(self, checkpoint_path: str) -> None:
         """Save model to a file"""
-        torch.save([self.kwargs, self.state_dict()], f"{checkpoint_path}/critic.pt")
+        torch.save(self.state_dict(), f"{checkpoint_path}/critic.pt")
 
-    def load_model(self, checkpoint_path: str, state_dict = None) -> None:
-        if not state_dict:
-            assert path.isfile(f"{checkpoint_path}/critic.pt"), "Model does not exist"            
-            _, state_dict = torch.load(f"{checkpoint_path}/critic.pt", map_location=lambda storage, loc: storage)            
-        self.load_state_dict(state_dict=state_dict)
+    def load_model(self, checkpoint_path: str) -> None:
+        assert path.isfile(f"{checkpoint_path}/critic.pt"), "Model does not exist"
+        self.load_state_dict(
+            torch.load(
+                f"{checkpoint_path}/critic.pt",
+                map_location=lambda storage, loc: storage,
+            )
+        )
 
     def is_mock_critic(self) -> bool:
         return False
 
+    def get_config(self):
+        return vars(self)
+    
 
 class EmptyCritic:
     """
@@ -1377,6 +1388,8 @@ class EmptyCritic:
     def is_mock_critic(self) -> bool:
         return True
 
+    def get_config(self):
+        return None
 
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFRNNBaseCell(nn.Module):
@@ -1616,14 +1629,19 @@ class PFGRUCell(PFRNNBaseCell):
         return hidden
 
     def save_model(self, checkpoint_path: str) -> None:
-        torch.save([self.kwargs, self.state_dict()], f"{checkpoint_path}/predictor.pt")
+        torch.save(self.state_dict(), f"{checkpoint_path}/predictor.pt")
 
-    def load_model(self, checkpoint_path: str, state_dict = None) -> None:
-        if not state_dict:
-            assert path.isfile(f"{checkpoint_path}/predictor.pt"), "Model does not exist"        
-            _, state_dict = torch.load(f"{checkpoint_path}/predictor.pt", map_location=lambda storage, loc: storage)            
-        self.load_state_dict(state_dict=state_dict)
-
+    def load_model(self, checkpoint_path: str) -> None:
+        assert path.isfile(f"{checkpoint_path}/predictor.pt"), "Model does not exist"
+        self.load_state_dict(
+            torch.load(
+                f"{checkpoint_path}/predictor.pt",
+                map_location=lambda storage, loc: storage,
+            )
+        )
+        
+    def get_config(self):
+        return vars(self)        
 
 @dataclass
 class CNNBase:
@@ -1772,7 +1790,6 @@ class CNNBase:
             activation="tanh",
             hidden_size= self.predictor_hidden_size # (bpf_hsize) (hid_rec in cli)
         )              
-
 
     def set_mode(self, mode: str) -> None:
         """
@@ -2187,3 +2204,8 @@ class CNNBase:
 
         self.render_counter += 1
         plt.close(fig)
+    
+    def get_config(self)-> List:
+        config = vars(self)
+        
+        return {'CNNBase': config}
