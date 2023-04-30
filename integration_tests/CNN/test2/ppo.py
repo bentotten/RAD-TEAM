@@ -51,6 +51,8 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     #Instantiate A2C
     ac = actor_critic(**ac_kwargs)
     
+    logger.save_config(ac.get_config(), text='_agent')
+    
     if load_model != 0:
         ac.load_state_dict(torch.load('model.pt'))           
     
@@ -536,3 +538,5 @@ if __name__ == '__main__':
         seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,
         logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model)
     
+    print("Done! Seed:")
+    print(args.seed)
