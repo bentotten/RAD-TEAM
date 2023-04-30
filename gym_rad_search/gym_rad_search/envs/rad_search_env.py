@@ -56,6 +56,8 @@ PROPORTIONAL_REWARD = False if GLOBAL_REWARD else False # Get rewarded for impro
 BASIC_REWARD = False if (GLOBAL_REWARD or PROPORTIONAL_REWARD) else True # 0 for every good step; prevents agent from gaining rewards by maximizing the episode length
 ORIGINAL_REWARD = False if (GLOBAL_REWARD or PROPORTIONAL_REWARD or BASIC_REWARD) else True # +0.1 for every step that is closer than prev shortest path. Unfortunately rewards agent for extending episode
 
+BASIC_SUC_AMOUNT = 1.0
+
 # These actions correspond to:
 # -1: stay idle
 # 0: left
@@ -410,7 +412,9 @@ class RadSearch(gym.Env):
         # Debugging tests
         # Test 1: 15x15 grid, no obstructions, fixed start and stop points
         if self.DEBUG:
-            print(f"Reward Mode - Global: {GLOBAL_REWARD}. Proportional: {PROPORTIONAL_REWARD}. Basic {BASIC_REWARD}. Original: {ORIGINAL_REWARD}")        
+            print(f"Reward Mode - Global: {GLOBAL_REWARD}. Proportional: {PROPORTIONAL_REWARD}. Basic {BASIC_REWARD}. Original: {ORIGINAL_REWARD}")
+            if BASIC_REWARD:
+                print(f"Basic Reward upon success: {BASIC_SUC_AMOUNT}")    
         if self.TEST == 1:
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 1 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0,1500.0)), Point((0.0,1500.0))))
@@ -596,7 +600,7 @@ class RadSearch(gym.Env):
                             reward = -0.5 * agent.sp_dist / self.max_dist
                 elif BASIC_REWARD:
                     if agent.sp_dist < 110:
-                        reward =  0.0 
+                        reward =  BASIC_SUC_AMOUNT 
                         self.done = True
                         agent.terminal_sto.append(True)
                     elif agent.sp_dist < agent.prev_det_dist:
