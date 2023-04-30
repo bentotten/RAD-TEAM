@@ -467,7 +467,7 @@ class evaluate_PPO:
             ep_start_ptr = ep_start_ptr + len(episode.successful.episode_length)
             
         success_counts_median = np.median(sorted(success_counts))
-        success_lengths_median = np.median(sorted(successful_episode_lengths))
+        success_lengths_median = np.nanmedian(sorted(successful_episode_lengths))
         return_medidan = np.median(sorted(episode_returns))
         
         succ_std = round(np.std(success_counts_median), 3)
