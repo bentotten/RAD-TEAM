@@ -384,8 +384,8 @@ class RadSearch(gym.Env):
     )  # flag to reset/sample new environment parameters. This is necessary when runnning monte carlo evaluations to ensure env is standardized for all evaluation, unless indicated.
 
     # Step return mode
-    step_data_mode: str = field(default='Dict')
-    
+    step_data_mode: str = field(default='dict')
+
     # Rendering
     iter_count: int = field(
         default=0

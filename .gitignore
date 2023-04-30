@@ -9,7 +9,9 @@ models/
 *.pkl
 data/
 hidden/
+model.pt
 *.pt
+*config*.json
 
 # Simple Logs
 *.csv
