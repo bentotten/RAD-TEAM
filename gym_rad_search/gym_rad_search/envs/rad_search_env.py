@@ -50,7 +50,6 @@ Metadata = TypedDict(
 )
 
 MAX_CREATION_TRIES = 1000000000
-LIST_MODE = True
 
 GLOBAL_REWARD = False # Beat the global minimum shortest path distance or get punished
 PROPORTIONAL_REWARD = False if GLOBAL_REWARD else False # Get rewarded for improving your own shortest path, proportional to last time. Closest agent gets saved.
@@ -384,6 +383,9 @@ class RadSearch(gym.Env):
         default=False
     )  # flag to reset/sample new environment parameters. This is necessary when runnning monte carlo evaluations to ensure env is standardized for all evaluation, unless indicated.
 
+    # Step return mode
+    step_data_mode: str = field(default='Dict')
+    
     # Rendering
     iter_count: int = field(
         default=0
@@ -739,13 +741,15 @@ class RadSearch(gym.Env):
         aggregate_reward_result: Union[Dict, npt.NDArray]
         aggregate_success_result: Union[Dict, npt.NDArray]
 
-        if LIST_MODE:
+        if self.step_data_mode == 'list':
             aggregate_observation_result = np.zeros(combined_shape(self.number_agents, self.observation_space.shape[0]), dtype=np.float32)
             aggregate_reward_result = np.zeros((self.number_agents), dtype=np.float32)
       
-        elif not LIST_MODE:
+        elif self.step_data_mode == 'dict':
             aggregate_observation_result = {_: None for _ in self.agents}
             aggregate_reward_result = {_: None for _ in self.agents}
+        else:
+            raise NotImplementedError("Unknown step data type mode")
             
         aggregate_success_result = {_: None for _ in self.agents}
         aggregate_info_result: Dict = {_: None for _ in self.agents}
@@ -795,15 +799,17 @@ class RadSearch(gym.Env):
         # Parse rewards
         if not PROPORTIONAL_REWARD: 
             # if Global shortest path was used as min shortest path distance        
-            if not LIST_MODE:
+            if self.step_data_mode == 'dict':
                 for agent_id in self.agents:
                     # Calculate team reward
                     if not max_reward:
                         max_reward = aggregate_reward_result[agent_id]
                     elif max_reward < aggregate_reward_result[agent_id]:
                         max_reward = aggregate_reward_result[agent_id]
-            if LIST_MODE:
+            elif self.step_data_mode == 'list':
                 max_reward = aggregate_reward_result.max() # type: ignore
+            else:
+                raise ValueError("Unknown step data type mode")
                             
         if PROPORTIONAL_REWARD:
             # If rewards were calculated based on the proportional difference between last and current
@@ -814,7 +820,7 @@ class RadSearch(gym.Env):
                 elif min_distance > agent.sp_dist:
                     min_distance = agent.sp_dist
                     winning_id = id
-            max_reward = np.round(aggregate_reward_result[winning_id].item(), decimals=2) if LIST_MODE else aggregate_reward_result[winning_id]
+            max_reward = np.round(aggregate_reward_result[winning_id].item(), decimals=2) if (self.step_data_mode == 'list') else aggregate_reward_result[winning_id]
             
         # Save cumulative team reward for rendering
         for agent in self.agents.values():
