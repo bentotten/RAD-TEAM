@@ -561,8 +561,11 @@ class evaluate_PPO:
     environment_sets: Dict = field(init=False)
     #: runners
     runners: Dict = field(init=False)
+    #: Number of monte carlo runs per episode configuration
+    montecarlo_runs: int = field(init=False)
 
     def __post_init__(self) -> None:
+        self.montecarlo_runs = self.eval_kwargs["montecarlo_runs"]
         # Uncomment when ready to run with Ray
         # Initialize ray
         # try:

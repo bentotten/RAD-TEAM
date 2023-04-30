@@ -418,9 +418,11 @@ class evaluate_PPO:
     environment_sets: Dict = field(init=False)
     #: runners
     runners: Dict = field(init=False)
+    #: Number of monte carlo runs per episode configuration
+    montecarlo_runs: int = field(init=False)
 
     def __post_init__(self) -> None:
-        pass
+        self.montecarlo_runs = self.eval_kwargs["montecarlo_runs"]
 
     def evaluate(self):
         """Driver"""
@@ -491,44 +493,7 @@ if __name__ == "__main__":
         "DEBUG": True,
         "np_random": rng,
         "TEST": 2
-        }     def calc_stats(self, results, mc=None, plot=False, snr=None, control=None, obs=None):
-        """Calculate results from the evaluation"""
-        # Per episode run:
-        # [int] Completed runs count
-        # [int] Success Counter
-        # [list] Successful episode lengths
-        # [List] Successful epsiode returns
-        # Intensity Measurement
-        
-        
-        success_counts = np.zeros(len(results))
-        episode_length_medians = np.zeros(len(results))
-        
-        episode_return_medians = np.zeros(len(results))
-        # TODO make less terrible
-        total_lengths = []
-        total_rets = []
-
-        for ep_index, episode in enumerate(results):
-            success_counts[ep_index] = episode.success_counter
-            sorted_len = sorted(episode.total_episode_length)
-            episode_length_medians[ep_index] = np.median(sorted_len)
-            sorted_ret = sorted(episode.total_episode_return)
-            episode_return_medians[ep_index] = np.median(sorted_ret)
-            
-            total_lengths.append(episode.total_episode_length)
-            total_rets.append(episode.total_episode_return)
-            
-        success_counts_median = np.median(sorted(success_counts))
-        final_eplen_median = np.median(sorted(episode_length_medians))
-        final_epret_median  = np.median(sorted(episode_return_medians))
-        
-        succ_std = round(np.std(success_counts_median), 3)
-        len_std = round(np.std(total_lengths), 3)
-        ret_std = round(np.std(total_rets), 3)
-        print(f"Median Success Counts: {success_counts_median} with std {succ_std}")
-        print(f"Median Episode Length: {final_eplen_median} with std {len_std}")
-        print(f"Median Episode Return: {final_epret_median} with std {ret_std}")       
+        }     
     
     eval_kwargs = dict(
         env_name='gym_rad_search:RadSearchMulti-v1',

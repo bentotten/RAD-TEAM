@@ -564,7 +564,7 @@ class evaluate_PPO:
     montecarlo_runs: int = field(init=False)
 
     def __post_init__(self) -> None:
-        self.montecarlo_runs = eval_kwargs['montecarlo_runs']
+        self.montecarlo_runs = self.eval_kwargs["montecarlo_runs"]
         # Uncomment when ready to run with Ray
         # Initialize ray
         # try:
