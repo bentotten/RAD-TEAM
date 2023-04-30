@@ -348,7 +348,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 logprobs.append(logp)
                 
                 actions_for_env[id] = actions[id].item()
-                
+                assert 0 <= actions[id] and actions[id] < int(env.number_actions)
                                 
             next_o, r, d, _ = env.step(actions_for_env)
             d = True if True in d.values() else False

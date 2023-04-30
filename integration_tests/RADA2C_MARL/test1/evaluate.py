@@ -238,31 +238,37 @@ class EpisodeRunner:
         agent_thoughts: Dict = dict()
         hiddens: Dict[int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]] = {id: self.agents[id].reset_hidden() for id in self.agents}  # For RAD-A2C compatibility
 
-        initial_prediction = np.zeros((3,))
         for id, ac in self.agents.items():
             stat_buffers[id] = RADA2C_core.StatBuff()
             stat_buffers[id].update(observations[id][0])
             observations[id][0] = np.clip((observations[id][0]-stat_buffers[id].mu)/stat_buffers[id].sig_obs,-8,8)
 
         while run_counter < self.montecarlo_runs:
-            # Get agent thoughts on current state. Actor: Compute action and logp (log probability); Critic: compute state-value
-            agent_thoughts.clear()
-            agent_thoughts[id] = {}
-            for id, ac in self.agents.items():
-                with torch.no_grad():
-                    # a, v, logp, hidden, out_pred = ac.step(observations, hiddens[id])
-                    a, v, logp, hidden, out_pred = ac.step(observations, hidden=hiddens[id], id=id, obs_count=self.number_of_agents)
-                    agent_thoughts[id]['action'] = a
+        #Reset hidden state
+            for id in range(len(self.agents)):
+                hiddens[id] = self.agents[id].reset_hidden()
+            
+            # obs_std[0] = stat_buff.standardize(o[0])
+            actions = {id: None for id in range(len(self.agents))}
+            values = []
+            logprobs = []
+            
+            for id in range(len(self.agents)):
+                observations[id][0] = np.clip((observations[id][0]-stat_buffers[id].mu)/stat_buffers[id].sig_obs,-8,8)
 
-
-                hiddens[id] = hidden
-            # Create action list to send to environment
-            agent_action_decisions = {id: int(agent_thoughts[id]['action']) for id in agent_thoughts}
-            for action in agent_action_decisions.values():
-                assert 0 <= action and action < int(self.env.number_actions)
+            actions_for_env = {}
+            for id in range(len(self.agents)):
+                #compute action and logp (Actor), compute value (Critic)
+                actions[id], v, logp, hiddens[id], _ = self.agents[id].step(observations, hidden=hiddens[id], id=id, obs_count=self.number_of_agents)
+                values.append(v)
+                logprobs.append(logp)
+                
+                actions_for_env[id] = actions[id].item() # type: ignore
+                
+                assert 0 <= actions[id] and actions[id] < int(self.env.number_actions) # type: ignore
 
             # Take step in environment - Note: will be missing last reward, rewards link to previous observation in env
-            observations, rewards, terminals, _ = self.env.step(action=agent_action_decisions)
+            observations, rewards, terminals, _ = self.env.step(actions_for_env)
 
             for id, ac in self.agents.items():
                 stat_buffers[id].update(observations[id][0])
@@ -352,21 +358,21 @@ class EpisodeRunner:
             (run_counter + 1) == self.montecarlo_runs
         )
         if self.render and time_to_save:
-            # Render gif
-            self.env.render(
-                path=self.render_path,
-                epoch_count=run_counter,
-                episode_count=id,
-                silent=True,
-            )
             # Render environment image
             self.env.render(
                 path=self.render_path,
                 epoch_count=run_counter,
                 just_env=True,
                 episode_count=id,
-                silent=True,
+                silent=False,
             )
+            # Render gif
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                episode_count=id,
+                silent=False,
+            )            
         # Always render first episode
         if self.render and run_counter == 0 and self.render_first_episode:
           
@@ -497,11 +503,12 @@ if __name__ == "__main__":
         'bbox': [[0.0,0.0],[1500.0,0.0],[1500.0,1500.0],[0.0,1500.0]],
         'observation_area': [100.0,100.0], 
         'obstruction_count': 0,
-        "number_agents": 1, 
+        "number_agents": args.agents, 
         "enforce_grid_boundaries": True,
         "DEBUG": True,
         "np_random": rng,        
-        "TEST": 1
+        "TEST": 1,
+        "step_data_mode": "list"
         }    
     
     eval_kwargs = dict(
@@ -519,7 +526,7 @@ if __name__ == "__main__":
         enforce_boundaries = True,
         resolution_multiplier = 0.01,
         team_mode =  "individual",
-        render = False,
+        render = True,
         save_gif_freq = 1,
         render_path = ".",
         save_path_for_ac = ".",
