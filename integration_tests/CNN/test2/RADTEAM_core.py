@@ -1174,7 +1174,7 @@ class Actor(nn.Module):
         )
 
     def get_config(self):
-        return self.__init__()
+        return vars(self)
         
         
 class Critic(nn.Module):
@@ -1336,7 +1336,7 @@ class Critic(nn.Module):
         return False
 
     def get_config(self):
-        return self.__init__()
+        return vars(self)
     
 
 class EmptyCritic:
@@ -1388,6 +1388,8 @@ class EmptyCritic:
     def is_mock_critic(self) -> bool:
         return True
 
+    def get_config(self):
+        return None
 
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFRNNBaseCell(nn.Module):
@@ -1637,7 +1639,9 @@ class PFGRUCell(PFRNNBaseCell):
                 map_location=lambda storage, loc: storage,
             )
         )
-
+        
+    def get_config(self):
+        return vars(self)        
 
 @dataclass
 class CNNBase:
@@ -1722,7 +1726,7 @@ class CNNBase:
         # Put agent number on save_path
         if self.save_path == '.':
             self.save_path = getcwd()
-            self.save_path = f"{self.save_path}/{self.id}_agent"
+        self.save_path = f"{self.save_path}/{self.id}_agent"
         # Set resolution accuracy
         self.resolution_accuracy = calculate_resolution_accuracy(
             resolution_multiplier=self.resolution_multiplier,
@@ -2202,8 +2206,6 @@ class CNNBase:
         plt.close(fig)
     
     def get_config(self)-> List:
-        pi = self.pi.get_config()
-        v = self.critic.get_config()
-        config = self.__init__()
+        config = vars(self)
         
-        return [pi, v, config]
+        return {'CNNBase': config}

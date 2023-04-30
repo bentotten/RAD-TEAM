@@ -91,7 +91,7 @@ class ActionChoice(NamedTuple):
     #: Coordinates predicted by the location prediction model (PFGRU).
     loc_pred: Union[torch.Tensor, None]
     #: Hidden state (for compatibility with RAD-PPO)
-    hidden: torch.Tensor
+    hidden: Tuple[torch.Tensor, torch.Tensor]
 
 
 class HeatMaps(NamedTuple):
@@ -1173,7 +1173,10 @@ class Actor(nn.Module):
             )
         )
 
-
+    def get_config(self):
+        return vars(self)
+        
+        
 class Critic(nn.Module):
     """
     In deep reinforcement learning, a Critic is a neural network architecture that approximates the state-value V^pi(s) for the policy pi. This indicates how "good it is" to be
@@ -1332,6 +1335,9 @@ class Critic(nn.Module):
     def is_mock_critic(self) -> bool:
         return False
 
+    def get_config(self):
+        return vars(self)
+    
 
 class EmptyCritic:
     """
@@ -1382,6 +1388,8 @@ class EmptyCritic:
     def is_mock_critic(self) -> bool:
         return True
 
+    def get_config(self):
+        return None
 
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFRNNBaseCell(nn.Module):
@@ -1631,7 +1639,9 @@ class PFGRUCell(PFRNNBaseCell):
                 map_location=lambda storage, loc: storage,
             )
         )
-
+        
+    def get_config(self):
+        return vars(self)        
 
 @dataclass
 class CNNBase:
@@ -1716,7 +1726,7 @@ class CNNBase:
         # Put agent number on save_path
         if self.save_path == '.':
             self.save_path = getcwd()
-            self.save_path = f"{self.save_path}/{self.id}_agent"
+        self.save_path = f"{self.save_path}/{self.id}_agent"
         # Set resolution accuracy
         self.resolution_accuracy = calculate_resolution_accuracy(
             resolution_multiplier=self.resolution_multiplier,
@@ -1780,7 +1790,6 @@ class CNNBase:
             activation="tanh",
             hidden_size= self.predictor_hidden_size # (bpf_hsize) (hid_rec in cli)
         )              
-
 
     def set_mode(self, mode: str) -> None:
         """
@@ -2195,3 +2204,8 @@ class CNNBase:
 
         self.render_counter += 1
         plt.close(fig)
+    
+    def get_config(self)-> List:
+        config = vars(self)
+        
+        return {'CNNBase': config}

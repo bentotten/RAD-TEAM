@@ -1726,7 +1726,7 @@ class CNNBase:
         # Put agent number on save_path
         if self.save_path == '.':
             self.save_path = getcwd()
-            self.save_path = f"{self.save_path}/{self.id}_agent"
+        self.save_path = f"{self.save_path}/{self.id}_agent"
         # Set resolution accuracy
         self.resolution_accuracy = calculate_resolution_accuracy(
             resolution_multiplier=self.resolution_multiplier,

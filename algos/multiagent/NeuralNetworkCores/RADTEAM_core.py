@@ -36,7 +36,8 @@ import matplotlib.pyplot as plt  # type: ignore
 import warnings
 import json
 
-PFGRU = False # If wanting to use the PFGRU TODO turn this into a parameter
+PFGRU = True # If wanting to use the PFGRU TODO turn this into a parameter
+SMALL_VERSION = False
 
 # Maps
 #: [New Type] Array indicies to access a GridSquare (x, y). Type: Tuple[float, float]
@@ -90,7 +91,7 @@ class ActionChoice(NamedTuple):
     #: Coordinates predicted by the location prediction model (PFGRU).
     loc_pred: Union[torch.Tensor, None]
     #: Hidden state (for compatibility with RAD-PPO)
-    hidden: torch.Tensor
+    hidden: Tuple[torch.Tensor, torch.Tensor]
 
 
 class HeatMaps(NamedTuple):
@@ -529,7 +530,7 @@ class MapsBuffer:
         self.visit_counts_shadow.clear()
         self.tools.reset()
 
-    def observation_to_map(self, observation: Dict[int, npt.NDArray], id: int, loc_prediciton: Tuple[float, float]) -> MapStack:
+    def observation_to_map(self, observation: Union[Dict[int, npt.NDArray], npt.NDArray], id: int, loc_prediciton: Tuple[float, float]) -> MapStack:
         """
         Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation. Also updates tools.
 
@@ -542,12 +543,13 @@ class MapsBuffer:
         for obs in observation.values():
             key: Tuple[int, int] = self._inflate_coordinates(obs)
             intensity: np.floating[Any] = obs[0]
-            self.tools.readings.update(key=key, value=float(intensity))
+            self.tools.readings.update(key=key, value=float(intensity))      
 
         for agent_id in observation:
             # Fetch scaled coordinates
             inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[agent_id])
-            inflated_prediction: Tuple[int, int] = self._inflate_coordinates(single_observation=loc_prediciton)
+            if PFGRU:            
+                inflated_prediction: Tuple[int, int] = self._inflate_coordinates(single_observation=loc_prediciton)
 
             last_coordinates: Union[Tuple[int, int], None] = (
                 self.tools.last_coords[agent_id]
@@ -601,7 +603,9 @@ class MapsBuffer:
 
             # Update last coordinates
             self.tools.last_coords[agent_id] = inflated_agent_coordinates
-            self.tools.last_prediction = inflated_prediction
+            if PFGRU:
+                self.tools.last_prediction = inflated_prediction
+
 
         return MapStack(
             (
@@ -626,6 +630,9 @@ class MapsBuffer:
                 self.combined_location_map[inflated_last_coordinates] = 0
                 self.location_map[inflated_last_coordinates] = 0
                 self.others_locations_map[inflated_last_coordinates] = 0
+
+            self.prediction_map[self.tools.last_prediction] = 0
+                
             
             # Reinitialize non-sparse matrices
             self.readings_map: Map = Map(
@@ -652,10 +659,9 @@ class MapsBuffer:
                 self.readings_map[k] = 0
                 self.obstacles_map[k] = 0
                 self.visit_counts_map[k] = 0
+                self.prediction_map[k] = 0
                 
-        self.prediction_map[self.tools.last_prediction] = 0
                 
-
         assert self.obstacles_map.max() == 0 and self.obstacles_map.min() == 0
         assert self.readings_map.max() == 0 and self.readings_map.min() == 0
         assert (self.others_locations_map.max() == 0 and self.others_locations_map.min() == 0)
@@ -990,35 +996,23 @@ class Actor(nn.Module):
             in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1
         )
         self.step4 = nn.Flatten(start_dim=0, end_dim=-1)
-        self.step5 = nn.Linear(
-            in_features=16 * batches * pool_output * pool_output, out_features=32
-        )
+        self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32)
         self.step6 = nn.Linear(in_features=32, out_features=16)
         self.step7 = nn.Linear(in_features=16, out_features=action_dim)
         self.softmax = nn.Softmax(dim=0)  # Put in range [0,1]
 
         self.actor = nn.Sequential(
-            nn.Conv2d(
-                in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1
-            ),  # output tensor with shape (5, 8, Height, Width)
+            nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (5, 8, Height, Width)
             nn.ReLU(),
-            nn.MaxPool2d(
-                kernel_size=2, stride=2
-            ),  # output tensor with shape (4, 8, 2, 2). Output height and width is floor(((Width - Size)/ Stride) +1)
-            nn.Conv2d(
-                in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1
-            ),  # output tensor with shape (4, 16, 2, 2)
+            nn.MaxPool2d(kernel_size=2, stride=2),  # output tensor with shape (4, 8, 2, 2). Output height and width is floor(((Width - Size)/ Stride) +1)
+            nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (4, 16, 2, 2)
             nn.ReLU(),
             nn.Flatten(start_dim=0, end_dim=-1),  # output tensor with shape (1, x)
-            nn.Linear(
-                in_features=16 * batches * pool_output * pool_output, out_features=32
-            ),  # output tensor with shape (32)
+            nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32),  # output tensor with shape (32)
             nn.ReLU(),
             nn.Linear(in_features=32, out_features=16),  # output tensor with shape (16)
             nn.ReLU(),
-            nn.Linear(
-                in_features=16, out_features=action_dim
-            ),  # output tensor with shape (8)
+            nn.Linear(in_features=16, out_features=action_dim),  # output tensor with shape (8)
             nn.Softmax(dim=0),  # Put in range [0,1]
         )
 
@@ -1179,7 +1173,10 @@ class Actor(nn.Module):
             )
         )
 
-
+    def get_config(self):
+        return vars(self)
+        
+        
 class Critic(nn.Module):
     """
     In deep reinforcement learning, a Critic is a neural network architecture that approximates the state-value V^pi(s) for the policy pi. This indicates how "good it is" to be
@@ -1236,15 +1233,11 @@ class Critic(nn.Module):
         self.step4 = nn.Flatten(
             start_dim=0, end_dim=-1
         )  # output tensor with shape (1, x)
-        self.step5 = nn.Linear(
-            in_features=16 * batches * pool_output * pool_output, out_features=32
-        )
+        self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32)
         # nn.ReLU()
         self.step6 = nn.Linear(in_features=32, out_features=16)
         # nn.ReLU()
-        self.step7 = nn.Linear(
-            in_features=16, out_features=1
-        )  # output tensor with shape (1)
+        self.step7 = nn.Linear(in_features=16, out_features=1)  # output tensor with shape (1)
         # nn.ReLU()
 
         self.critic = nn.Sequential(
@@ -1261,9 +1254,7 @@ class Critic(nn.Module):
             ),  # output tensor with shape (batch_size, 16, 2, 2)
             nn.ReLU(),
             nn.Flatten(start_dim=0, end_dim=-1),  # output tensor with shape (1, x)
-            nn.Linear(
-                in_features=16 * batches * pool_output * pool_output, out_features=32
-            ),  # output tensor with shape (32)
+            nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32),  # output tensor with shape (32)
             nn.ReLU(),
             nn.Linear(in_features=32, out_features=16),  # output tensor with shape (16)
             nn.ReLU(),
@@ -1344,6 +1335,9 @@ class Critic(nn.Module):
     def is_mock_critic(self) -> bool:
         return False
 
+    def get_config(self):
+        return vars(self)
+    
 
 class EmptyCritic:
     """
@@ -1394,8 +1388,9 @@ class EmptyCritic:
     def is_mock_critic(self) -> bool:
         return True
 
+    def get_config(self):
+        return None
 
-# TODO Add to new map
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFRNNBaseCell(nn.Module):
     """Parent class for Particle Filter Recurrent Neural Networks"""
@@ -1511,7 +1506,6 @@ class PFRNNBaseCell(nn.Module):
         return mean + eps * std
 
 
-# TODO Add to new map
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFGRUCell(PFRNNBaseCell):
     """Particle Filter Gated Recurrent Unit"""
@@ -1521,7 +1515,7 @@ class PFGRUCell(PFRNNBaseCell):
         input_size: int,
         obs_size: int,
         activation: str,
-        use_resampling: bool = True,        
+        use_resampling: bool = True,
         num_particles: int = 40,
         hidden_size: int = 64,
         resamp_alpha: float = 0.7,
@@ -1645,7 +1639,9 @@ class PFGRUCell(PFRNNBaseCell):
                 map_location=lambda storage, loc: storage,
             )
         )
-
+        
+    def get_config(self):
+        return vars(self)        
 
 @dataclass
 class CNNBase:
@@ -1695,7 +1691,7 @@ class CNNBase:
     environment_scale: int
     bounds_offset: tuple  # No default to ensure changes to environment are propogated to this function
     enforce_boundaries: bool  # No default due to the increased computation needs for non-enforced boundaries. Ensures this was done intentionally.
-    predictor_hidden_size: int # 
+    predictor_hidden_size: int = field(default=24)
     grid_bounds: Tuple[int, int] = field(default_factory=lambda: (1, 1))
     resolution_multiplier: float = field(default=0.01)
     GlobalCritic: Union[Critic, None] = field(default=None)
@@ -1728,8 +1724,9 @@ class CNNBase:
 
     def __post_init__(self) -> None:
         # Put agent number on save_path
-        self.save_path_test = self.save_path
-        self.save_path = f"{self.save_path[0]}/{self.id}_agent_{self.save_path[1]}"
+        if self.save_path == '.':
+            self.save_path = getcwd()
+        self.save_path = f"{self.save_path}/{self.id}_agent"
         # Set resolution accuracy
         self.resolution_accuracy = calculate_resolution_accuracy(
             resolution_multiplier=self.resolution_multiplier,
@@ -1760,22 +1757,39 @@ class CNNBase:
         )
 
         # Set up actor and critic
-        self.pi = Actor(map_dim=self.maps.map_dimensions, action_dim=self.action_space)
-        if self.GlobalCritic:
-            self.critic = self.GlobalCritic
-        elif self.no_critic:
-            self.critic = EmptyCritic()
+        if not SMALL_VERSION:
+            self.pi = Actor(map_dim=self.maps.map_dimensions, action_dim=self.action_space)
+
+            if self.GlobalCritic:
+                self.critic = self.GlobalCritic
+            elif self.no_critic:
+                self.critic = EmptyCritic()
+            else:
+                self.critic = Critic(map_dim=self.maps.map_dimensions)  
+            
+        elif SMALL_VERSION:
+            self.pi = Actor(
+                    map_dim=self.maps.map_dimensions, 
+                    action_dim=self.action_space, 
+                    map_count=3
+                )
+            if self.GlobalCritic:
+                self.critic = self.GlobalCritic
+            elif self.no_critic:
+                self.critic = EmptyCritic(map_count=3)
+            else:
+                self.critic = Critic(map_dim=self.maps.map_dimensions, map_count=3)  
         else:
-            self.critic = Critic(map_dim=self.maps.map_dimensions)
+            raise ValueError("Problem in actor intit")
 
         self.mseLoss = nn.MSELoss()
-   
+        
         self.model = PFGRUCell(
             input_size=self.observation_space - 8,
             obs_size=self.observation_space - 8,
             activation="tanh",
-            hidden_size= self.predictor_hidden_size #(bpf_hsize) (hid_rec in cli)
-        )
+            hidden_size= self.predictor_hidden_size # (bpf_hsize) (hid_rec in cli)
+        )              
 
     def set_mode(self, mode: str) -> None:
         """
@@ -1797,37 +1811,85 @@ class CNNBase:
             )
 
     def get_map_stack(self, state_observation: Dict[int, npt.NDArray], id: int, location_prediction: Tuple[float, float]):
-        with torch.no_grad():
-            (
-                prediction_map,
-                location_map,
-                others_locations_map,
-                readings_map,
-                visit_counts_map,
-                obstacles_map,
-                combo_location_map,
-            ) = self.maps.observation_to_map(state_observation, id, location_prediction)
+        actor_map_stack: torch.Tensor
+        critic_map_stack: torch.Tensor
 
-            # Convert map to tensor
-            actor_map_stack: torch.Tensor = torch.stack(
-                [
-                    torch.tensor(prediction_map),                    
-                    torch.tensor(location_map),
-                    torch.tensor(others_locations_map),
-                    torch.tensor(readings_map),
-                    torch.tensor(visit_counts_map),
-                    torch.tensor(obstacles_map),
-                ]
-            )
+        if not isinstance(state_observation, dict):
+            state_observation = {id: state_observation[id] for id in range(len(state_observation))}
 
-            critic_map_stack: torch.Tensor = torch.stack(
-                [
-                    torch.tensor(combo_location_map),
-                    torch.tensor(readings_map),
-                    torch.tensor(visit_counts_map),
-                    torch.tensor(obstacles_map),
-                ]
-            )
+        if not SMALL_VERSION:
+            with torch.no_grad():
+                (
+                    prediction_map,
+                    location_map,
+                    others_locations_map,
+                    readings_map,
+                    visit_counts_map,
+                    obstacles_map,
+                    combo_location_map,
+                ) = self.maps.observation_to_map(state_observation, id, location_prediction)
+
+                # Convert map to tensor
+                if PFGRU:
+                    actor_map_stack = torch.stack(
+                        [
+                            torch.tensor(prediction_map),
+                            torch.tensor(location_map),
+                            torch.tensor(others_locations_map),
+                            torch.tensor(readings_map),
+                            torch.tensor(visit_counts_map),
+                            torch.tensor(obstacles_map),
+                        ]
+                    )
+                else:
+                   actor_map_stack = torch.stack(
+                        [
+                            torch.tensor(location_map),
+                            torch.tensor(others_locations_map),
+                            torch.tensor(readings_map),
+                            torch.tensor(visit_counts_map),
+                            torch.tensor(obstacles_map),
+                        ]
+                    )
+                critic_map_stack = torch.stack(
+                    [
+                        torch.tensor(combo_location_map),
+                        torch.tensor(readings_map),
+                        torch.tensor(visit_counts_map),
+                        torch.tensor(obstacles_map),
+                    ]
+                )                    
+        elif SMALL_VERSION:
+            with torch.no_grad():
+                (
+                    _,
+                    location_map,
+                    _,
+                    readings_map,
+                    _,
+                    obstacles_map,
+                    _,
+                ) = self.maps.observation_to_map(state_observation, id, location_prediction)
+
+                # Convert map to tensor
+                actor_map_stack = torch.stack(
+                    [
+                        torch.tensor(location_map),
+                        torch.tensor(readings_map),
+                        torch.tensor(obstacles_map),
+                    ]
+                )
+
+                critic_map_stack = torch.stack(
+                    [
+                        torch.tensor(location_map),
+                        torch.tensor(readings_map),
+                        torch.tensor(obstacles_map),
+                    ]
+                )      
+        else:
+            raise ValueError("Something is wrong with your map fetcher")      
+            
 
         # Add single batch tensor dimension for action selection
         batched_actor_mapstack: torch.Tensor = torch.unsqueeze(actor_map_stack, dim=0)
@@ -1848,16 +1910,18 @@ class CNNBase:
         :param id: (int) ID of the agent who's observation is being processed. This allows any agent to recreate mapbuffers for any other agent
         """
         with torch.no_grad():
-
-            # Extract all observations for PFGRU
-            # TODO create tensor from numpy array, not list of numpy arrays
-            obs_list = [state_observation[i][:3] for i in range(self.number_of_agents)] # Create a list of just readings and locations for all agents
-            obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)
-
-            location_prediction, new_hidden = self.model(obs_tensor, hidden)
+            if not SMALL_VERSION:
+                # Extract all observations for PFGRU
+                obs_list = np.array([state_observation[i][:3] for i in range(self.number_of_agents)]) # Create a list of just readings and locations for all agents
+                obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)                
+                location_prediction, new_hidden = self.model(obs_tensor, hidden)
             
-            prediction_tuple: Tuple[float, float] = tuple(location_prediction.tolist()) # type: ignore
-            
+                prediction_tuple: Tuple[float, float] = tuple(location_prediction.tolist()) # type: ignore
+            else:
+                prediction_tuple = [] # type: ignore
+                location_prediction = []
+                new_hidden = []
+
             # Process data and create maps
             batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(
                 id = id,
@@ -1866,14 +1930,11 @@ class CNNBase:
             )
 
             # Get actions and values
-            action, action_logprob = self.pi.act(
-                batched_actor_mapstack
-            )  # Choose action
+            action, action_logprob = self.pi.act(batched_actor_mapstack)  # Choose action
 
             state_value: Union[torch.Tensor, None] = self.critic.forward(
                 batched_critic_mapstack
             )  # size(1)
-
 
         state_value_item: Union[float, None]
         if state_value:
@@ -1888,7 +1949,7 @@ class CNNBase:
                 state_value=state_value_item,
                 loc_pred = location_prediction,
                 hidden = new_hidden
-            ), 
+            ),
             HeatMaps(batched_actor_mapstack, batched_critic_mapstack), 
         )
 
@@ -1951,16 +2012,69 @@ class CNNBase:
     def step(
         self,
         state_observation: Dict[int, npt.NDArray],
-        hidden: torch.Tensor
+        hidden: Tuple[torch.Tensor, torch.Tensor]
     ) -> Tuple[ActionChoice, HeatMaps]:
         """Alias for select_action"""
         return self.select_action(state_observation=state_observation, id=self.id, hidden=hidden)
+
+    def step_keep_gradient_for_critic(
+        self,
+        critic_mapstack: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Identical to select_action, however stores the gradient for a gradient update and returns different information.
+
+        :param state_observation: (Dict[int, npt.NDArray]) Dictionary with each agent's observation. The agent id is the key.
+        :param id: (int) ID of the agent who's observation is being processed. This allows any agent to recreate mapbuffers for any other agent
+        :param hidden: hidden layers for PFGRU.
+        """
+        return self.critic.forward(critic_mapstack)  # type: ignore
+
+    def step_keep_gradient_for_actor(
+        self,
+        actor_mapstack: torch.Tensor,
+        # critic_mapstack: torch.Tensor,
+        action_taken: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Identical to select_action, however stores the gradient for a gradient update and returns different information.
+
+        :param state_observation: (Dict[int, npt.NDArray]) Dictionary with each agent's observation. The agent id is the key.
+        :param id: (int) ID of the agent who's observation is being processed. This allows any agent to recreate mapbuffers for any other agent
+        :param hidden: hidden layers for PFGRU.
+        """
+
+        # NOTE: Original had this create a new prediction, however this will cause the location_prediction map to not match the original. New maps can
+        # be made by pulling full observations from the full_observations_buffer in the ppo_buffer.get() function and uncomment if desired.
+
+        # with torch.no_grad():
+        #     obs_list = [state_observation[i][:3] for i in range(self.number_of_agents)] # Create a list of just readings and locations for all agents
+        #     obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)
+
+        #     location_prediction, _ = self.model(obs_tensor, hidden)
+
+        #     # Process data and create maps
+        #     batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(
+        #         id = id,
+        #         state_observation = state_observation,
+        #         location_prediction = tuple(location_prediction.tolist())
+        #     )
+
+        # Get action logprobs and entroy WITH gradient
+        action_logprobs, dist_entropy = self.pi.get_action_information(
+            state_map_stack=actor_mapstack, action=action_taken
+        )
+
+        # with torch.no_grad():
+        #     state_value = self.critic.forward(critic_mapstack)
+
+        return action_logprobs, dist_entropy  # type: ignore
 
     def reset_hidden(self, batch_size=1) -> Tuple[torch.Tensor, torch.Tensor]:
         """For compatibility - returns nothing"""
         model_hidden = self.model.init_hidden(batch_size)
         return model_hidden
-    
+
     def render(
         self,
         savepath: str = getcwd(),
@@ -2090,3 +2204,8 @@ class CNNBase:
 
         self.render_counter += 1
         plt.close(fig)
+    
+    def get_config(self)-> List:
+        config = vars(self)
+        
+        return {'CNNBase': config}
