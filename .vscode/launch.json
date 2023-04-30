@@ -235,7 +235,7 @@
       "name": "Test CNN Stage 1 - Test 3",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/integration_tests/CNN/test3/ppo.py",
+      "program": "${workspaceFolder}/integration_tests/CNN/test3/evaluate.py",
       "console": "integratedTerminal",
       "justMyCode": false,
 

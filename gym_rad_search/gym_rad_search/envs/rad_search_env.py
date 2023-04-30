@@ -1,25 +1,3 @@
-from dataclasses import dataclass, field, asdict
-from email.policy import default
-import os
-import sys
-import math
-from matplotlib.markers import MarkerStyle  # type: ignore
-
-import numpy as np
-import numpy.typing as npt
-import numpy.random as npr
-
-import gym  # type: ignore
-from gym import spaces  # type: ignore
-
-import visilibity as vis  # type: ignore
-
-import matplotlib.pyplot as plt  # type: ignore
-import matplotlib.animation as animation  # type: ignore
-from matplotlib.ticker import FormatStrFormatter  # type: ignore
-from matplotlib.animation import PillowWriter  # type: ignore
-from matplotlib.patches import Polygon as PolygonPatches  # type: ignore
-
 from typing import (
     Any,
     List,
@@ -35,6 +13,29 @@ from typing import (
     Tuple,
     List,
 )
+
+from dataclasses import dataclass, field
+import os
+import sys
+import math
+
+import numpy as np
+import numpy.typing as npt
+import numpy.random as npr
+
+import gym  # type: ignore
+from gym import spaces  # type: ignore
+
+import visilibity as vis  # type: ignore
+
+import matplotlib.pyplot as plt  # type: ignore
+import matplotlib.animation as animation  # type: ignore
+from matplotlib.ticker import FormatStrFormatter  # type: ignore
+from matplotlib.animation import PillowWriter  # type: ignore
+from matplotlib.patches import Polygon as PolygonPatches  # type: ignore
+from matplotlib.markers import MarkerStyle  # type: ignore
+
+
 from typing_extensions import TypeAlias
 
 

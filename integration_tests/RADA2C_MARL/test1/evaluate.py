@@ -528,7 +528,7 @@ if __name__ == "__main__":
         enforce_boundaries = True,
         resolution_multiplier = 0.01,
         team_mode =  "individual",
-        render = True,
+        render = False,
         save_gif_freq = 1,
         render_path = ".",
         save_path_for_ac = ".",

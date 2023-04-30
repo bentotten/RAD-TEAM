@@ -9,7 +9,7 @@ import random
 from datetime import datetime
 import math
 from statsmodels.stats.weightstats import DescrStatsW  # type: ignore
-
+import pytest 
 import torch
 from torch.optim import Adam
 import torch.nn.functional as F
@@ -253,7 +253,10 @@ class EpisodeRunner:
         # Check current important parameters match parameters read in
         if ALL_ACKWARGS_SAVED:
             for arg in actor_critic_args:
-                if arg != "no_critic" and arg != "GlobalCritic" and arg != "save_path":
+                if arg == 'environment_scale':
+                    assert actor_critic_args[arg] == pytest.approx(original_configs[arg], rel=1e4), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+
+                elif arg != "no_critic" and arg != "GlobalCritic" and arg != "save_path":
                     if (
                         type(original_configs[arg]) == int
                         or type(original_configs[arg]) == float
@@ -629,7 +632,7 @@ class evaluate_PPO:
             ep_start_ptr = ep_start_ptr + len(episode.successful.episode_length)
             
         success_counts_median = np.median(sorted(success_counts))
-        success_lengths_median = np.median(sorted(successful_episode_lengths))
+        success_lengths_median = np.nanmedian(sorted(successful_episode_lengths))
         return_medidan = np.median(sorted(episode_returns))
         
         succ_std = round(np.std(success_counts_median), 3)
@@ -653,7 +656,7 @@ if __name__ == "__main__":
         "enforce_grid_boundaries": True,
         "DEBUG": True,
         "np_random": rng,
-        "TEST": 1
+        "TEST": 3
         }    
     
     eval_kwargs = dict(
