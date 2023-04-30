@@ -248,7 +248,7 @@
       "program": "${workspaceFolder}/integration_tests/RADA2C_MARL/test1/evaluate.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "args": ["--agents", "1"],
+      "args": ["--agents", "2"],
 
       "cwd": "${workspaceFolder}/integration_tests/RADA2C_MARL/test1"
     },           

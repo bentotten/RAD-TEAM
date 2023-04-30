@@ -379,9 +379,9 @@ class RecurrentNet(nn.Module):
 
 
 class RNNModelActorCritic(nn.Module):
-    def __init__(self, obs_dim, action_space, hidden = (32,),
+    def __init__(self, obs_dim, action_space, num_agents, hidden = (32,),
                  hidden_sizes_pol=(64,), hidden_sizes_val=(64,64), hidden_sizes_rec=(64,),
-                 activation=nn.Tanh,net_type=None, pad_dim=2,batch_s=1, seed=0, num_agents=1):
+                 activation=nn.Tanh,net_type=None, pad_dim=2,batch_s=1, seed=0):
         super().__init__()
         self.seed_gen = torch.manual_seed(seed)
         self.hidden = hidden[0]

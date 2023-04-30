@@ -194,13 +194,18 @@ class EpisodeRunner:
                     assert (actor_critic_args[arg] == original_configs[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
 
         # Initialize agents and load agent models
-        actor_critic_args['obs_dim'] = self.env.observation_space.shape[0] 
+        actor_critic_args['obs_dim'] = self.env.observation_space.shape[0] * self.number_of_agents
         actor_critic_args['action_space'] = self.env.action_space
         actor_critic_args['seed'] = self.seed
         actor_critic_args['pad_dim'] = 2
+        actor_critic_args['num_agents'] = self.number_of_agents
 
-        self.agents[0] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
-        self.agents[0].load_state_dict(torch.load('model.pt'))                     
+        for i in range(self.number_of_agents):
+            self.agents[i] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
+            state_dict = torch.load(f'{agent_models[i]}/model{i}.pt')
+            self.agents[i].load_state_dict(state_dict=state_dict)
+            
+        pass               
                   
 
     def run(self) -> MonteCarloResults:
@@ -479,6 +484,11 @@ class evaluate_PPO:
         
     
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--agents', type=int, default=1)
+    args = parser.parse_args()    
+    
     #Generate a large random seed and random generator object for reproducibility
     rng = np.random.default_rng(2) 
        
@@ -505,7 +515,7 @@ if __name__ == "__main__":
         snr="none",  # signal to noise ratio [none, low, medium, high]
         obstruction_count = 0,  # number of obstacles [0 - 7] (num_obs)
         steps_per_episode = 120,
-        number_of_agents = 1,
+        number_of_agents = args.agents,
         enforce_boundaries = True,
         resolution_multiplier = 0.01,
         team_mode =  "individual",
