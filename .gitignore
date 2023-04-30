@@ -9,6 +9,7 @@ models/
 *.pkl
 data/
 hidden/
+*.pt
 
 # Simple Logs
 *.csv
