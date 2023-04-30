@@ -36,8 +36,8 @@ import matplotlib.pyplot as plt  # type: ignore
 import warnings
 import json
 
-PFGRU = True # If wanting to use the PFGRU TODO turn this into a parameter
-SMALL_VERSION = False
+PFGRU = False # If wanting to use the PFGRU TODO turn this into a parameter
+SMALL_VERSION = True
 
 # Maps
 #: [New Type] Array indicies to access a GridSquare (x, y). Type: Tuple[float, float]

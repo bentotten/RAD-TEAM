@@ -439,7 +439,59 @@ class evaluate_PPO:
 
         pass
     
-    def calc_stats(self, results, mc=None, plot=False, snr=None, control=None, obs=None):
+    def calc_stats(self, results, mc=None):
+        """
+        Calculate results from the evaluation. Performance is determined by accuracy and speed.
+        Accuracy: Median value of the count of successully found sources from each episode configuration. 
+        Speed: The median value of all epsiode lengths from all successful runs.
+        After review, for only 1000 values, a weighted median does not add enough benefit to warrant reimplementation.
+        """
+        if not mc:
+            mc = self.montecarlo_runs
+        
+        success_counts = np.zeros(len(results))
+        successful_episode_lengths = np.empty(len(results) * mc)
+        successful_episode_lengths[:] = np.nan
+        episode_returns = np.zeros(len(results) * mc)
+        
+        # Pointer for episode lengths, as shape is not known ahead of time
+        ep_start_ptr = 0
+
+        for ep_index, episode in enumerate(results):
+            success_counts[ep_index] = episode.success_counter
+            episode_returns[ep_index : ep_index + mc] = episode.total_episode_return
+            
+            successful_episode_lengths[ep_start_ptr : ep_start_ptr + len(episode.successful.episode_length)] = episode.successful.episode_length[:]
+            ep_start_ptr = ep_start_ptr + len(episode.successful.episode_length)
+            
+        success_counts_median = np.median(sorted(success_counts))
+        success_lengths_median = np.median(sorted(successful_episode_lengths))
+        return_medidan = np.median(sorted(episode_returns))
+        
+        succ_std = round(np.std(success_counts_median), 3)
+        len_std = round(np.std(success_lengths_median), 3)
+        ret_std = round(np.std(return_medidan), 3)
+        
+        print(f"Accuracy - Median Success Counts: {success_counts_median} with std {succ_std}")
+        print(f"Speed - Median Successful Episode Length: {success_lengths_median} with std {len_std}")        
+        print(f"Learning - Median Episode Return: {return_medidan} with std {ret_std}")
+        
+    
+if __name__ == "__main__":
+    
+    #Generate a large random seed and random generator object for reproducibility
+    rng = np.random.default_rng(2) 
+    
+    env_kwargs = {
+        'bbox': [[0.0,0.0],[1500.0,0.0],[1500.0,1500.0],[0.0,1500.0]],
+        'observation_area': [100.0,100.0], 
+        'obstruction_count': 0,
+        "number_agents": 1, 
+        "enforce_grid_boundaries": True,
+        "DEBUG": True,
+        "np_random": rng,
+        "TEST": 2
+        }     def calc_stats(self, results, mc=None, plot=False, snr=None, control=None, obs=None):
         """Calculate results from the evaluation"""
         # Per episode run:
         # [int] Completed runs count
@@ -476,24 +528,7 @@ class evaluate_PPO:
         ret_std = round(np.std(total_rets), 3)
         print(f"Median Success Counts: {success_counts_median} with std {succ_std}")
         print(f"Median Episode Length: {final_eplen_median} with std {len_std}")
-        print(f"Median Episode Return: {final_epret_median} with std {ret_std}")
-        
-    
-if __name__ == "__main__":
-    
-    #Generate a large random seed and random generator object for reproducibility
-    rng = np.random.default_rng(2) 
-    
-    env_kwargs = {
-        'bbox': [[0.0,0.0],[1500.0,0.0],[1500.0,1500.0],[0.0,1500.0]],
-        'observation_area': [100.0,100.0], 
-        'obstruction_count': 0,
-        "number_agents": 1, 
-        "enforce_grid_boundaries": True,
-        "DEBUG": True,
-        "np_random": rng,
-        "TEST": 2
-        }        
+        print(f"Median Episode Return: {final_epret_median} with std {ret_std}")       
     
     eval_kwargs = dict(
         env_name='gym_rad_search:RadSearchMulti-v1',

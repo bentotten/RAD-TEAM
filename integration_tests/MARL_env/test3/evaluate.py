@@ -439,44 +439,42 @@ class evaluate_PPO:
 
         pass
     
-    def calc_stats(self, results, mc=None, plot=False, snr=None, control=None, obs=None):
-        """Calculate results from the evaluation"""
-        # Per episode run:
-        # [int] Completed runs count
-        # [int] Success Counter
-        # [list] Successful episode lengths
-        # [List] Successful epsiode returns
-        # Intensity Measurement
-        
+    def calc_stats(self, results, mc=None):
+        """
+        Calculate results from the evaluation. Performance is determined by accuracy and speed.
+        Accuracy: Median value of the count of successully found sources from each episode configuration. 
+        Speed: The median value of all epsiode lengths from all successful runs.
+        After review, for only 1000 values, a weighted median does not add enough benefit to warrant reimplementation.
+        """
+        if not mc:
+            mc = self.montecarlo_runs
         
         success_counts = np.zeros(len(results))
-        episode_length_medians = np.zeros(len(results))
+        successful_episode_lengths = np.empty(len(results) * mc)
+        successful_episode_lengths[:] = np.nan
+        episode_returns = np.zeros(len(results) * mc)
         
-        episode_return_medians = np.zeros(len(results))
-        # TODO make less terrible
-        total_lengths = []
-        total_rets = []
+        # Pointer for episode lengths, as shape is not known ahead of time
+        ep_start_ptr = 0
 
         for ep_index, episode in enumerate(results):
             success_counts[ep_index] = episode.success_counter
-            sorted_len = sorted(episode.total_episode_length)
-            episode_length_medians[ep_index] = np.median(sorted_len)
-            sorted_ret = sorted(episode.total_episode_return)
-            episode_return_medians[ep_index] = np.median(sorted_ret)
+            episode_returns[ep_index : ep_index + mc] = episode.total_episode_return
             
-            total_lengths.append(episode.total_episode_length)
-            total_rets.append(episode.total_episode_return)
+            successful_episode_lengths[ep_start_ptr : ep_start_ptr + len(episode.successful.episode_length)] = episode.successful.episode_length[:]
+            ep_start_ptr = ep_start_ptr + len(episode.successful.episode_length)
             
         success_counts_median = np.median(sorted(success_counts))
-        final_eplen_median = np.median(sorted(episode_length_medians))
-        final_epret_median  = np.median(sorted(episode_return_medians))
+        success_lengths_median = np.median(sorted(successful_episode_lengths))
+        return_medidan = np.median(sorted(episode_returns))
         
         succ_std = round(np.std(success_counts_median), 3)
-        len_std = round(np.std(total_lengths), 3)
-        ret_std = round(np.std(total_rets), 3)
-        print(f"Median Success Counts: {success_counts_median} with std {succ_std}")
-        print(f"Median Episode Length: {final_eplen_median} with std {len_std}")
-        print(f"Median Episode Return: {final_epret_median} with std {ret_std}")
+        len_std = round(np.std(success_lengths_median), 3)
+        ret_std = round(np.std(return_medidan), 3)
+        
+        print(f"Accuracy - Median Success Counts: {success_counts_median} with std {succ_std}")
+        print(f"Speed - Median Successful Episode Length: {success_lengths_median} with std {len_std}")        
+        print(f"Learning - Median Episode Return: {return_medidan} with std {ret_std}")
         
     
 if __name__ == "__main__":
