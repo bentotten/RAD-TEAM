@@ -1,0 +1,217 @@
+[
+    {
+        "id": 0,
+        "completed_runs": 5,
+        "success_counter": 5,
+        "total_episode_length": [
+            7,
+            9,
+            9,
+            9,
+            7
+        ],
+        "total_episode_return": [
+            7,
+            9,
+            9,
+            9,
+            7
+        ],
+        "successful": {
+            "episode_length": [
+                7,
+                9,
+                9,
+                9,
+                7
+            ],
+            "episode_return": [
+                0.8100000023841858,
+                0.310000017285347,
+                0.310000017285347,
+                0.310000017285347,
+                0.8100000023841858
+            ],
+            "intensity": [
+                1000000
+            ]
+        },
+        "unsuccessful": {
+            "episode_length": [],
+            "episode_return": [],
+            "intensity": []
+        }
+    },
+    {
+        "id": 1,
+        "completed_runs": 5,
+        "success_counter": 5,
+        "total_episode_length": [
+            5,
+            5,
+            5,
+            5,
+            5
+        ],
+        "total_episode_return": [
+            5,
+            5,
+            5,
+            5,
+            5
+        ],
+        "successful": {
+            "episode_length": [
+                5,
+                5,
+                5,
+                5,
+                5
+            ],
+            "episode_return": [
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0
+            ],
+            "intensity": [
+                1000000
+            ]
+        },
+        "unsuccessful": {
+            "episode_length": [],
+            "episode_return": [],
+            "intensity": []
+        }
+    },
+    {
+        "id": 2,
+        "completed_runs": 5,
+        "success_counter": 5,
+        "total_episode_length": [
+            7,
+            7,
+            11,
+            7,
+            7
+        ],
+        "total_episode_return": [
+            7,
+            7,
+            11,
+            7,
+            7
+        ],
+        "successful": {
+            "episode_length": [
+                7,
+                7,
+                11,
+                7,
+                7
+            ],
+            "episode_return": [
+                1.0,
+                1.0,
+                -0.11999998986721039,
+                1.0,
+                1.0
+            ],
+            "intensity": [
+                1000000
+            ]
+        },
+        "unsuccessful": {
+            "episode_length": [],
+            "episode_return": [],
+            "intensity": []
+        }
+    },
+    {
+        "id": 3,
+        "completed_runs": 5,
+        "success_counter": 5,
+        "total_episode_length": [
+            8,
+            8,
+            8,
+            8,
+            8
+        ],
+        "total_episode_return": [
+            8,
+            8,
+            8,
+            8,
+            8
+        ],
+        "successful": {
+            "episode_length": [
+                8,
+                8,
+                8,
+                8,
+                8
+            ],
+            "episode_return": [
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0
+            ],
+            "intensity": [
+                1000000
+            ]
+        },
+        "unsuccessful": {
+            "episode_length": [],
+            "episode_return": [],
+            "intensity": []
+        }
+    },
+    {
+        "id": 4,
+        "completed_runs": 5,
+        "success_counter": 5,
+        "total_episode_length": [
+            8,
+            8,
+            8,
+            8,
+            9
+        ],
+        "total_episode_return": [
+            8,
+            8,
+            8,
+            8,
+            9
+        ],
+        "successful": {
+            "episode_length": [
+                8,
+                8,
+                8,
+                8,
+                9
+            ],
+            "episode_return": [
+                0.8599999994039536,
+                1.0,
+                0.8599999994039536,
+                0.8599999994039536,
+                1.0
+            ],
+            "intensity": [
+                1000000
+            ]
+        },
+        "unsuccessful": {
+            "episode_length": [],
+            "episode_return": [],
+            "intensity": []
+        }
+    }
+]

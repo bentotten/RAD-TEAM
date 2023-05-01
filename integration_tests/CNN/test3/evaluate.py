@@ -36,6 +36,7 @@ from typing import (
 )
 from typing_extensions import TypeAlias
 from dataclasses import dataclass, field
+from dataclasses_json import dataclass_json
 
 import json
 import joblib  # type: ignore
@@ -53,6 +54,7 @@ import RADTEAM_core as RADCNN_core  # type: ignore
 
 # TODO delete this after new run done with all ac_kwargs saved
 ALL_ACKWARGS_SAVED = False
+USE_RAY = False
 
 # Helpful functions
 def median(data: List) -> np.float32:
@@ -63,15 +65,16 @@ def variance(data: List) -> np.float32:
     return np.var(np.array(data) / len(data)) if len(data) > 0 else np.nan
 
 
+@dataclass_json
 @dataclass
 class Results:
     episode_length: List[int] = field(default_factory=lambda: list())
     episode_return: List[float] = field(default_factory=lambda: list())
     intensity: List[float] = field(default_factory=lambda: list())
     background_intensity: List[float] = field(default_factory=lambda: list())
-    success_count: List[int] = field(default_factory=lambda: list())
 
 
+@dataclass_json
 @dataclass
 class MonteCarloResults:
     id: int
@@ -554,6 +557,8 @@ class evaluate_PPO:
     """
 
     eval_kwargs: Dict
+    #: Path to save results to
+    save_path: Union[str, None] = field(default=None)    
 
     # Initialized elsewhere
     #: Directory containing test environments. Each test environment file contains 1000 environment configurations.
@@ -569,42 +574,76 @@ class evaluate_PPO:
 
     def __post_init__(self) -> None:
         self.montecarlo_runs = self.eval_kwargs["montecarlo_runs"]
+        if not self.save_path:
+            self.save_path = eval_kwargs['model_path'] # type: ignore
         # Uncomment when ready to run with Ray
         # Initialize ray
-        # try:
-        #     ray.init(address="auto")
-        # except:
-        #     print("Ray failed to initialize. Running on single server.")
+        if USE_RAY:
+            try:
+                ray.init(address="auto")
+            except:
+                print("Ray failed to initialize. Running on single server.")
         pass
 
     def evaluate(self):
         """Driver"""
         start_time = time.time()
+        if USE_RAY:
         # Uncomment when ready to run with Ray
-        # runners = {i: EpisodeRunner
-        #            .remote(
-        #                 id=i,
-        #                 current_dir=os.getcwd(),
-        #                 **self.eval_kwargs
-        #             )
-        #         for i in range(self.eval_kwargs['episodes'])
-        #     }
+            runners = {i: EpisodeRunner
+                       .remote(
+                            id=i,
+                            current_dir=os.getcwd(),
+                            **self.eval_kwargs
+                        )
+                    for i in range(self.eval_kwargs['episodes'])
+                }
 
-        # full_results = ray.get([runner.run.remote() for runner in runners.values()])
-        # print(full_results)
+            full_results = ray.get([runner.run.remote() for runner in runners.values()])
+        else:
+            # Uncomment when to run without Ray
+            self.runners = {
+                i: EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs)
+                for i in range(self.eval_kwargs["episodes"])
+            }
 
-        # Uncomment when to run without Ray
-        self.runners = {
-            i: EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs)
-            for i in range(self.eval_kwargs["episodes"])
-        }
-
-        full_results = [runner.run() for runner in self.runners.values()]
+            full_results = [runner.run() for runner in self.runners.values()]
 
         print("Runtime: {}", time.time() - start_time)
 
-        self.calc_stats(results=full_results)
+        score = self.calc_stats(results=full_results)
+        with open(f"{self.save_path}/results.json", 'w+') as f:
+            f.write(json.dumps(score, indent=4))
+            
+        for result in full_results:
+            print(result)
+            print(result.to_json())
+            
+        # Convert to raw results
+        raw_results = list()        
+        for index, result in enumerate(full_results):
+            raw_results.append(dict())
+            raw_results[index]['id'] = result.id            
+            raw_results[index]['completed_runs'] = result.completed_runs
+            raw_results[index]['success_counter'] = result.success_counter
+            raw_results[index]['total_episode_length'] = result.total_episode_length
+            raw_results[index]['total_episode_return'] = result.total_episode_length
+            raw_results[index]['successful'] = dict()
+            
+            raw_results[index]['successful']['episode_length'] = result.successful.episode_length
+            raw_results[index]['successful']['episode_return'] = result.successful.episode_return
+            raw_results[index]['successful']['intensity'] = result.successful.intensity
+
+            raw_results[index]['unsuccessful'] = dict()                
+            raw_results[index]['unsuccessful']['episode_length'] = result.unsuccessful.episode_length
+            raw_results[index]['unsuccessful']['episode_return'] = result.unsuccessful.episode_return
+            raw_results[index]['unsuccessful']['intensity'] = result.unsuccessful.intensity
+
+        with open(f"{self.save_path}/results_raw.json", 'w+') as f:
+            f.write(json.dumps(raw_results, indent=4))
+            
         pass
+
 
     def calc_stats(self, results, mc=None):
         """
@@ -631,17 +670,23 @@ class evaluate_PPO:
             successful_episode_lengths[ep_start_ptr : ep_start_ptr + len(episode.successful.episode_length)] = episode.successful.episode_length[:]
             ep_start_ptr = ep_start_ptr + len(episode.successful.episode_length)
             
-        success_counts_median = np.median(sorted(success_counts))
+        success_counts_median = np.nanmedian(sorted(success_counts))
         success_lengths_median = np.nanmedian(sorted(successful_episode_lengths))
-        return_medidan = np.median(sorted(episode_returns))
+        return_median = np.nanmedian(sorted(episode_returns))
         
         succ_std = round(np.std(success_counts_median), 3)
         len_std = round(np.std(success_lengths_median), 3)
-        ret_std = round(np.std(return_medidan), 3)
+        ret_std = round(np.std(return_median), 3)
         
         print(f"Accuracy - Median Success Counts: {success_counts_median} with std {succ_std}")
         print(f"Speed - Median Successful Episode Length: {success_lengths_median} with std {len_std}")        
-        print(f"Learning - Median Episode Return: {return_medidan} with std {ret_std}")
+        print(f"Learning - Median Episode Return: {return_median} with std {ret_std}")
+        
+        return {
+            'accuracy': {'median': success_counts_median, 'std': succ_std},
+            'speed': {'median': success_lengths_median, 'std': len_std},
+            'score': {'median': return_median, 'std': ret_std}
+                }
         
 
 if __name__ == "__main__":
@@ -664,8 +709,8 @@ if __name__ == "__main__":
         env_kwargs=env_kwargs,
 
         model_path=(lambda: os.getcwd())(),
-        episodes=100,  # Number of episodes to test on [1 - 1000]
-        montecarlo_runs=100,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
+        episodes=5,  # Number of episodes to test on [1 - 1000]
+        montecarlo_runs=5,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
         actor_critic_architecture='cnn',  # Neural network type (control)
         snr="none",  # signal to noise ratio [none, low, medium, high]
         obstruction_count = 0,  # number of obstacles [0 - 7] (num_obs)

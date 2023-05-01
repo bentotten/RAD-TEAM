@@ -1,0 +1,14 @@
+{
+    "accuracy": {
+        "median": 5.0,
+        "std": 0.0
+    },
+    "speed": {
+        "median": 8.0,
+        "std": 0.0
+    },
+    "score": {
+        "median": 0.0,
+        "std": 0.0
+    }
+}
