@@ -642,7 +642,9 @@ class evaluate_PPO:
         with open(f"{self.save_path}/results_raw.json", 'w+') as f:
             f.write(json.dumps(raw_results, indent=4))
             
-        pass
+        print(f"Accuracy - Median Success Counts: {score['accuracy']['median']} with std {score['accuracy']['std']}")
+        print(f"Speed - Median Successful Episode Length: {score['speed']['median']} with std {score['speed']['std']}")        
+        print(f"Learning - Median Episode Return: {score['score']['median']} with std {score['score']['std']}")
 
 
     def calc_stats(self, results, mc=None):
@@ -660,15 +662,17 @@ class evaluate_PPO:
         successful_episode_lengths[:] = np.nan
         episode_returns = np.zeros(len(results) * mc)
         
-        # Pointer for episode lengths, as shape is not known ahead of time
-        ep_start_ptr = 0
+        # Pointers for episode
+        ep_len_start_ptr = 0
+        ep_ret_start_ptr = 0
 
         for ep_index, episode in enumerate(results):
             success_counts[ep_index] = episode.success_counter
-            episode_returns[ep_index : ep_index + mc] = episode.total_episode_return
+            episode_returns[ep_ret_start_ptr : ep_ret_start_ptr + mc] = episode.total_episode_return
+            ep_ret_start_ptr = ep_ret_start_ptr + mc
             
-            successful_episode_lengths[ep_start_ptr : ep_start_ptr + len(episode.successful.episode_length)] = episode.successful.episode_length[:]
-            ep_start_ptr = ep_start_ptr + len(episode.successful.episode_length)
+            successful_episode_lengths[ep_len_start_ptr : ep_len_start_ptr + len(episode.successful.episode_length)] = episode.successful.episode_length[:]
+            ep_len_start_ptr = ep_len_start_ptr + len(episode.successful.episode_length)
             
         success_counts_median = np.nanmedian(sorted(success_counts))
         success_lengths_median = np.nanmedian(sorted(successful_episode_lengths))
@@ -677,10 +681,6 @@ class evaluate_PPO:
         succ_std = round(np.std(success_counts_median), 3)
         len_std = round(np.std(success_lengths_median), 3)
         ret_std = round(np.std(return_median), 3)
-        
-        print(f"Accuracy - Median Success Counts: {success_counts_median} with std {succ_std}")
-        print(f"Speed - Median Successful Episode Length: {success_lengths_median} with std {len_std}")        
-        print(f"Learning - Median Episode Return: {return_median} with std {ret_std}")
         
         return {
             'accuracy': {'median': success_counts_median, 'std': succ_std},
@@ -709,8 +709,8 @@ if __name__ == "__main__":
         env_kwargs=env_kwargs,
 
         model_path=(lambda: os.getcwd())(),
-        episodes=5,  # Number of episodes to test on [1 - 1000]
-        montecarlo_runs=5,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
+        episodes=2,  # Number of episodes to test on [1 - 1000]
+        montecarlo_runs=2,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
         actor_critic_architecture='cnn',  # Neural network type (control)
         snr="none",  # signal to noise ratio [none, low, medium, high]
         obstruction_count = 0,  # number of obstacles [0 - 7] (num_obs)

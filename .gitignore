@@ -4,7 +4,7 @@
 # Documentation (should be generated with Sphinx from doc_source directory)
 doc_build/
 
-# Models
+# Models, configurations, and results
 models/
 *.pkl
 data/
@@ -12,6 +12,7 @@ hidden/
 model.pt
 *.pt
 *config*.json
+*results*.json
 
 # Simple Logs
 *.csv
