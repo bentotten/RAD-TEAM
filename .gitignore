@@ -13,6 +13,7 @@ model.pt
 *.pt
 *config*.json
 *results*.json
+results*.json
 
 # Simple Logs
 *.csv

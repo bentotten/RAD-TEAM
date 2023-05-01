@@ -576,31 +576,63 @@ class evaluate_PPO:
     def evaluate(self):
         """Driver"""
         start_time = time.time()
+        if USE_RAY:
         # Uncomment when ready to run with Ray
-        # runners = {i: EpisodeRunner
-        #            .remote(
-        #                 id=i,
-        #                 current_dir=os.getcwd(),
-        #                 **self.eval_kwargs
-        #             )
-        #         for i in range(self.eval_kwargs['episodes'])
-        #     }
+            runners = {i: EpisodeRunner
+                       .remote(
+                            id=i,
+                            current_dir=os.getcwd(),
+                            **self.eval_kwargs
+                        )
+                    for i in range(self.eval_kwargs['episodes'])
+                }
 
-        # full_results = ray.get([runner.run.remote() for runner in runners.values()])
-        # print(full_results)
+            full_results = ray.get([runner.run.remote() for runner in runners.values()])
+        else:
+            # Uncomment when to run without Ray
+            self.runners = {
+                i: EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs)
+                for i in range(self.eval_kwargs["episodes"])
+            }
 
-        # Uncomment when to run without Ray
-        self.runners = {
-            i: EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs)
-            for i in range(self.eval_kwargs["episodes"])
-        }
-
-        full_results = [runner.run() for runner in self.runners.values()]
+            full_results = [runner.run() for runner in self.runners.values()]
 
         print("Runtime: {}", time.time() - start_time)
 
-        self.calc_stats(results=full_results)
-        pass
+        score = self.calc_stats(results=full_results)
+        with open(f"{self.save_path}/results.json", 'w+') as f:
+            f.write(json.dumps(score, indent=4))
+            
+        for result in full_results:
+            print(result)
+            print(result.to_json())
+            
+        # Convert to raw results
+        raw_results = list()        
+        for index, result in enumerate(full_results):
+            raw_results.append(dict())
+            raw_results[index]['id'] = result.id            
+            raw_results[index]['completed_runs'] = result.completed_runs
+            raw_results[index]['success_counter'] = result.success_counter
+            raw_results[index]['total_episode_length'] = result.total_episode_length
+            raw_results[index]['total_episode_return'] = result.total_episode_length
+            raw_results[index]['successful'] = dict()
+            
+            raw_results[index]['successful']['episode_length'] = result.successful.episode_length
+            raw_results[index]['successful']['episode_return'] = result.successful.episode_return
+            raw_results[index]['successful']['intensity'] = result.successful.intensity
+
+            raw_results[index]['unsuccessful'] = dict()                
+            raw_results[index]['unsuccessful']['episode_length'] = result.unsuccessful.episode_length
+            raw_results[index]['unsuccessful']['episode_return'] = result.unsuccessful.episode_return
+            raw_results[index]['unsuccessful']['intensity'] = result.unsuccessful.intensity
+
+        with open(f"{self.save_path}/results_raw.json", 'w+') as f:
+            f.write(json.dumps(raw_results, indent=4))
+            
+        print(f"Accuracy - Median Success Counts: {score['accuracy']['median']} with std {score['accuracy']['std']}")
+        print(f"Speed - Median Successful Episode Length: {score['speed']['median']} with std {score['speed']['std']}")        
+        print(f"Learning - Median Episode Return: {score['score']['median']} with std {score['score']['std']}")
 
     def calc_stats(self, results, mc=None):
         """

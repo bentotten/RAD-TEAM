@@ -54,18 +54,9 @@ import RADTEAM_core as RADCNN_core  # type: ignore
 
 # TODO delete this after new run done with all ac_kwargs saved
 ALL_ACKWARGS_SAVED = False
-USE_RAY = False
-
-# Helpful functions
-def median(data: List) -> np.float32:
-    return np.median(data) if len(data) > 0 else np.nan
+USE_RAY = True
 
 
-def variance(data: List) -> np.float32:
-    return np.var(np.array(data) / len(data)) if len(data) > 0 else np.nan
-
-
-@dataclass_json
 @dataclass
 class Results:
     episode_length: List[int] = field(default_factory=lambda: list())
@@ -74,7 +65,6 @@ class Results:
     background_intensity: List[float] = field(default_factory=lambda: list())
 
 
-@dataclass_json
 @dataclass
 class MonteCarloResults:
     id: int
@@ -99,7 +89,7 @@ class Distribution:
 
 
 # Uncomment when ready to run with Ray
-# @ray.remote
+@ray.remote
 @dataclass
 class EpisodeRunner:
     """
@@ -646,7 +636,6 @@ class evaluate_PPO:
         print(f"Speed - Median Successful Episode Length: {score['speed']['median']} with std {score['speed']['std']}")        
         print(f"Learning - Median Episode Return: {score['score']['median']} with std {score['score']['std']}")
 
-
     def calc_stats(self, results, mc=None):
         """
         Calculate results from the evaluation. Performance is determined by accuracy and speed.
@@ -709,8 +698,8 @@ if __name__ == "__main__":
         env_kwargs=env_kwargs,
 
         model_path=(lambda: os.getcwd())(),
-        episodes=2,  # Number of episodes to test on [1 - 1000]
-        montecarlo_runs=2,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
+        episodes=100,  # Number of episodes to test on [1 - 1000]
+        montecarlo_runs=100,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
         actor_critic_architecture='cnn',  # Neural network type (control)
         snr="none",  # signal to noise ratio [none, low, medium, high]
         obstruction_count = 0,  # number of obstacles [0 - 7] (num_obs)
