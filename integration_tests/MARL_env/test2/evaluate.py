@@ -54,8 +54,8 @@ from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 # Neural Networks
 import core as RADA2C_core  # type: ignore
 
-
-USE_RAY = True
+# NOTE: Do not use Ray with env generator for random position generation; will create duplicates of identical episode configurations.
+USE_RAY = False
 
 
 @dataclass
@@ -91,7 +91,7 @@ class Distribution:
 
 
 # Uncomment when ready to run with Ray
-@ray.remote
+# @ray.remote
 @dataclass
 class EpisodeRunner:
     id: int
@@ -597,9 +597,9 @@ class evaluate_PPO:
         success_lengths_median = np.nanmedian(sorted(successful_episode_lengths))
         return_median = np.nanmedian(sorted(episode_returns))
 
-        succ_std = round(np.std(success_counts), 3)
-        len_std = round(np.std(successful_episode_lengths), 3)
-        ret_std = round(np.std(episode_returns), 3)
+        succ_std = round(np.nanstd(success_counts), 3)
+        len_std = round(np.nanstd(successful_episode_lengths), 3)
+        ret_std = round(np.nanstd(episode_returns), 3)
 
         return {
             "accuracy": {"median": success_counts_median, "std": succ_std},
@@ -609,8 +609,9 @@ class evaluate_PPO:
 
 
 if __name__ == "__main__":
+    seed = 2
     # Generate a large random seed and random generator object for reproducibility
-    rng = np.random.default_rng(2)
+    rng = np.random.default_rng(seed)
 
     env_kwargs = {
         "bbox": [[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]],
@@ -641,7 +642,7 @@ if __name__ == "__main__":
         save_gif_freq=1,
         render_path=".",
         save_path_for_ac=".",
-        seed=2,
+        seed=seed,
     )
 
     test = evaluate_PPO(eval_kwargs=eval_kwargs)

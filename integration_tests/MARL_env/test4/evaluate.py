@@ -54,8 +54,8 @@ from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 # Neural Networks
 import core as RADA2C_core  # type: ignore
 
-
-USE_RAY = True
+# NOTE: Do not use Ray with env generator; will create duplicates of identical episode configurations
+USE_RAY = False
 
 
 @dataclass
@@ -91,7 +91,7 @@ class Distribution:
 
 
 # Uncomment when ready to run with Ray
-@ray.remote
+# @ray.remote
 @dataclass
 class EpisodeRunner:
     id: int
@@ -134,10 +134,6 @@ class EpisodeRunner:
     def __post_init__(self) -> None:
         # Change to correct directory
         os.chdir(self.current_dir)
-
-        # Generate a large random seed and random generator object for reproducibility
-        rng = np.random.default_rng(self.seed)
-        self.env_kwargs["np_random"] = rng
 
         # Create own instatiation of environment
         self.env: rad_search_env = self.create_environment()
@@ -378,7 +374,7 @@ class EpisodeRunner:
         results.completed_runs = run_counter
 
         print(
-            f"Finished episode {self.id}! Success count: {results.success_counter} out of {self.montecarlo_runs}"
+            f"Finished episode {self.id}! Success count: {results.success_counter} out of {self.montecarlo_runs}. Agent: {self.env.agents[0].det_coords} Source: {self.env.src_coords}"
         )
         return results
 
@@ -476,10 +472,14 @@ class evaluate_PPO:
     runners: Dict = field(init=False)
     #: Number of monte carlo runs per episode configuration
     montecarlo_runs: int = field(init=False)
+    #: Path to save results to
+    save_path: Union[str, None] = field(default=None)
 
     def __post_init__(self) -> None:
         self.montecarlo_runs = self.eval_kwargs["montecarlo_runs"]
-        # Initialize Ray
+        if not self.save_path:
+            self.save_path = eval_kwargs["model_path"]  # type: ignore
+        # Initialize ray
         if USE_RAY:
             try:
                 ray.init(address="auto")
@@ -514,11 +514,8 @@ class evaluate_PPO:
         with open(f"{self.save_path}/results.json", "w+") as f:
             f.write(json.dumps(score, indent=4))
 
-        for result in full_results:
-            print(result)
-            print(result.to_json())
-
         # Convert to raw results
+        counter = 0
         raw_results = list()
         for index, result in enumerate(full_results):
             raw_results.append(dict())
@@ -548,9 +545,12 @@ class evaluate_PPO:
                 "intensity"
             ] = result.unsuccessful.intensity
 
+            counter += result.completed_runs
+
         with open(f"{self.save_path}/results_raw.json", "w+") as f:
             f.write(json.dumps(raw_results, indent=4))
 
+        print(f"Total Runs: {counter}")
         print(
             f"Accuracy - Median Success Counts: {score['accuracy']['median']} with std {score['accuracy']['std']}"
         )
@@ -576,41 +576,50 @@ class evaluate_PPO:
         successful_episode_lengths[:] = np.nan
         episode_returns = np.zeros(len(results) * mc)
 
-        # Pointer for episode lengths, as shape is not known ahead of time
-        ep_start_ptr = 0
+        # Pointers for episode
+        ep_len_start_ptr = 0
+        ep_ret_start_ptr = 0
 
         for ep_index, episode in enumerate(results):
             success_counts[ep_index] = episode.success_counter
-            episode_returns[ep_index : ep_index + mc] = episode.total_episode_return
+            episode_returns[
+                ep_ret_start_ptr : ep_ret_start_ptr + mc
+            ] = episode.total_episode_return
+            ep_ret_start_ptr = ep_ret_start_ptr + mc
 
             successful_episode_lengths[
-                ep_start_ptr : ep_start_ptr + len(episode.successful.episode_length)
+                ep_len_start_ptr : ep_len_start_ptr
+                + len(episode.successful.episode_length)
             ] = episode.successful.episode_length[:]
-            ep_start_ptr = ep_start_ptr + len(episode.successful.episode_length)
+            ep_len_start_ptr = ep_len_start_ptr + len(episode.successful.episode_length)
 
-        success_counts_median = np.median(sorted(success_counts))
+        success_counts_median = np.nanmedian(sorted(success_counts))
         success_lengths_median = np.nanmedian(sorted(successful_episode_lengths))
-        return_medidan = np.median(sorted(episode_returns))
+        return_median = np.nanmedian(sorted(episode_returns))
 
-        succ_std = round(np.std(success_counts_median), 3)
-        len_std = round(np.std(success_lengths_median), 3)
-        ret_std = round(np.std(return_medidan), 3)
+        succ_std = round(np.nanstd(success_counts), 3)
+        len_std = round(np.nanstd(successful_episode_lengths), 3)
+        ret_std = round(np.nanstd(episode_returns), 3)
 
-        print(
-            f"Accuracy - Median Success Counts: {success_counts_median} with std {succ_std}"
-        )
-        print(
-            f"Speed - Median Successful Episode Length: {success_lengths_median} with std {len_std}"
-        )
-        print(f"Learning - Median Episode Return: {return_medidan} with std {ret_std}")
+        return {
+            "accuracy": {"median": success_counts_median, "std": succ_std},
+            "speed": {"median": success_lengths_median, "std": len_std},
+            "score": {"median": return_median, "std": ret_std},
+        }
 
 
 if __name__ == "__main__":
+    seed = 2
+
+    # Generate a large random seed and random generator object for reproducibility
+    rng = np.random.default_rng(seed)
+
     env_kwargs = {
         "bbox": [[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]],
         "observation_area": [100.0, 100.0],
         "obstruction_count": 0,
         "number_agents": 1,
+        "np_random": rng,
         "enforce_grid_boundaries": True,
         "DEBUG": True,
         "TEST": 4,
@@ -634,7 +643,7 @@ if __name__ == "__main__":
         save_gif_freq=1,
         render_path=".",
         save_path_for_ac=".",
-        seed=2,
+        seed=seed,
     )
 
     test = evaluate_PPO(eval_kwargs=eval_kwargs)

@@ -89,7 +89,7 @@
         // "--exp-name",
         // "TEAM-RAD",
         "--net-type",
-        "cnn",
+        "cnn"
         // "--no-enforce-boundaries"
         // "--DEBUG",
         // "True",
@@ -170,12 +170,12 @@
       "justMyCode": false,
 
       "cwd": "${workspaceFolder}/integration_tests/MARL_env/test2"
-    },    
+    },
     {
       "name": "Test Environment Stage 1 - Test 3",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/integration_tests/MARL_env/test3/ppo.py",
+      "program": "${workspaceFolder}/integration_tests/MARL_env/test3/evaluate.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": ["--render", "1"],
@@ -185,7 +185,7 @@
       "name": "Test Environment Stage 1 - Test 4",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/integration_tests/MARL_env/test3/evaluate.py",
+      "program": "${workspaceFolder}/integration_tests/MARL_env/test4/evaluate.py",
       "console": "integratedTerminal",
       "justMyCode": false,
 
@@ -210,7 +210,7 @@
       "justMyCode": false,
 
       "cwd": "${workspaceFolder}/integration_tests/Optimizer/test1"
-    },      
+    },
     {
       "name": "Test StatBuffer Stage 1 - Test 1",
       "type": "python",
@@ -230,7 +230,7 @@
       "justMyCode": false,
 
       "cwd": "${workspaceFolder}/integration_tests/CNN/test1"
-    },          
+    },
     {
       "name": "Test CNN Stage 1 - Test 3",
       "type": "python",
@@ -240,7 +240,7 @@
       "justMyCode": false,
 
       "cwd": "${workspaceFolder}/integration_tests/CNN/test3"
-    },            
+    },
     {
       "name": "Test RADA2C MARL Stage 1 - Test 1",
       "type": "python",
@@ -251,6 +251,6 @@
       "args": ["--agents", "2"],
 
       "cwd": "${workspaceFolder}/integration_tests/RADA2C_MARL/test1"
-    },           
+    }
   ]
 }
