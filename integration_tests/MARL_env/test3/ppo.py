@@ -142,8 +142,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
     
     if load_model != 0:
-        ac.load_state_dict(torch.load('model.pt'))                     
-        
+        ac.load_state_dict(torch.load('model.pt'))
+    
     # Sync params across processes
     sync_params(ac)
 

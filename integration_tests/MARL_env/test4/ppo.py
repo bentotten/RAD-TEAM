@@ -142,7 +142,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
     
     if load_model != 0:
-        ac.load_state_dict(torch.load('model.pt'))           
+        ac.load_state_dict(torch.load('model.pt'))
     
     # Sync params across processes
     sync_params(ac)
@@ -512,7 +512,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', '-s', type=int, default=2,help='Random seed control')
     parser.add_argument('--cpu', type=int, default=1,help='Number of cores/environments to train the agent with')
     parser.add_argument('--steps_per_epoch', type=int, default=480,help='Number of timesteps per epoch per cpu. Default is equal to 4 episodes per cpu per epoch.')      
-    parser.add_argument('--epochs', type=int, default=100,help='Number of epochs to train the agent')
+    parser.add_argument('--epochs', type=int, default=300,help='Number of epochs to train the agent')
     parser.add_argument('--exp_name', type=str,default='alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh',help='Name of experiment for saving')
     parser.add_argument('--dims', type=list, default=[[0.0,0.0],[1500.0,0.0],[1500.0,1500.0],[0.0,1500.0]],
                         help='Dimensions of radiation source search area in cm, decreased by area_obs param. to ensure visilibity graph setup is valid.')
@@ -522,11 +522,16 @@ if __name__ == '__main__':
     parser.add_argument('--net_type',type=str, default='rnn', help='Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp') 
     parser.add_argument('--alpha',type=float,default=0.1, help='Entropy reward term scaling') 
     parser.add_argument('--load_model', type=int, default=0)
+    parser.add_argument('--render', type=int, default=0)
+
 
     args = parser.parse_args()
 
     #Change mini-batch size, only been tested with size of 1
     args.batch = 1
+
+    # Render
+    render = True if args.render > 0 else False
 
     #Save directory and experiment name
     args.env_name = 'stage_1'
@@ -563,7 +568,7 @@ if __name__ == '__main__':
         ac_kwargs=dict(hidden_sizes_pol=[args.hid_pol]*args.l_pol,hidden_sizes_val=[args.hid_val]*args.l_val,
         hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch), gamma=args.gamma, alpha=args.alpha,
         seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,
-        logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model)
+        logger_kwargs=logger_kwargs,render=render, save_gif=render, load_model = args.load_model)
     
     print("Done! Seed:")
     print(args.seed)    
