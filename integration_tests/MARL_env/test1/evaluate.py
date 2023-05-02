@@ -370,7 +370,7 @@ class EpisodeRunner:
         results.completed_runs = run_counter
 
         print(
-            f"Finished episode {self.id}! Success count: {results.success_counter} out of {self.montecarlo_runs}"
+            f"Finished episode {self.id}! Success count: {results.success_counter} out of {run_counter}"
         )
         return results
 

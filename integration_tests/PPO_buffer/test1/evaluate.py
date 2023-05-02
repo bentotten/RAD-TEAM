@@ -19,8 +19,8 @@ import numpy as np
 import numpy.random as npr
 import numpy.typing as npt
 
-from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params,synchronize, mpi_avg_grads, sync_params_stats # type: ignore
-from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar,mpi_statistics_vector, num_procs, mpi_min_max_scalar # type: ignore
+from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, synchronize, mpi_avg_grads, sync_params_stats  # type: ignore
+from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, mpi_statistics_vector, num_procs, mpi_min_max_scalar  # type: ignore
 
 from typing import (
     Any,
@@ -54,7 +54,7 @@ from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 # Neural Networks
 import core as RADA2C_core  # type: ignore
 
-
+# NOTE: Do not use Ray with env generator for random position generation; will create duplicates of identical episode configurations. Ok for TEST1
 USE_RAY = True
 
 
@@ -94,7 +94,6 @@ class Distribution:
 @ray.remote
 @dataclass
 class EpisodeRunner:
-
     id: int
     # env_sets: Dict
     current_dir: str
@@ -124,16 +123,17 @@ class EpisodeRunner:
     snr: str = field(default="high")
 
     render_first_episode: bool = field(default=True)
-    env_dict: Dict = field(default_factory=lambda: dict())    
+    env_dict: Dict = field(default_factory=lambda: dict())
 
     # Initialized elsewhere
     #: Object that holds agents
-    agents: Dict[int, RADA2C_core.RNNModelActorCritic] = field(default_factory=lambda: dict())
+    agents: Dict[int, RADA2C_core.RNNModelActorCritic] = field(
+        default_factory=lambda: dict()
+    )
 
     def __post_init__(self) -> None:
         # Change to correct directory
         os.chdir(self.current_dir)
-
 
         # Create own instatiation of environment
         self.env: rad_search_env = self.create_environment()
@@ -142,15 +142,21 @@ class EpisodeRunner:
         agent_models = {}
         for child in os.scandir(self.model_path):
             if child.is_dir() and "agent" in child.name:
-                agent_models[int(child.name[0])] = (child.path)  # Read in model path by id number. NOTE: Important that ID number is the first element of file name
+                agent_models[
+                    int(child.name[0])
+                ] = (
+                    child.path
+                )  # Read in model path by id number. NOTE: Important that ID number is the first element of file name
             if child.is_dir() and "general" in child.name:
                 general_config_path = child.path
 
         obj = json.load(open(f"{self.model_path}/config.json"))
-        if 'self' in obj.keys():
-            original_configs = list(obj["self"].values())[0]["ppo_kwargs"]["actor_critic_args"]
+        if "self" in obj.keys():
+            original_configs = list(obj["self"].values())[0]["ppo_kwargs"][
+                "actor_critic_args"
+            ]
         else:
-            original_configs = obj["ac_kwargs"] # Original project save format
+            original_configs = obj["ac_kwargs"]  # Original project save format
 
         # Set up static A2C actor-critic args
         actor_critic_args = dict(
@@ -173,35 +179,44 @@ class EpisodeRunner:
                     or type(original_configs[arg]) == float
                     or type(original_configs[arg]) == bool
                 ):
-                    assert ( actor_critic_args[arg] == original_configs[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                    assert (
+                        actor_critic_args[arg] == original_configs[arg]
+                    ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                 elif type(original_configs[arg]) is str:
                     if arg == "net_type":
                         assert actor_critic_args[arg] == original_configs[arg]
                     else:
                         to_list = original_configs[arg].strip("][").split(" ")
                         config = np.array([float(x) for x in to_list], dtype=np.float32)
-                        assert np.array_equal(config, actor_critic_args[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                        assert np.array_equal(
+                            config, actor_critic_args[arg]
+                        ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                 elif type(original_configs[arg]) is list:
                     for a, b in zip(original_configs[arg], actor_critic_args[arg]):
-                        assert (a == b), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                        assert (
+                            a == b
+                        ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                 else:
-                    assert (actor_critic_args[arg] == original_configs[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                    assert (
+                        actor_critic_args[arg] == original_configs[arg]
+                    ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
 
         # Initialize agents and load agent models
-        actor_critic_args['observation_space'] = self.env.observation_space 
-        actor_critic_args['action_space'] = self.env.action_space
-        actor_critic_args['seed'] = self.seed
-        actor_critic_args['pad_dim'] = 2
+        actor_critic_args["observation_space"] = self.env.observation_space
+        actor_critic_args["action_space"] = self.env.action_space
+        actor_critic_args["seed"] = self.seed
+        actor_critic_args["pad_dim"] = 2
 
         self.agents[0] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
-        self.agents[0].load_state_dict(torch.load('model.pt'))                     
-                  
+        self.agents[0].load_state_dict(torch.load("model.pt"))
 
     def run(self) -> MonteCarloResults:
         # Prepare tracking buffers and counters
         episode_return: Dict[int, float] = {id: 0.0 for id in self.agents}
         steps_in_episode: int = 0
-        terminal_counter: Dict[int, int] = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
+        terminal_counter: Dict[int, int] = {
+            id: 0 for id in self.agents
+        }  # Terminal counter for the epoch (not the episode)
         run_counter = 0
 
         # Prepare results buffers
@@ -210,28 +225,36 @@ class EpisodeRunner:
         stat_buffers = dict()
 
         # Reset environment and save test env parameters
-        observations, _, _, _  = self.env.reset()
+        observations, _, _, _ = self.env.reset()
 
         # Save env for refresh
-        self.env_dict['env_0'] = [_ for _ in range(5)]
-        self.env_dict['env_0'][0] = self.env.src_coords
-        self.env_dict['env_0'][1] = self.env.agents[0].det_coords
-        self.env_dict['env_0'][2] = self.env.intensity
-        self.env_dict['env_0'][3] = self.env.bkg_intensity
-        self.env_dict['env_0'][4] = [] # obstructions
+        self.env_dict["env_0"] = [_ for _ in range(5)]
+        self.env_dict["env_0"][0] = self.env.src_coords
+        self.env_dict["env_0"][1] = self.env.agents[0].det_coords
+        self.env_dict["env_0"][2] = self.env.intensity
+        self.env_dict["env_0"][3] = self.env.bkg_intensity
+        self.env_dict["env_0"][4] = []  # obstructions
 
         self.agents[0].pi.eval()
         self.agents[0].model.eval()
 
         # Prepare episode variables
         agent_thoughts: Dict = dict()
-        hiddens: Dict[int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]] = {id: self.agents[id].reset_hidden() for id in self.agents}  # For RAD-A2C compatibility
+        hiddens: Dict[
+            int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]
+        ] = {
+            id: self.agents[id].reset_hidden() for id in self.agents
+        }  # For RAD-A2C compatibility
 
         initial_prediction = np.zeros((3,))
         for id, ac in self.agents.items():
             stat_buffers[id] = RADA2C_core.StatBuff()
             stat_buffers[id].update(observations[id][0])
-            observations[id][0] = np.clip((observations[id][0]-stat_buffers[id].mu)/stat_buffers[id].sig_obs,-8,8)
+            observations[id][0] = np.clip(
+                (observations[id][0] - stat_buffers[id].mu) / stat_buffers[id].sig_obs,
+                -8,
+                8,
+            )
 
         while run_counter < self.montecarlo_runs:
             # Get agent thoughts on current state. Actor: Compute action and logp (log probability); Critic: compute state-value
@@ -239,27 +262,38 @@ class EpisodeRunner:
             agent_thoughts[id] = {}
             for id, ac in self.agents.items():
                 with torch.no_grad():
-                    a, v, logp, hidden, out_pred = ac.step(observations[id], hiddens[id])
-                    agent_thoughts[id]['action'] = a
-
+                    a, v, logp, hidden, out_pred = ac.step(
+                        observations[id], hiddens[id]
+                    )
+                    agent_thoughts[id]["action"] = a
 
                 hiddens[id] = hidden
             # Create action list to send to environment
-            agent_action_decisions = {id: int(agent_thoughts[id]['action']) for id in agent_thoughts}
+            agent_action_decisions = {
+                id: int(agent_thoughts[id]["action"]) for id in agent_thoughts
+            }
             for action in agent_action_decisions.values():
                 assert 0 <= action and action < int(self.env.number_actions)
 
             # Take step in environment - Note: will be missing last reward, rewards link to previous observation in env
-            observations, rewards, terminals, _ = self.env.step(action=agent_action_decisions)
+            observations, rewards, terminals, _ = self.env.step(
+                action=agent_action_decisions
+            )
 
             for id, ac in self.agents.items():
                 stat_buffers[id].update(observations[id][0])
-                observations[id][0] = np.clip((observations[id][0]-stat_buffers[id].mu)/stat_buffers[id].sig_obs,-8,8)
+                observations[id][0] = np.clip(
+                    (observations[id][0] - stat_buffers[id].mu)
+                    / stat_buffers[id].sig_obs,
+                    -8,
+                    8,
+                )
 
             # Incremement Counters and save new (individual) cumulative returns
             for id in range(self.number_of_agents):
-
-                episode_return[id] += np.array(rewards["individual_reward"][id], dtype="float32").item()
+                episode_return[id] += np.array(
+                    rewards["individual_reward"][id], dtype="float32"
+                ).item()
 
             steps_in_episode += 1
 
@@ -272,8 +306,12 @@ class EpisodeRunner:
                     terminal_reached_flag = True
 
             # Stopping conditions for episode
-            timeout: bool = (steps_in_episode == self.steps_per_episode)  # Max steps per episode reached
-            episode_over: bool = (terminal_reached_flag or timeout)  # Either timeout or terminal found
+            timeout: bool = (
+                steps_in_episode == self.steps_per_episode
+            )  # Max steps per episode reached
+            episode_over: bool = (
+                terminal_reached_flag or timeout
+            )  # Either timeout or terminal found
 
             if episode_over:
                 self.process_render(run_counter=run_counter, id=self.id)
@@ -282,21 +320,31 @@ class EpisodeRunner:
                 if run_counter < 1:
                     if terminal_reached_flag:
                         results.successful.intensity.append(self.env.intensity)
-                        results.successful.background_intensity.append(self.env.bkg_intensity)
+                        results.successful.background_intensity.append(
+                            self.env.bkg_intensity
+                        )
                     else:
                         results.unsuccessful.intensity.append(self.env.intensity)
-                        results.unsuccessful.background_intensity.append(self.env.bkg_intensity)
+                        results.unsuccessful.background_intensity.append(
+                            self.env.bkg_intensity
+                        )
                 results.total_episode_length.append(steps_in_episode)
 
                 if terminal_reached_flag:
                     results.success_counter += 1
                     results.successful.episode_length.append(steps_in_episode)
-                    results.successful.episode_return.append(episode_return[0])  # TODO change for individual mode                    
+                    results.successful.episode_return.append(
+                        episode_return[0]
+                    )  # TODO change for individual mode
                 else:
                     results.unsuccessful.episode_length.append(steps_in_episode)
-                    results.unsuccessful.episode_return.append(episode_return[0])  # TODO change for individual mode
+                    results.unsuccessful.episode_return.append(
+                        episode_return[0]
+                    )  # TODO change for individual mode
 
-                results.total_episode_return.append(episode_return[0])  # TODO change for individual mode
+                results.total_episode_return.append(
+                    episode_return[0]
+                )  # TODO change for individual mode
 
                 # Incremenet run counter
                 run_counter += 1
@@ -304,19 +352,30 @@ class EpisodeRunner:
                 # Reset environment without performing an env.reset()
                 episode_return = {id: 0.0 for id in self.agents}
                 steps_in_episode = 0
-                terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
+                terminal_counter = {
+                    id: 0 for id in self.agents
+                }  # Terminal counter for the epoch (not the episode)
 
-                observations = self.env.refresh_environment(env_dict=self.env_dict, id=0, num_obs=self.obstruction_count)
+                observations = self.env.refresh_environment(
+                    env_dict=self.env_dict, id=0, num_obs=self.obstruction_count
+                )
 
                 # Reset stat buffer for RAD-A2C
                 for id, ac in self.agents.items():
                     stat_buffers[id].reset()
                     stat_buffers[id].update(observations[id][0])
-                    observations[id][0] = np.clip((observations[id][0]-stat_buffers[id].mu)/stat_buffers[id].sig_obs,-8,8)
+                    observations[id][0] = np.clip(
+                        (observations[id][0] - stat_buffers[id].mu)
+                        / stat_buffers[id].sig_obs,
+                        -8,
+                        8,
+                    )
 
         results.completed_runs = run_counter
 
-        print(f"Finished episode {self.id}! Success count: {results.success_counter} out of {self.montecarlo_runs}")
+        print(
+            f"Finished episode {self.id}! Success count: {results.success_counter} out of {run_counter}"
+        )
         return results
 
     def create_environment(self) -> RadSearch:
@@ -358,7 +417,6 @@ class EpisodeRunner:
             )
         # Always render first episode
         if self.render and run_counter == 0 and self.render_first_episode:
-          
             # Render gif
             self.env.render(
                 path=self.render_path,
@@ -378,7 +436,6 @@ class EpisodeRunner:
 
         # Always render last episode
         if self.render and run_counter == self.montecarlo_runs - 1:
-         
             # Render gif
             self.env.render(
                 path=self.render_path,
@@ -415,29 +472,31 @@ class evaluate_PPO:
     runners: Dict = field(init=False)
     #: Number of monte carlo runs per episode configuration
     montecarlo_runs: int = field(init=False)
+    #: Path to save results to
+    save_path: Union[str, None] = field(default=None)
 
     def __post_init__(self) -> None:
         self.montecarlo_runs = self.eval_kwargs["montecarlo_runs"]
-        # Initialize Ray
+        if not self.save_path:
+            self.save_path = eval_kwargs["model_path"]  # type: ignore
+        # Initialize ray
         if USE_RAY:
             try:
                 ray.init(address="auto")
             except:
                 print("Ray failed to initialize. Running on single server.")
-                
+
     def evaluate(self):
         """Driver"""
         start_time = time.time()
         if USE_RAY:
-        # Uncomment when ready to run with Ray
-            runners = {i: EpisodeRunner
-                       .remote(
-                            id=i,
-                            current_dir=os.getcwd(),
-                            **self.eval_kwargs
-                        )
-                    for i in range(self.eval_kwargs['episodes'])
-                }
+            # Uncomment when ready to run with Ray
+            runners = {
+                i: EpisodeRunner.remote(
+                    id=i, current_dir=os.getcwd(), **self.eval_kwargs
+                )
+                for i in range(self.eval_kwargs["episodes"])
+            }
 
             full_results = ray.get([runner.run.remote() for runner in runners.values()])
         else:
@@ -452,119 +511,141 @@ class evaluate_PPO:
         print("Runtime: {}", time.time() - start_time)
 
         score = self.calc_stats(results=full_results)
-        with open(f"{self.save_path}/results.json", 'w+') as f:
+        with open(f"{self.save_path}/results.json", "w+") as f:
             f.write(json.dumps(score, indent=4))
-            
-        for result in full_results:
-            print(result)
-            print(result.to_json())
-            
+
         # Convert to raw results
-        raw_results = list()        
+        counter = 0
+        raw_results = list()
         for index, result in enumerate(full_results):
             raw_results.append(dict())
-            raw_results[index]['id'] = result.id            
-            raw_results[index]['completed_runs'] = result.completed_runs
-            raw_results[index]['success_counter'] = result.success_counter
-            raw_results[index]['total_episode_length'] = result.total_episode_length
-            raw_results[index]['total_episode_return'] = result.total_episode_length
-            raw_results[index]['successful'] = dict()
-            
-            raw_results[index]['successful']['episode_length'] = result.successful.episode_length
-            raw_results[index]['successful']['episode_return'] = result.successful.episode_return
-            raw_results[index]['successful']['intensity'] = result.successful.intensity
+            raw_results[index]["id"] = result.id
+            raw_results[index]["completed_runs"] = result.completed_runs
+            raw_results[index]["success_counter"] = result.success_counter
+            raw_results[index]["total_episode_length"] = result.total_episode_length
+            raw_results[index]["total_episode_return"] = result.total_episode_length
+            raw_results[index]["successful"] = dict()
 
-            raw_results[index]['unsuccessful'] = dict()                
-            raw_results[index]['unsuccessful']['episode_length'] = result.unsuccessful.episode_length
-            raw_results[index]['unsuccessful']['episode_return'] = result.unsuccessful.episode_return
-            raw_results[index]['unsuccessful']['intensity'] = result.unsuccessful.intensity
+            raw_results[index]["successful"][
+                "episode_length"
+            ] = result.successful.episode_length
+            raw_results[index]["successful"][
+                "episode_return"
+            ] = result.successful.episode_return
+            raw_results[index]["successful"]["intensity"] = result.successful.intensity
 
-        with open(f"{self.save_path}/results_raw.json", 'w+') as f:
+            raw_results[index]["unsuccessful"] = dict()
+            raw_results[index]["unsuccessful"][
+                "episode_length"
+            ] = result.unsuccessful.episode_length
+            raw_results[index]["unsuccessful"][
+                "episode_return"
+            ] = result.unsuccessful.episode_return
+            raw_results[index]["unsuccessful"][
+                "intensity"
+            ] = result.unsuccessful.intensity
+
+            counter += result.completed_runs
+
+        with open(f"{self.save_path}/results_raw.json", "w+") as f:
             f.write(json.dumps(raw_results, indent=4))
-            
-        print(f"Accuracy - Median Success Counts: {score['accuracy']['median']} with std {score['accuracy']['std']}")
-        print(f"Speed - Median Successful Episode Length: {score['speed']['median']} with std {score['speed']['std']}")        
-        print(f"Learning - Median Episode Return: {score['score']['median']} with std {score['score']['std']}")
 
-    
+        print(f"Total Runs: {counter}")
+        print(
+            f"Accuracy - Median Success Counts: {score['accuracy']['median']} with std {score['accuracy']['std']}"
+        )
+        print(
+            f"Speed - Median Successful Episode Length: {score['speed']['median']} with std {score['speed']['std']}"
+        )
+        print(
+            f"Learning - Median Episode Return: {score['score']['median']} with std {score['score']['std']}"
+        )
+
     def calc_stats(self, results, mc=None):
         """
         Calculate results from the evaluation. Performance is determined by accuracy and speed.
-        Accuracy: Median value of the count of successully found sources from each episode configuration. 
+        Accuracy: Median value of the count of successully found sources from each episode configuration.
         Speed: The median value of all epsiode lengths from all successful runs.
         After review, for only 1000 values, a weighted median does not add enough benefit to warrant reimplementation.
         """
         if not mc:
             mc = self.montecarlo_runs
-        
+
         success_counts = np.zeros(len(results))
         successful_episode_lengths = np.empty(len(results) * mc)
         successful_episode_lengths[:] = np.nan
         episode_returns = np.zeros(len(results) * mc)
-        
-        # Pointer for episode lengths, as shape is not known ahead of time
-        ep_start_ptr = 0
+
+        # Pointers for episode
+        ep_len_start_ptr = 0
+        ep_ret_start_ptr = 0
 
         for ep_index, episode in enumerate(results):
             success_counts[ep_index] = episode.success_counter
-            episode_returns[ep_index : ep_index + mc] = episode.total_episode_return
-            
-            successful_episode_lengths[ep_start_ptr : ep_start_ptr + len(episode.successful.episode_length)] = episode.successful.episode_length[:]
-            ep_start_ptr = ep_start_ptr + len(episode.successful.episode_length)
-            
-        success_counts_median = np.median(sorted(success_counts))
+            episode_returns[
+                ep_ret_start_ptr : ep_ret_start_ptr + mc
+            ] = episode.total_episode_return
+            ep_ret_start_ptr = ep_ret_start_ptr + mc
+
+            successful_episode_lengths[
+                ep_len_start_ptr : ep_len_start_ptr
+                + len(episode.successful.episode_length)
+            ] = episode.successful.episode_length[:]
+            ep_len_start_ptr = ep_len_start_ptr + len(episode.successful.episode_length)
+
+        success_counts_median = np.nanmedian(sorted(success_counts))
         success_lengths_median = np.nanmedian(sorted(successful_episode_lengths))
-        return_medidan = np.median(sorted(episode_returns))
-        
-        succ_std = round(np.std(success_counts_median), 3)
-        len_std = round(np.std(success_lengths_median), 3)
-        ret_std = round(np.std(return_medidan), 3)
-        
-        print(f"Accuracy - Median Success Counts: {success_counts_median} with std {succ_std}")
-        print(f"Speed - Median Successful Episode Length: {success_lengths_median} with std {len_std}")        
-        print(f"Learning - Median Episode Return: {return_medidan} with std {ret_std}")
-        
-    
+        return_median = np.nanmedian(sorted(episode_returns))
+
+        succ_std = round(np.nanstd(success_counts), 3)
+        len_std = round(np.nanstd(successful_episode_lengths), 3)
+        ret_std = round(np.nanstd(episode_returns), 3)
+
+        return {
+            "accuracy": {"median": success_counts_median, "std": succ_std},
+            "speed": {"median": success_lengths_median, "std": len_std},
+            "score": {"median": return_median, "std": ret_std},
+        }
+
+
 if __name__ == "__main__":
-    #Generate a large random seed and random generator object for reproducibility
-    rng = np.random.default_rng(2) 
-       
-    
+    seed = 2
+    # Generate a large random seed and random generator object for reproducibility
+    rng = np.random.default_rng(seed)
     env_kwargs = {
-        'bbox': [[0.0,0.0],[1500.0,0.0],[1500.0,1500.0],[0.0,1500.0]],
-        'observation_area': [100.0,100.0], 
-        'obstruction_count': 0,
-        "number_agents": 1, 
+        "bbox": [[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]],
+        "observation_area": [100.0, 100.0],
+        "obstruction_count": 0,
+        "number_agents": 1,
         "enforce_grid_boundaries": True,
         "DEBUG": True,
-        "np_random": rng,        
-        "TEST": 1
-        }    
-    
-    eval_kwargs = dict(
-        env_name='gym_rad_search:RadSearchMulti-v1',
-        env_kwargs=env_kwargs,
+        "np_random": rng,
+        "TEST": 1,
+    }
 
+    eval_kwargs = dict(
+        env_name="gym_rad_search:RadSearchMulti-v1",
+        env_kwargs=env_kwargs,
         model_path=(lambda: os.getcwd())(),
         episodes=100,  # Number of episodes to test on [1 - 1000]
         montecarlo_runs=100,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
-        actor_critic_architecture='rnn',  # Neural network type (control)
+        actor_critic_architecture="rnn",  # Neural network type (control)
         snr="none",  # signal to noise ratio [none, low, medium, high]
-        obstruction_count = 0,  # number of obstacles [0 - 7] (num_obs)
-        steps_per_episode = 120,
-        number_of_agents = 1,
-        enforce_boundaries = True,
-        resolution_multiplier = 0.01,
-        team_mode =  "individual",
-        render = False,
-        save_gif_freq = 1,
-        render_path = ".",
-        save_path_for_ac = ".",
-        seed = 2,
+        obstruction_count=0,  # number of obstacles [0 - 7] (num_obs)
+        steps_per_episode=120,
+        number_of_agents=1,
+        enforce_boundaries=True,
+        resolution_multiplier=0.01,
+        team_mode="individual",
+        render=False,
+        save_gif_freq=1,
+        render_path=".",
+        save_path_for_ac=".",
+        seed=seed,
     )
-    
+
     test = evaluate_PPO(eval_kwargs=eval_kwargs)
-    
+
     test.evaluate()
-    
-    print('done')
+
+    print("done")
