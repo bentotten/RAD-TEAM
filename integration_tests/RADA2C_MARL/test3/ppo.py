@@ -606,6 +606,7 @@ if __name__ == '__main__':
         'obstruction_count':args.obstruct,
         "number_agents": args.agents, 
         "enforce_grid_boundaries": args.enforce_boundaries,
+        "step_data_mode": "list",        
         "DEBUG": args.DEBUG,
         "TEST": args.test
         }
