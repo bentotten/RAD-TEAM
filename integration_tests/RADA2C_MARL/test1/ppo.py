@@ -104,6 +104,8 @@ def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logg
         o_inx_start = 11 * id
         o_idx_end = 3 + (11 * id) # Offset to the correct observation
 
+        observation_stop = 11 * number_agents
+
         for jj in range(train_v_iters):
             model_loss_arr_buff.zero_()
             model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
@@ -112,7 +114,15 @@ def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logg
                 hidden = ac.reset_hidden()[0]
                 src_tar =  ep[0][:,source_loc_idx:].clone()
                 src_tar[:,:2] = src_tar[:,:2]/args['area_scale']
-                obs_t = torch.as_tensor(ep[0][:,o_inx_start:o_idx_end], dtype=torch.float32)
+
+                observations_slice = ep[0][:, 0:observation_stop]
+                obs_for_pfgru = torch.zeros((len(observations_slice), number_agents * 3))
+                for offset in range(number_agents):
+                    slice_obs = observations_slice[:, (offset*11):(offset*11+3)]
+                    obs_for_pfgru[:, offset*3:offset*3+3] = slice_obs
+                    
+                obs_t = obs_for_pfgru
+                
                 loc_pred = torch.empty_like(src_tar)
                 particle_pred = torch.empty((sl,ac.model.num_particles,src_tar.shape[1]))
                 
