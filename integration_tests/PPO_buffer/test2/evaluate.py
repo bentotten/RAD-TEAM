@@ -91,7 +91,7 @@ class Distribution:
 
 
 # Uncomment when ready to run with Ray
-@ray.remote
+# @ray.remote
 @dataclass
 class EpisodeRunner:
     id: int

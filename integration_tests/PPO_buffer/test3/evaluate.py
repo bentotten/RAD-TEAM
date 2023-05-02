@@ -55,7 +55,8 @@ from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 import core as RADA2C_core  # type: ignore
 
 
-USE_RAY = True
+# NOTE: Do not use Ray with env generator for random position generation; will create duplicates of identical episode configurations.
+USE_RAY = False
 
 
 @dataclass
@@ -91,7 +92,7 @@ class Distribution:
 
 
 # Uncomment when ready to run with Ray
-@ray.remote
+# @ray.remote
 @dataclass
 class EpisodeRunner:
     id: int
