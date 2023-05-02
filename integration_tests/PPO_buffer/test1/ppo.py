@@ -461,11 +461,14 @@ if __name__ == '__main__':
     from rl_tools.run_utils import setup_logger_kwargs # type: ignore
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed,data_dir='../../models/train',env_name=args.env_name)
     
-    
+
     #Run ppo training function
     ppo(lambda : gym.make(args.env,**init_dims), actor_critic=core.RNNModelActorCritic,
         ac_kwargs=dict(hidden_sizes_pol=[args.hid_pol]*args.l_pol,hidden_sizes_val=[args.hid_val]*args.l_val,
         hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch), gamma=args.gamma, alpha=args.alpha,
         seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,
         logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model)
+    
+    print("Done! Seed:")
+    print(args.seed)
     

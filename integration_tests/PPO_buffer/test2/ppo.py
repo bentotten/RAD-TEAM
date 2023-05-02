@@ -5,115 +5,12 @@ import gym # type: ignore
 import time
 import os
 import core # type: ignore
+import ppo_tools # type: ignore
+
 from gym.utils.seeding import _int_list_from_bigint, hash_seed # type: ignore
 from rl_tools.logx import EpochLogger # type: ignore
 from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params,synchronize, mpi_avg_grads, sync_params_stats # type: ignore
 from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar,mpi_statistics_vector, num_procs, mpi_min_max_scalar # type: ignore
-
-
-class PPOBuffer:
-    """
-    A buffer for storing histories experienced by a PPO agent interacting
-    with the environment, and using Generalized Advantage Estimation (GAE-Lambda)
-    for calculating the advantages of state-action pairs.
-    """
-
-    def __init__(self, obs_dim, act_dim, size, gamma=0.99, lam=0.90, hid_size=48):
-        self.obs_buf = np.zeros(core.combined_shape(size, obs_dim), dtype=np.float32)
-        self.act_buf = np.zeros(core.combined_shape(size), dtype=np.float32)
-        self.adv_buf = np.zeros(size, dtype=np.float32)
-        self.rew_buf = np.zeros(size, dtype=np.float32)
-        self.ret_buf = np.zeros(size, dtype=np.float32)
-        self.val_buf = np.zeros(size, dtype=np.float32)
-        self.source_tar = np.zeros((size,2), dtype=np.float32)
-        self.logp_buf = np.zeros(size, dtype=np.float32)
-        self.obs_win = np.zeros(obs_dim, dtype=np.float32)
-        self.obs_win_std = np.zeros(obs_dim, dtype=np.float32)
-        self.gamma, self.lam = gamma, lam
-        self.ptr, self.path_start_idx, self.max_size = 0, 0, size
-        self.beta = 0.005
-
-    def store(self, obs, act, rew, val, logp, src):
-        """
-        Append one timestep of agent-environment interaction to the buffer.
-        """
-        assert self.ptr < self.max_size     
-        self.obs_buf[self.ptr,:] = obs 
-        self.act_buf[self.ptr] = act
-        self.rew_buf[self.ptr] = rew
-        self.val_buf[self.ptr] = val
-        self.source_tar[self.ptr] = src
-        self.logp_buf[self.ptr] = logp
-        self.ptr += 1
-
-    def finish_path(self, last_val=0):
-        """
-        Call this at the end of a trajectory, or when one gets cut off
-        by an epoch ending. This looks back in the buffer to where the
-        trajectory started, and uses rewards and value estimates from
-        the whole trajectory to compute advantage estimates with GAE-Lambda,
-        as well as compute the rewards-to-go for each state, to use as
-        the targets for the value function.
-
-        The "last_val" argument should be 0 if the trajectory ended
-        because the agent reached a terminal state (died), and otherwise
-        should be V(s_T), the value function estimated for the last state.
-        This allows us to bootstrap the reward-to-go calculation to account
-        for timesteps beyond the arbitrary episode horizon (or epoch cutoff).
-        """
-
-        path_slice = slice(self.path_start_idx, self.ptr)
-        rews = np.append(self.rew_buf[path_slice], last_val)
-        vals = np.append(self.val_buf[path_slice], last_val)
-        
-        # the next two lines implement GAE-Lambda advantage calculation
-        # gamma determines scale of value function, introduces bias regardless of VF accuracy
-        # lambda introduces bias when VF is inaccurate
-        deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
-        self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lam)
-        
-        # the next line computes rewards-to-go, to be targets for the value function
-        self.ret_buf[path_slice] = core.discount_cumsum(rews, self.gamma)[:-1]
-        
-        self.path_start_idx = self.ptr
-
-    def get(self,logger=None):
-        """
-        Call this at the end of an epoch to get all of the data from
-        the buffer, with advantages appropriately normalized (shifted to have
-        mean zero and std one). Also, resets some pointers in the buffer.
-        """
-        assert self.ptr == self.max_size    # buffer has to be full before you can get
-        self.ptr, self.path_start_idx = 0, 0
-        # the next two lines implement the advantage normalization trick
-        adv_mean, adv_std = mpi_statistics_scalar(self.adv_buf)
-        self.adv_buf = (self.adv_buf - adv_mean) / adv_std
-        #ret_mean, ret_std = mpi_statistics_scalar(self.ret_buf)
-        #self.ret_buf = (self.ret_buf) / ret_std
-        #obs_mean, obs_std = mpi_statistics_vector(self.obs_buf)
-        #self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
-        
-        data = dict(obs=self.obs_buf, act=self.act_buf, ret=self.ret_buf,
-                    adv=self.adv_buf, logp=self.logp_buf, loc_pred=self.obs_win_std,ep_len= sum(logger.epoch_dict['EpLen']))
-        data = {k: torch.as_tensor(v, dtype=torch.float32) for k,v in data.items()}
-
-        if logger:
-            slice_b = 0
-            slice_f = 0
-            epLen = logger.epoch_dict['EpLen']
-            epLenSize = len(epLen) if sum(epLen) == len(self.obs_buf) else (len(epLen) + 1)
-            obs_buf = np.hstack((self.obs_buf,self.adv_buf[:,None],self.ret_buf[:,None],self.logp_buf[:,None],self.act_buf[:,None],self.source_tar))
-            epForm = [[] for _ in range(epLenSize)]
-            for jj, ep_i in enumerate(epLen):
-                slice_f += ep_i
-                epForm[jj].append(torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32))
-                slice_b += ep_i
-            if slice_f != len(self.obs_buf):
-                epForm[jj+1].append(torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32))
-                
-            data['ep_form'] = epForm
-
-        return data
 
 
 def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0, 
@@ -161,7 +58,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
     # Set up trajectory buffer
     local_steps_per_epoch = int(steps_per_epoch / num_procs())
-    buf = PPOBuffer(obs_dim, act_dim, local_steps_per_epoch, gamma, lam, ac_kwargs['hidden_sizes_rec'][0])
+    #buf = PPOBuffer(obs_dim, act_dim, local_steps_per_epoch, gamma, lam, ac_kwargs['hidden_sizes_rec'][0])
+    buf = ppo_tools.PPOBuffer(observation_dimension=obs_dim, max_size=local_steps_per_epoch, max_episode_length=120, number_agents=1)
+    
     save_gif_freq = epochs // 3
     if proc_id() == 0:
         print(f'Local steps per epoch: {local_steps_per_epoch}')
@@ -341,7 +240,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
     def update(env, args, loss_fcn=loss):
         """Update for the localization and A2C modules"""
-        data = buf.get(logger=logger)
+        #data = buf.get(logger=logger)
+        data = buf.get()
 
         #Update function if using the PFGRU, fcn. performs multiple updates per call
         ac.model.train()
@@ -373,7 +273,6 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                      KL=kl, Entropy=ent, ClipFrac=cf,
                      LocLoss=loc_loss, VarExplain=0)
 
-
     
     # Prepare for interaction with environment
     start_time = time.time()
@@ -404,7 +303,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             ep_len += 1
             ep_ret_ls.append(ep_ret)
 
-            buf.store(obs_std, a, r, v, logp, env.src_coords)
+            #buf.store(obs_std, a, r, v, logp, env.src_coords)
+            buf.store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
             logger.store(VVals=v)
 
             # Update obs (critical!)
@@ -435,10 +335,13 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                         env.epoch_end = True
                 else:
                     v = 0
-                buf.finish_path(v)
+                #buf.finish_path(v)
+                buf.GAE_advantage_and_rewardsToGO(v)
+                
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
                     logger.store(EpRet=ep_ret, EpLen=ep_len)
+                    buf.store_episode_length(episode_length=ep_len)
 
                 if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1 ) == epochs)):
                     #Check agent progress during training
@@ -539,7 +442,7 @@ if __name__ == '__main__':
         "number_agents": 1, 
         "enforce_grid_boundaries": True,
         "DEBUG": True,
-        "TEST": 1
+        "TEST": 2
         }
     max_ep_step = 120
     if args.cpu > 1:
