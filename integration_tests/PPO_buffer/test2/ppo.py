@@ -64,30 +64,6 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     save_gif_freq = epochs // 3
     if proc_id() == 0:
         print(f'Local steps per epoch: {local_steps_per_epoch}')
-
-    def update_loc_rnn(data, env_sim, loss):
-        """Update for the simple regression GRU"""
-        ep_form= data['ep_form']
-        model_loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
-        for jj in range(train_v_iters):
-            model_loss_arr_buff.zero_()
-            model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
-            for ii,ep in enumerate(ep_form):
-                hidden = ac.model.init_hidden(1)
-                src_tar =  ep[0][:,15:].clone()
-                src_tar[:,:2] = src_tar[:,:2]/env_sim.search_area[2][1]
-                obs_t = torch.as_tensor(ep[0][:,:3], dtype=torch.float32)
-                loc_pred, _ = ac.model(obs_t,hidden,batch=True)
-                model_loss_arr[ii] = loss(loc_pred.squeeze(),src_tar.squeeze())
-            
-            model_loss = model_loss_arr.mean()
-            model_optimizer.zero_grad()
-            model_loss.backward()
-            mpi_avg_grads(ac.model)
-            torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
-            model_optimizer.step()    
-
-        return model_loss
             
 
     def update_a2c(data, env_sim, minibatch=None,iter=None):

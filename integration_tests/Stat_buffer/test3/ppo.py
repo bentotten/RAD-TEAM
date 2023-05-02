@@ -7,6 +7,8 @@ import os
 import core # type: ignore
 import ppo_tools # type: ignore
 
+from RADTEAM_core import StatisticStandardization 
+
 from gym.utils.seeding import _int_list_from_bigint, hash_seed # type: ignore
 from rl_tools.logx import EpochLogger # type: ignore
 from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params,synchronize, mpi_avg_grads, sync_params_stats # type: ignore
@@ -135,7 +137,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         loss_sum_new = loss_pi
         return loss_sum_new, pi_info, term, (env_sim.search_area[2][1]*loc-(src_tar)).square().mean().sqrt()
 
-    
+
     def update_model(data, args, loss=None):
         #Update the PFGRU, see Ma et al. 2020 for more details
         ep_form= data['ep_form']
@@ -224,8 +226,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     
     optimization = ppo_tools.OptimizationStorage(
         pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
-        #critic_optimizer= Adam(ac.critic.parameters(), lr=pi_lr),  
-        model_optimizer=Adam(ac.model.parameters(), lr=vf_lr), 
+        #critic_optimizer= Adam(ac.critic.parameters(), lr=pi_lr),  # TODO change this to own learning rate
+        model_optimizer=Adam(ac.model.parameters(), lr=vf_lr),  # TODO change this to correct name (for PFGRU)
         MSELoss=torch.nn.MSELoss(reduction="mean"),
         critic_flag=False,
     )    
@@ -271,18 +273,20 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                      KL=kl, Entropy=ent, ClipFrac=cf,
                      LocLoss=loc_loss, VarExplain=0)
 
-    
     # Prepare for interaction with environment
     start_time = time.time()
     o, _, _, _ = env.reset()
     o = o[0]
     ep_ret, ep_len, done_count, a = 0, 0, 0, -1
-    stat_buff = core.StatBuff()
+    #stat_buff = core.StatBuff()
+    stat_buff = StatisticStandardization()
     stat_buff.update(o[0])
+    
     ep_ret_ls = []
     oob = 0
     reduce_v_iters = True
     ac.model.eval()
+    
     # Main loop: collect experience in env and update/log each epoch
     print(f'Proc id: {proc_id()} -> Starting main training loop!', flush=True)
     for epoch in range(epochs):
@@ -292,7 +296,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         for t in range(local_steps_per_epoch):
             #Standardize input using running statistics per episode
             obs_std = o
-            obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
+            #obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
+            obs_std[0] = stat_buff.standardize(o[0])
+            
             #compute action and logp (Actor), compute value (Critic)
             a, v, logp, hidden, out_pred = ac.step(obs_std, hidden=hidden)
             next_o, r, d, _ = env.step({0: a})
@@ -326,7 +332,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
                 if timeout or epoch_ended:
                     # if trajectory didn't reach terminal state, bootstrap value target
-                    obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
+                    #obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
+                    obs_std[0] = stat_buff.standardize(o[0])
+                    
                     _, v, _, _, _ = ac.step(obs_std, hidden=hidden)
                     if epoch_ended:
                         #Set flag to sample new environment parameters
@@ -413,7 +421,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', '-s', type=int, default=2,help='Random seed control')
     parser.add_argument('--cpu', type=int, default=1,help='Number of cores/environments to train the agent with')
     parser.add_argument('--steps_per_epoch', type=int, default=480,help='Number of timesteps per epoch per cpu. Default is equal to 4 episodes per cpu per epoch.')      
-    parser.add_argument('--epochs', type=int, default=100,help='Number of epochs to train the agent')
+    parser.add_argument('--epochs', type=int, default=300,help='Number of epochs to train the agent')
     parser.add_argument('--exp_name', type=str,default='alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh',help='Name of experiment for saving')
     parser.add_argument('--dims', type=list, default=[[0.0,0.0],[1500.0,0.0],[1500.0,1500.0],[0.0,1500.0]],
                         help='Dimensions of radiation source search area in cm, decreased by area_obs param. to ensure visilibity graph setup is valid.')
@@ -440,7 +448,7 @@ if __name__ == '__main__':
         "number_agents": 1, 
         "enforce_grid_boundaries": True,
         "DEBUG": True,
-        "TEST": 1
+        "TEST": 3
         }
     max_ep_step = 120
     if args.cpu > 1:
@@ -459,14 +467,11 @@ if __name__ == '__main__':
     from rl_tools.run_utils import setup_logger_kwargs # type: ignore
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed,data_dir='../../models/train',env_name=args.env_name)
     
-
+    
     #Run ppo training function
     ppo(lambda : gym.make(args.env,**init_dims), actor_critic=core.RNNModelActorCritic,
         ac_kwargs=dict(hidden_sizes_pol=[args.hid_pol]*args.l_pol,hidden_sizes_val=[args.hid_val]*args.l_val,
         hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch), gamma=args.gamma, alpha=args.alpha,
         seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,
         logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model)
-    
-    print("Done! Seed:")
-    print(args.seed)
     

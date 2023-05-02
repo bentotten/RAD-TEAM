@@ -440,7 +440,7 @@ if __name__ == '__main__':
         "number_agents": 1, 
         "enforce_grid_boundaries": True,
         "DEBUG": True,
-        "TEST": 1
+        "TEST": 2
         }
     max_ep_step = 120
     if args.cpu > 1:
