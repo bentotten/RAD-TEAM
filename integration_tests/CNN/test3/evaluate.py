@@ -55,7 +55,8 @@ import RADTEAM_core as RADCNN_core  # type: ignore
 
 # TODO delete this after new run done with all ac_kwargs saved
 ALL_ACKWARGS_SAVED = False
-USE_RAY = True
+# NOTE: Do not use Ray with env generator for random position generation; will create duplicates of identical episode configurations. Ok for TEST1
+USE_RAY = False
 
 
 @dataclass
@@ -90,7 +91,7 @@ class Distribution:
 
 
 # Uncomment when ready to run with Ray
-@ray.remote
+# @ray.remote
 @dataclass
 class EpisodeRunner:
     """
@@ -498,7 +499,7 @@ class EpisodeRunner:
         results.completed_runs = run_counter
 
         print(
-            f"Finished episode {self.id}! Success count: {results.success_counter} out of {self.montecarlo_runs}"
+            f"Finished episode {self.id}! Success count: {results.success_counter} out of {run_counter}"
         )
         return results
 
@@ -612,6 +613,8 @@ class evaluate_PPO:
     """
 
     eval_kwargs: Dict
+    #: Path to save results to
+    save_path: Union[str, None] = field(default=None)
 
     # Initialized elsewhere
     #: Directory containing test environments. Each test environment file contains 1000 environment configurations.
@@ -624,8 +627,6 @@ class evaluate_PPO:
     runners: Dict = field(init=False)
     #: Number of monte carlo runs per episode configuration
     montecarlo_runs: int = field(init=False)
-    #: Path to save results to
-    save_path: Union[str, None] = field(default=None)
 
     def __post_init__(self) -> None:
         self.montecarlo_runs = self.eval_kwargs["montecarlo_runs"]
@@ -638,7 +639,6 @@ class evaluate_PPO:
                 ray.init(address="auto")
             except:
                 print("Ray failed to initialize. Running on single server.")
-        pass
 
     def evaluate(self):
         """Driver"""
@@ -669,6 +669,7 @@ class evaluate_PPO:
             f.write(json.dumps(score, indent=4))
 
         # Convert to raw results
+        counter = 0
         raw_results = list()
         for index, result in enumerate(full_results):
             raw_results.append(dict())
@@ -698,9 +699,12 @@ class evaluate_PPO:
                 "intensity"
             ] = result.unsuccessful.intensity
 
+            counter += result.completed_runs
+
         with open(f"{self.save_path}/results_raw.json", "w+") as f:
             f.write(json.dumps(raw_results, indent=4))
 
+        print(f"Total Runs: {counter}")
         print(
             f"Accuracy - Median Success Counts: {score['accuracy']['median']} with std {score['accuracy']['std']}"
         )
@@ -747,9 +751,9 @@ class evaluate_PPO:
         success_lengths_median = np.nanmedian(sorted(successful_episode_lengths))
         return_median = np.nanmedian(sorted(episode_returns))
 
-        succ_std = round(np.std(success_counts_median), 3)
-        len_std = round(np.std(success_lengths_median), 3)
-        ret_std = round(np.std(return_median), 3)
+        succ_std = round(np.nanstd(success_counts), 3)
+        len_std = round(np.nanstd(successful_episode_lengths), 3)
+        ret_std = round(np.nanstd(episode_returns), 3)
 
         return {
             "accuracy": {"median": success_counts_median, "std": succ_std},
@@ -759,8 +763,9 @@ class evaluate_PPO:
 
 
 if __name__ == "__main__":
+    seed = 2
     # Generate a large random seed and random generator object for reproducibility
-    rng = np.random.default_rng(2)
+    rng = np.random.default_rng(seed)
 
     env_kwargs = {
         "bbox": [[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]],
@@ -791,7 +796,7 @@ if __name__ == "__main__":
         save_gif_freq=1,
         render_path=".",
         save_path_for_ac=".",
-        seed=2,
+        seed=seed,
     )
 
     test = evaluate_PPO(eval_kwargs=eval_kwargs)
