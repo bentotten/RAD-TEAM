@@ -1,25 +1,16 @@
-from os import stat, path, mkdir, getcwd
+from os import path, mkdir, getcwd
 import sys
 from math import sqrt, log
 from statistics import median
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import (
     Any,
     List,
     Tuple,
-    Union,
     NewType,
-    Optional,
-    TypedDict,
-    cast,
-    get_args,
     Dict,
-    Callable,
-    overload,
     Union,
-    List,
-    Dict,
     NamedTuple,
 )
 
@@ -28,25 +19,25 @@ import numpy.typing as npt
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.distributions import Categorical
 
 import matplotlib.pyplot as plt  # type: ignore
 
 import warnings
-import json
 
-PFGRU = True # If wanting to use the PFGRU TODO turn this into a parameter
+PFGRU = True  # If wanting to use the PFGRU TODO turn this into a parameter
 SMALL_VERSION = False
 
 # Maps
 #: [New Type] Array indicies to access a GridSquare (x, y). Type: Tuple[float, float]
 Point = NewType("Point", Tuple[Union[float, int], Union[float, int]])
-#: [New Type] Heatmap - a two dimensional array that holds heat values for each gridsquare. Note: the number of gridsquares is scaled with a resolution accuracy variable. Type: numpy.NDArray[np.float32]
+#: [New Type] Heatmap - a two dimensional array that holds heat values for each gridsquare. Note: the number of gridsquares is scaled with a
+#:   resolution accuracy variable. Type: numpy.NDArray[np.float32]
 Map = NewType("Map", npt.NDArray[np.float32])
 #: [New Type] Mapstack - a Tuple of all existing maps.
 MapStack = NewType("MapStack", Tuple[Map, Map, Map, Map, Map, Map, Map])
-#: [New Type] Tracks last known coordinates of all agents in order to update them on the current-location and others-locations heatmaps. Type: Dict[str, Dict[int, Point]]
+#: [New Type] Tracks last known coordinates of all agents in order to update them on the current-location and others-locations heatmaps.
+#:   Type: Dict[str, Dict[int, Point]]
 CoordinateStorage = NewType("CoordinateStorage", Dict[int, Point])
 
 # Helpers
@@ -60,9 +51,7 @@ SIMPLE_NORMALIZATION = False
 NORMALIZE_RADIATION = False
 
 
-def calculate_map_dimensions(
-    grid_bounds: Tuple, resolution_accuracy: float, offset: float
-):
+def calculate_map_dimensions(grid_bounds: Tuple, resolution_accuracy: float, offset: float):
     return (
         int(grid_bounds[0] * resolution_accuracy) + int(offset * resolution_accuracy),
         int(grid_bounds[1] * resolution_accuracy) + int(offset * resolution_accuracy),
@@ -96,6 +85,7 @@ class ActionChoice(NamedTuple):
 
 class HeatMaps(NamedTuple):
     """Named Tuple - Stores actor and critic heatmaps for a step"""
+
     actor: torch.Tensor
     critic: torch.Tensor
 
@@ -103,8 +93,9 @@ class HeatMaps(NamedTuple):
 @dataclass
 class IntensityEstimator:
     """
-    Hash table that stores radiation intensity levels as seen at each unscaled coordinate into a buffer. Because radiation intensity readings are drawn from a poisson distribution,
-    the more samples that are available, the more accurate the reading. This can be used before standardizing the input for processing in order to get the most accurate radiation reading possible.
+    Hash table that stores radiation intensity levels as seen at each unscaled coordinate into a buffer. Because radiation intensity readings are
+    drawn from a poisson distribution,the more samples that are available, the more accurate the reading. This can be used before standardizing the
+    input for processing in order to get the most accurate radiation reading possible.
 
     Future Work: Incorporate radionuclide identification module in conjunction with this (Carson et al.)
     """
@@ -114,14 +105,13 @@ class IntensityEstimator:
 
     # Private
     _min: float = field(default=0.0)  # Minimum radiation reading estimate
-    _max: float = field(
-        default=0.0
-    )  # Maximum radiation reading estimate. This is used for normalization in simple normalization mode.
+    _max: float = field(default=0.0)  # Maximum radiation reading estimate. This is used for normalization in simple normalization mode.
 
     def update(self, key: Tuple[int, int], value: float) -> None:
         """
-        Method to add value to radiation hashtable. If key does not exist, creates key and new buffer with value. Also updates running max/min estimate, if applicable.
-        Note that the max/min is the ESTIMATE of the true value, not the observed value.
+        Method to add value to radiation hashtable. If key does not exist, creates key and new buffer with value. Also updates running max/min
+        estimate, if applicable. Note that the max/min is the ESTIMATE of the true value, not the observed value.
+
         :param value: (float) Sampled radiation intensity value
         :param key: (Tuple[int, int]) Inflated coordinates where radiation intensity (value) was sampled
         """
@@ -189,8 +179,9 @@ class IntensityEstimator:
 @dataclass
 class StatisticStandardization:
     """
-    Statistics buffer for standardizing intensity readings from environment (B. Welford, "Note on a method for calculating corrected sums of squares and products").
-    Because an Agent collects observations online and does not know the intensity values it will encounter beforehand, it uses this estimated running sample mean and variance instead.
+    Statistics buffer for standardizing intensity readings from environment (B. Welford, "Note on a method for calculating corrected sums of squares
+    and products"). Because an Agent collects observations online and does not know the intensity values it will encounter beforehand, it uses this
+    estimated running sample mean and variance instead.
     """
 
     #: Running mean of entire dataset, represented by mu
@@ -206,16 +197,12 @@ class StatisticStandardization:
     count: int = 0
 
     # Private
-    _max: float = field(
-        default=0.0
-    )  # Maximum radiation reading estimate. This is used for normalization in simple normalization mode.
-    _min: float = field(
-        default=0.0
-    )  # Minimum radiation reading estimate. This is used for shifting normalization data in the case of a negative.
+    _max: float = field(default=0.0)  # Maximum radiation reading estimate. This is used for normalization in simple normalization mode.
+    _min: float = field(default=0.0)  # Minimum radiation reading estimate. This is used for shifting normalization data in the case of a negative.
 
     def update(self, reading: float) -> None:
-        """Method to update estimate running mean and sample variance for standardizing radiation intensity readings. Also updates max standardized value
-        for normalization, if applicable.
+        """Method to update estimate running mean and sample variance for standardizing radiation intensity readings. Also updates max standardized
+        value for normalization, if applicable.
 
         #. The existing mean is subtracted from the new reading to get the initial delta.
         #. This delta is then divided by the number of samples seen so far and added to the existing mean to create a new mean.
@@ -237,9 +224,7 @@ class StatisticStandardization:
             self.mean = reading  # For first reading, mean is equal to that reading
         else:
             mean_new = self.mean + (reading - self.mean) / (self.count)
-            square_dist_mean_new = self.square_dist_mean + (reading - self.mean) * (
-                reading - mean_new
-            )
+            square_dist_mean_new = self.square_dist_mean + (reading - self.mean) * (reading - mean_new)
             self.mean = mean_new
             self.square_dist_mean = square_dist_mean_new
             self.sample_variance = square_dist_mean_new / (self.count - 1)
@@ -254,9 +239,9 @@ class StatisticStandardization:
     def standardize(self, reading: float) -> float:
         """
         Method to standardize input data using the Z-score method by by subtracting the mean and dividing by the standard deviation.
-        Standardizing input data increases training stability and speed. Once the standardization is done, all the features will have a mean of zero and a standard deviation of one,
-        and thus, the same scale. NOTE: Because the first reading will always be standardized to zero, it is important to standardize after a reset before the first step to ensure
-        first steps reading is not wasted.
+        Standardizing input data increases training stability and speed. Once the standardization is done, all the features will have a mean of zero
+        and a standard deviation of one, and thus, the same scale. NOTE: Because the first reading will always be standardized to zero, it is
+        important to standardize after a reset before the first step to ensure first steps reading is not wasted.
 
         :param reading: (float) radiation intensity reading
         :return: (float) Standardized radiation reading (z-score) where all existing samples have a std of 1
@@ -285,9 +270,7 @@ class Normalizer:
     _base_check: Any = field(default=None)
     _increment_check: Any = field(default=None)
 
-    def normalize(
-        self, current_value: Any, max: Any, min: Union[float, None] = None
-    ) -> float:
+    def normalize(self, current_value: Any, max: Any, min: Union[float, None] = None) -> float:
         """
         Method to do min-max normalization to the range [0,1]. If min is below zero, the data will be shifted by the absolute value of the minimum
         :param current_value: (Any) value to be normalized
@@ -313,15 +296,11 @@ class Normalizer:
 
         assert max + offset > 0, "Value error - Max is 0 but current value is not."
 
-        result = ((current_value + offset) - (min + offset)) / (
-            (max + offset) - (min + offset)
-        )
+        result = ((current_value + offset) - (min + offset)) / ((max + offset) - (min + offset))
         assert result >= 0 and result <= 1, "Normalization error"
         return result
 
-    def normalize_incremental_logscale(
-        self, current_value: Any, base: Any, increment_value: int = 2
-    ) -> float:
+    def normalize_incremental_logscale(self, current_value: Any, base: Any, increment_value: int = 2) -> float:
         """
         Method to normalize on a logarithmic scale. This is specifically for a value that increases incrementally every time.
         For TEAM-RAD, every time an agent accesses a grid coordinate, a visits count shadow table is incremented by 1.
@@ -333,29 +312,19 @@ class Normalizer:
         :param base: (Any) Maximum possible value (steps per episode multiplied by the number of agents)
         :param increment_value (int): Value from shadow table is expected to increment by this amount every time
         """
-        assert (
-            current_value >= 0 and base > 0 and increment_value > 0
-        ), "Value error - input was negative that should not be"
+        assert current_value >= 0 and base > 0 and increment_value > 0, "Value error - input was negative that should not be"
 
         # Warnings for different scales
         if not self._base_check:
             self._base_check = base
         elif self._base_check != base:
-            warnings.warn(
-                "Base mismatch from first use of normalize_incremental_logscale function! Ensure this was intentional! "
-            )
+            warnings.warn("Base mismatch from first use of normalize_incremental_logscale function! Ensure this was intentional! ")
         if not self._increment_check:
             self._increment_check = increment_value
         if self._increment_check != increment_value:
-            warnings.warn(
-                "Increment mismatch from first use of normalize_incremental_logscale function! Ensure this was intentional"
-            )
+            warnings.warn("Increment mismatch from first use of normalize_incremental_logscale function! Ensure this was intentional")
 
-        result = (
-            (log(increment_value + current_value, base))
-            * 1
-            / log(increment_value * base, base)
-        )  # Put in range [0, 1]
+        result = (log(increment_value + current_value, base)) * 1 / log(increment_value * base, base)  # Put in range [0, 1]
         assert (
             result >= 0 and result <= 1
         ), f"Normalization error for Result: {result}, Increment_value: {increment_value}, Current value: {current_value}, Base: {base}"
@@ -409,24 +378,29 @@ class MapsBuffer:
 
     * Obstacles Map: a grid of how far from an obstacle each agent was when they detected it
 
-    :param observation_dimension: (int) Shape of state space. This is how many elements are in the observation array that is returned from the environment. For Rad-Search, this should be 11.
-    :param steps_per_episode: (int) Maximum steps per episode. This is used for the base calculation for the log_normalizing for visit counts in visits map.
-    :param number_of_agents: (int) Total number of agents. This is used for the base calculation for the log_normalizing for visit counts in visits map.
+    :param observation_dimension: (int) Shape of state space. This is how many elements are in the observation array that is returned from the
+        environment. For Rad-Search, this should be 11.
+    :param steps_per_episode: (int) Maximum steps per episode. This is used for the base calculation for the log_normalizing for visit counts in
+        visits map.
+    :param number_of_agents: (int) Total number of agents. This is used for the base calculation for the log_normalizing for visit counts in visits
+        map.
 
-    :param grid_bounds: (tuple) Initial grid boundaries for the scaled x and y coordinates observed from the environment. For Rad-Search, these are scaled to the range [0, 1],
-        so the default bounds are 1x1. Defaults to (1, 1).
+    :param grid_bounds: (tuple) Initial grid boundaries for the scaled x and y coordinates observed from the environment. For Rad-Search, these are
+        scaled to the range [0, 1], so the default bounds are 1x1. Defaults to (1, 1).
 
-    :param resolution_accuracy: This is the value to multiply grid bounds and agent coordinates by to inflate them to a more useful size. This is calculated by the CNNBase class
-        and indicates the level of accuracy desired. For this class, its function is to inflate grid coordinates to the appropriate size in order to convert an observation into a
-        map stack. Defaults to 22, where the graph is inflated to a 22x22 grid + offset.
+    :param resolution_accuracy: This is the value to multiply grid bounds and agent coordinates by to inflate them to a more useful size. This is
+        calculated by the CNNBase class and indicates the level of accuracy desired. For this class, its function is to inflate grid coordinates to
+        the appropriate size in order to convert an observation into a map stack. Defaults to 22, where the graph is inflated to a 22x22
+        grid + offset.
 
-    :param offset: Scaled offset for when boundaries are different than "search area". This parameter increases the number of nodes around the "search area" to accomodate possible
-        detector positions in the bounding-box area that are not in the search area. Further clarification: In the Rad-Search environment, the bounding box indicates the rendered
-        grid area, however the search area is where agents, sources, and obstacles spawn. Due to limits with the visilibity library and obstacle generation, there needed to be two
-        grids to contain them. Default is 0.22727272727272727 to increase the grid size to 27.
+    :param offset: Scaled offset for when boundaries are different than "search area". This parameter increases the number of nodes around the
+        "search area" to accomodate possible detector positions in the bounding-box area that are not in the search area. Further clarification:
+        In the Rad-Search environment, the bounding box indicates the rendered grid area, however the search area is where agents, sources, and
+        obstacles spawn. Due to limits with the visilibity library and obstacle generation, there needed to be two grids to contain them. Default
+        is 0.22727272727272727 to increase the grid size to 27.
 
-    :param obstacle_state_offset: Number of initial elements in state return that do not indicate there is an obstacle. First element is intensity, second two are x and y coords.
-        Defaults to 3, with the 4th element indicating the beginning of obstacle detections. This defaults to 3.
+    :param obstacle_state_offset: Number of initial elements in state return that do not indicate there is an obstacle. First element is intensity,
+        second two are x and y coords. Defaults to 3, with the 4th element indicating the beginning of obstacle detections. This defaults to 3.
 
     :param resolution_multiplier: The multiplier used to create the resolution accuracy. Used to indicate how maps should be reset, for efficiency.
     """
@@ -440,9 +414,7 @@ class MapsBuffer:
     # Option Parameters
     grid_bounds: Tuple = field(default_factory=lambda: (1, 1))
     resolution_accuracy: float = field(default=22.0)
-    resolution_multiplier: float = field(
-        default=0.01
-    )  # If wrong, may just be slow for map resets
+    resolution_multiplier: float = field(default=0.01)  # If wrong, may just be slow for map resets
     offset: float = field(default=0.22727272727272727)
     obstacle_state_offset: int = field(default=3)
 
@@ -451,11 +423,11 @@ class MapsBuffer:
     x_limit_scaled: int = field(init=False)
     #: Maximum y bound in observation maps, used to fill observation maps with zeros during initialization. This defaults to 27.
     y_limit_scaled: int = field(init=False)
-    #: Actual dimensions of each map. These need to match the convolutional setup in order to not cause errors when being processed by the linear layer during action selection (and state-value estimating).
-    #:  this defaults to (27, 27).
+    #: Actual dimensions of each map. These need to match the convolutional setup in order to not cause errors when being processed by the linear
+    #   layer during action selection (and state-value estimating). This defaults to (27, 27).
     map_dimensions: Tuple[int, int] = field(init=False)
-    #: The base for log() for visit count map normalization. This is equivilant to the maximum number of steps possible in one location, T*n where T is the maximum number of steps per episode and n is the
-    #:  number of agents.
+    #: The base for log() for visit count map normalization. This is equivilant to the maximum number of steps possible in one location, T*n where T
+    #   is the maximum number of steps per episode and n is the number of agents.
     base: int = field(init=False)
 
     # Blank Maps
@@ -476,8 +448,9 @@ class MapsBuffer:
     #: Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
     visit_counts_map: Map = field(init=False)
 
-    #: Shadow hashtable for visits counts map, increments a counter every time that location is visited. This is used during logrithmic normalization to reduce computational complexity and python floating
-    #:  point precision errors, it is "cheaper" to calculate the log on the fly with a second sparce matrix than to inflate a log'd number. Stores tuples (x, y, 2(i)) where i increments every hit.
+    #: Shadow hashtable for visits counts map, increments a counter every time that location is visited. This is used during logrithmic normalization
+    #   to reduce computational complexity and python floating point precision errors, it is "cheaper" to calculate the log on the fly with a second
+    #   sparce matrix than to inflate a log'd number. Stores tuples (x, y, 2(i)) where i increments every hit.
     visit_counts_shadow: Dict = field(default_factory=lambda: dict())
 
     #: Locations matrix for all tracked locations. Used for fast map clearing after reset
@@ -487,16 +460,16 @@ class MapsBuffer:
     #: Data preprocessing tools for standardization, normalization, and estimating values in order to input into a observation map.
     tools: ConversionTools = field(default_factory=lambda: ConversionTools())
     #: This needs to be moved to PPO, but currently holds a set of stackable maps in an experience buffer to later be used for updates.
-    observation_buffer: List = field(
-        default_factory=lambda: list()
-    )  # TODO move to PPO buffer
+    observation_buffer: List = field(default_factory=lambda: list())  # TODO move to PPO buffer
 
     # Reset flag for unit testing
     reset_flag: int = field(init=False, default=0)  # TODO switch out for pytest mock
 
     def __post_init__(self) -> None:
         # Set logrithmic base for visits counts normalization
-        self.base = (self.steps_per_episode + 1) * self.number_of_agents  # Extra observation is for the "last step" where the next state value is used to bootstrap rewards
+        self.base = (
+            self.steps_per_episode + 1
+        ) * self.number_of_agents  # Extra observation is for the "last step" where the next state value is used to bootstrap rewards
 
         # Calculate map x and y bounds for observation maps
         self.map_dimensions = calculate_map_dimensions(
@@ -532,7 +505,8 @@ class MapsBuffer:
 
     def observation_to_map(self, observation: Union[Dict[int, npt.NDArray], npt.NDArray], id: int, loc_prediciton: Tuple[float, float]) -> MapStack:
         """
-        Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation. Also updates tools.
+        Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation.
+        Also updates tools.
 
         :param observation: (dict) Dictionary of agent IDs and their individual observations from the environment.
         :param id: (int) Current Agent's ID, used to differentiate between the agent location map and the other agents map.
@@ -543,23 +517,19 @@ class MapsBuffer:
         for obs in observation.values():
             key: Tuple[int, int] = self._inflate_coordinates(obs)
             intensity: np.floating[Any] = obs[0]
-            self.tools.readings.update(key=key, value=float(intensity))      
+            self.tools.readings.update(key=key, value=float(intensity))
 
         for agent_id in observation:
             # Fetch scaled coordinates
             inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[agent_id])
-            if PFGRU:            
+            if PFGRU:
                 inflated_prediction: Tuple[int, int] = self._inflate_coordinates(single_observation=loc_prediciton)
 
-            last_coordinates: Union[Tuple[int, int], None] = (
-                self.tools.last_coords[agent_id]
-                if agent_id in self.tools.last_coords.keys()
-                else None
-            )
-            
+            last_coordinates: Union[Tuple[int, int], None] = self.tools.last_coords[agent_id] if agent_id in self.tools.last_coords.keys() else None
+
             self.locations_matrix.append(inflated_agent_coordinates)
-            
-            last_prediction: Tuple = self.tools.last_prediction        
+
+            last_prediction: Tuple = self.tools.last_prediction
 
             # Update Prediction maps
             if PFGRU:
@@ -592,10 +562,7 @@ class MapsBuffer:
             self._update_visits_count_map(coordinates=inflated_agent_coordinates)
 
             # Detected Obstacles map
-            if (
-                np.count_nonzero(observation[agent_id][self.obstacle_state_offset :])
-                > 0
-            ):
+            if np.count_nonzero(observation[agent_id][self.obstacle_state_offset:]) > 0:
                 self._update_obstacle_map(
                     coordinates=inflated_agent_coordinates,
                     single_observation=observation[agent_id],
@@ -605,7 +572,6 @@ class MapsBuffer:
             self.tools.last_coords[agent_id] = inflated_agent_coordinates
             if PFGRU:
                 self.tools.last_prediction = inflated_prediction
-
 
         return MapStack(
             (
@@ -632,24 +598,11 @@ class MapsBuffer:
                 self.others_locations_map[inflated_last_coordinates] = 0
 
             self.prediction_map[self.tools.last_prediction] = 0
-                
-            
+
             # Reinitialize non-sparse matrices
-            self.readings_map: Map = Map(
-                np.zeros(
-                    shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32
-                )
-            )
-            self.visit_counts_map: Map = Map(
-                np.zeros(
-                    shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32
-                )
-            )
-            self.obstacles_map: Map = Map(
-                np.zeros(
-                    shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32
-                )
-            )
+            self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
+            self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
+            self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
 
         else:
             for k in self.locations_matrix:
@@ -660,46 +613,30 @@ class MapsBuffer:
                 self.obstacles_map[k] = 0
                 self.visit_counts_map[k] = 0
                 self.prediction_map[k] = 0
-                
-                
+
         assert self.obstacles_map.max() == 0 and self.obstacles_map.min() == 0
         assert self.readings_map.max() == 0 and self.readings_map.min() == 0
-        assert (self.others_locations_map.max() == 0 and self.others_locations_map.min() == 0)
+        assert self.others_locations_map.max() == 0 and self.others_locations_map.min() == 0
         assert self.location_map.max() == 0 and self.location_map.min() == 0
-        assert (self.combined_location_map.max() == 0 and self.combined_location_map.min() == 0)
+        assert self.combined_location_map.max() == 0 and self.combined_location_map.min() == 0
         assert self.visit_counts_map.max() == 0 and self.visit_counts_map.min() == 0
         assert self.prediction_map.max() == 0 and self.prediction_map.min() == 0
 
     def _reset_maps(self) -> None:
         """Fully reinstatiate maps"""
-        self.prediction_map: Map = Map(
-            np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)
-        )        
-        self.combined_location_map: Map = Map(
-            np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)
-        )
-        self.location_map: Map = Map(
-            np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)
-        )
-        self.others_locations_map: Map = Map(
-            np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)
-        )
-        self.readings_map: Map = Map(
-            np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)
-        )
-        self.obstacles_map: Map = Map(
-            np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)
-        )
-        self.visit_counts_map: Map = Map(
-            np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)
-        )
+        self.prediction_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
+        self.combined_location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
+        self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
+        self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
+        self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
+        self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
+        self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
         self.visit_counts_shadow.clear()
 
-    def _inflate_coordinates(
-        self, single_observation: Union[np.ndarray, Point, Tuple[float, float]]
-    ) -> Tuple[int, int]:
+    def _inflate_coordinates(self, single_observation: Union[np.ndarray, Point, Tuple[float, float]]) -> Tuple[int, int]:
         """
-        Method to take a single observation state, extracts the coordinates, then inflates them to the resolution accuracy specified during initialization. Also works with tuple of deflated coordinates.
+        Method to take a single observation state, extracts the coordinates, then inflates them to the resolution accuracy specified during
+        initialization. Also works with tuple of deflated coordinates.
 
         :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of deflated coordinates
         :return: (Tuple[int, int]) Inflated coordinates
@@ -720,12 +657,10 @@ class MapsBuffer:
             raise ValueError("Unsupported type for observation parameter")
         return result
 
-    def _deflate_coordinates(
-        self, single_observation: Union[np.ndarray, Tuple[int, int]]
-    ) -> Point:
+    def _deflate_coordinates(self, single_observation: Union[np.ndarray, Tuple[int, int]]) -> Point:
         """
-        Method to take a single observation state that has already been adjusted to the resolution accuracy specified during initialization, then extracts the coordinates, then deflates them back to their
-        normalized inital values. Also works with tuple of inflated coordinates.
+        Method to take a single observation state that has already been adjusted to the resolution accuracy specified during initialization,
+        then extracts the coordinates, then deflates them back to their normalized inital values. Also works with tuple of inflated coordinates.
 
         :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of inflated coordinates
         :return: (Tuple[int, int]) deflated coordinates
@@ -751,9 +686,9 @@ class MapsBuffer:
         return result
 
     def _update_prediction_map(
-        self,  
+        self,
         current_prediction: Tuple[int, int],
-        last_prediction:Tuple,
+        last_prediction: Tuple,
     ) -> None:
         """
         Method to update the current agents location observation map. If prior location exists, this is reset to zero.
@@ -764,12 +699,13 @@ class MapsBuffer:
         """
         if len(last_prediction) > 0:
             self.prediction_map[last_prediction[0]][last_prediction[1]] -= 1
-            assert self.prediction_map[last_prediction[0]][last_prediction[1]] > -1, "source prediction grid coordinate reset where nothing present. The map location that was reset was already at 0."  # type: ignore # Type will already be a float
+            assert self.prediction_map[last_prediction[0]][last_prediction[1]] > -1, "source prediction grid coordinate reset where nothing present.\
+                The map location that was reset was already at 0."  # type: ignore # Type will already be a float
         else:
-            assert (self.prediction_map.max() == 0.0), "Location exists on map however no last coordinates buffer passed for processing."
+            assert self.prediction_map.max() == 0.0, "Location exists on map however no last coordinates buffer passed for processing."
 
         self.prediction_map[current_prediction[0]][current_prediction[1]] = 1
-        assert (self.prediction_map.max() == 1), "Location was updated twice for single coordinate"
+        assert self.prediction_map.max() == 1, "Location was updated twice for single coordinate"
 
     def _update_combined_agent_locations_map(
         self,
@@ -777,7 +713,8 @@ class MapsBuffer:
         last_coordinates: Union[Tuple[int, int], None],
     ) -> None:
         """
-        Method to update the other-agent locations observation map. If prior location exists, this is reset to zero. Note: updates one location at a time, not in a batch
+        Method to update the other-agent locations observation map. If prior location exists, this is reset to zero. Note: updates one location at a
+        time, not in a batch
 
         :param id: (int) ID of current agent being processed
         :param current_coordinates: (Tuple[int, int]) Inflated current location of agent to be processed
@@ -788,8 +725,7 @@ class MapsBuffer:
             self.combined_location_map[last_coordinates[0]][last_coordinates[1]] -= 1
             # In case agents are at same location, usually the start-point, just ensure was not negative.
             assert (
-                self.combined_location_map[last_coordinates[0]][last_coordinates[1]]
-                > -1
+                self.combined_location_map[last_coordinates[0]][last_coordinates[1]] > -1
             ), "Location map grid coordinate reset where agent was not present"
 
         self.combined_location_map[current_coordinates[0]][current_coordinates[1]] += 1
@@ -808,16 +744,13 @@ class MapsBuffer:
         """
         if last_coordinates:
             self.location_map[last_coordinates[0]][last_coordinates[1]] -= 1
-            assert self.location_map[last_coordinates[0]][last_coordinates[1]] > -1, "location_map grid coordinate reset where agent was not present. The map location that was reset was already at 0."  # type: ignore # Type will already be a float
+            assert self.location_map[last_coordinates[0]][last_coordinates[1]] > -1, "location_map grid coordinate reset where agent was not present.\
+                The map location that was reset was already at 0."  # type: ignore # Type will already be a float
         else:
-            assert (
-                self.location_map.max() == 0.0
-            ), "Location exists on map however no last coordinates buffer passed for processing."
+            assert self.location_map.max() == 0.0, "Location exists on map however no last coordinates buffer passed for processing."
 
         self.location_map[current_coordinates[0]][current_coordinates[1]] = 1
-        assert (
-            self.location_map.max() == 1
-        ), "Location was updated twice for single agent"
+        assert self.location_map.max() == 1, "Location was updated twice for single agent"
 
     def _update_other_agent_locations_map(
         self,
@@ -825,7 +758,8 @@ class MapsBuffer:
         last_coordinates: Union[Tuple[int, int], None],
     ) -> None:
         """
-        Method to update the other-agent locations observation map. If prior location exists, this is reset to zero. Note: updates one location at a time, not in a batch
+        Method to update the other-agent locations observation map. If prior location exists, this is reset to zero. Note: updates one location at a
+        time, not in a batch
 
         :param id: (int) ID of current agent being processed
         :param current_coordinates: (Tuple[int, int]) Inflated current location of agent to be processed
@@ -843,15 +777,12 @@ class MapsBuffer:
                 self.others_locations_map.max() < self.number_of_agents
             ), "Location exists on map however no last coordinates buffer passed for processing."
 
-        self.others_locations_map[current_coordinates[0]][
-            current_coordinates[1]
-        ] += 1  # Initial agents begin at same location
+        self.others_locations_map[current_coordinates[0]][current_coordinates[1]] += 1  # Initial agents begin at same location
 
-    def _update_readings_map(
-        self, coordinates: Tuple[int, int], key: Union[Tuple[int, int], None] = None
-    ) -> None:
+    def _update_readings_map(self, coordinates: Tuple[int, int], key: Union[Tuple[int, int], None] = None) -> None:
         """
-        Method to update the radiation intensity observation map with single observation. If prior location exists, this is overwritten with the latest estimation.
+        Method to update the radiation intensity observation map with single observation. If prior location exists, this is overwritten with the
+        latest estimation.
 
         :param id: (int) ID of current agent being processed
         :param coordinates: (Tuple[int, int]) Inflated current location of agent to be processed
@@ -897,53 +828,45 @@ class MapsBuffer:
             self.visit_counts_shadow[coordinates] = 2
 
         if SIMPLE_NORMALIZATION:
-            normalized_value = self.tools.normalizer.normalize(
-                current_value=current, max=self.base
-            )
+            normalized_value = self.tools.normalizer.normalize(current_value=current, max=self.base)
         else:
-            normalized_value = self.tools.normalizer.normalize_incremental_logscale(
-                current_value=current, base=self.base, increment_value=2
-            )
+            normalized_value = self.tools.normalizer.normalize_incremental_logscale(current_value=current, base=self.base, increment_value=2)
 
         # Save to  matrix
         self.visit_counts_map[coordinates[0]][coordinates[1]] = normalized_value
 
         # Sanity warning
         if self.visit_counts_map[coordinates[0]][coordinates[1]] == 1.0:
-            warnings.warn(
-                "Visit count is normalized to 1; either all Agents did not move entire episode or there is a normalization error"
-            )
+            warnings.warn("Visit count is normalized to 1; either all Agents did not move entire episode or there is a normalization error")
         if self.visit_counts_map.max() > 1.0:
-            raise Exception(
-                f"Visit count max is normalized greater than 1: {self.visit_counts_map.max()}"
-            )
+            raise Exception(f"Visit count max is normalized greater than 1: {self.visit_counts_map.max()}")
 
-    def _update_obstacle_map(
-        self, coordinates: Tuple[int, int], single_observation: np.ndarray
-    ) -> None:
+    def _update_obstacle_map(self, coordinates: Tuple[int, int], single_observation: np.ndarray) -> None:
         """
-        Method to update the obstacle detection observation map. Renders headmap of Agent distance from obstacle. Using two parameters removes unnecessary reinflation step.
+        Method to update the obstacle detection observation map. Renders headmap of Agent distance from obstacle. Using two parameters removes
+        unnecessary reinflation step.
 
         :param id: (int) ID of current agent being processed
         :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of inflated coordinates
         :return: None
         """
         # Fill in map
-        for detection in single_observation[self.obstacle_state_offset : :]:
+        for detection in single_observation[self.obstacle_state_offset::]:
             if detection != 0:
                 self.obstacles_map[coordinates[0]][coordinates[1]] = detection
 
 
 class Actor(nn.Module):
     """
-    In deep reinforcement learning, an Actor is a neural network architecture that represents an agent's control policy. Each agent is outfit with their own Actor.
-    Learning aims to optimize a policy gradient. For RAD-TEAM, the Actor consists of a convolutional neural Network Architecture that includes two convolution layers,
-    a maxpool layer, and three fully connected layers to distill the previous layers into an action probability distribution. Following Alagha et al.'s multi-agent CNN
-    architecture, each of the nodes are activated with ReLU (to dodge vanishing gradient problem) and the probability distribution is calculated using the softmax function.
+    In deep reinforcement learning, an Actor is a neural network architecture that represents an agent's control policy. Each agent is outfit with
+    their own Actor. Learning aims to optimize a policy gradient. For RAD-TEAM, the Actor consists of a convolutional neural Network Architecture
+    that includes two convolution layers, a maxpool layer, and three fully connected layers to distill the previous layers into an action probability
+    distribution. Following Alagha et al.'s multi-agent CNN architecture, each of the nodes are activated with ReLU (to dodge vanishing gradient
+    problem) and the probability distribution is calculated using the softmax function.
 
-    The Actor takes a stack of observation maps (numerical matrices/tensors) and processes them with the neural network architecture. Convolutional and pooling layers
-    train a series of filters that operate on the data and extract features from it. These features are then distilled through linear layers to produce an array that
-    contains probabilities, where each element cooresponds to an action.
+    The Actor takes a stack of observation maps (numerical matrices/tensors) and processes them with the neural network architecture. Convolutional
+    and pooling layers train a series of filters that operate on the data and extract features from it. These features are then distilled through
+    linear layers to produce an array that contains probabilities, where each element cooresponds to an action.
 
     This Actor expects the input tensor shape: (batch size, number of channels, height of grid, width of grid) where
     *. batch size: How many mapstacks (default 1)
@@ -951,11 +874,11 @@ class Actor(nn.Module):
     *. Height: Map height (from map_dim)
     *. Width: Map width (from map_dim)
 
-    The network for RAD-TEAM expects mapstacks in tensor form, where the shape is [b, n, x, y]. Here b is the number of batches, n is the number of maps, x is the map
-    width and y is the map height.
+    The network for RAD-TEAM expects mapstacks in tensor form, where the shape is [b, n, x, y]. Here b is the number of batches, n is the number of
+    maps, x is the mapwidth and y is the map height.
 
-    :param map_dim: (Tuple[int, int]) Map dimensions (discrete). This is the scaled height and width that each observation map will be. NOTE: dimensions must be equal to each other,
-        discrete, and real.
+    :param map_dim: (Tuple[int, int]) Map dimensions (discrete). This is the scaled height and width that each observation map will be.
+        NOTE: dimensions must be equal to each other, discrete, and real.
     :param batches: (int) Number of observation mapstacks to be processed - each step in the environment yields one mapstack. Defaults to 1.
     :param map_count: (int) Number of observation maps in a single mapstack. Defaults to 5.
     :param action_dim: (int) Number of actions to choose from. Defaults to 8.
@@ -970,27 +893,19 @@ class Actor(nn.Module):
     ) -> None:
         super(Actor, self).__init__()
 
-        assert (
-            map_dim[0] > 0 and map_dim[0] == map_dim[1]
-        ), "Map dimensions mismatched. Must have equal x and y bounds."
+        assert map_dim[0] > 0 and map_dim[0] == map_dim[1], "Map dimensions mismatched. Must have equal x and y bounds."
 
         # Set for later fetching for global critic
         self.batches = batches
 
         channels: int = map_count
-        pool_output: int = int(
-            ((map_dim[0] - 2) / 2) + 1
-        )  # Get maxpool output height/width and floor it
+        pool_output: int = int(((map_dim[0] - 2) / 2) + 1)  # Get maxpool output height/width and floor it
 
         # Actor network
-        self.step1 = nn.Conv2d(
-            in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1
-        )
+        self.step1 = nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1)
         self.relu = nn.ReLU()
         self.step2 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.step3 = nn.Conv2d(
-            in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1
-        )
+        self.step3 = nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1)
         self.step4 = nn.Flatten(start_dim=0, end_dim=-1)
         self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32)
         self.step6 = nn.Linear(in_features=32, out_features=16)
@@ -1000,7 +915,9 @@ class Actor(nn.Module):
         self.actor = nn.Sequential(
             nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (5, 8, Height, Width)
             nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # output tensor with shape (4, 8, 2, 2). Output height and width is floor(((Width - Size)/ Stride) +1)
+            nn.MaxPool2d(
+                kernel_size=2, stride=2
+            ),  # output tensor with shape (4, 8, 2, 2). Output height and width is floor(((Width - Size)/ Stride) +1)
             nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (4, 16, 2, 2)
             nn.ReLU(),
             nn.Flatten(start_dim=0, end_dim=-1),  # output tensor with shape (1, x)
@@ -1079,13 +996,12 @@ class Actor(nn.Module):
         print(x)
         pass
 
-    def act(
-        self, observation_map_stack: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def act(self, observation_map_stack: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Method that selects action from action probabilities returned by actor network.
 
-        :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height].
+        :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width,
+            map height].
         :return: (Tensor, Tensor) Returns the action selected (tensor(1)) and the log-probability for that action (tensor(1)).
         """
         #: Raw action probabilities for each available action for this particular observation
@@ -1100,13 +1016,13 @@ class Actor(nn.Module):
 
         return action, action_logprob
 
-    def forward(
-        self, observation_map_stack: torch.Tensor
-    ) -> Tuple[Categorical, torch.Tensor]:
+    def forward(self, observation_map_stack: torch.Tensor) -> Tuple[Categorical, torch.Tensor]:
         """
         Method that takes the observation and returns all action probabilities.
-        :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height].
-        :return: (Tensor, Tensor) Returns probability distribution for all actions (tensor(action_space)) and the entropy for the action distribution (tensor(1)).
+        :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width,
+            map height].
+        :return: (Tensor, Tensor) Returns probability distribution for all actions (tensor(action_space)) and the entropy for the action
+            distribution (tensor(1)).
         """
         #: Raw action probabilities for each available action for this particular observation
         action_probs: torch.Tensor = self.actor(observation_map_stack)
@@ -1116,14 +1032,14 @@ class Actor(nn.Module):
         dist_entropy: torch.Tensor = dist.entropy()
         return dist, dist_entropy
 
-    def get_action_information(
-        self, state_map_stack: torch.Tensor, action: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_action_information(self, state_map_stack: torch.Tensor, action: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """Method that gets the action logprobabilities for an observation mapstack and calculates a particular actions entropy.
 
-        :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height].
+        :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width,
+            map height].
         :param action: (Tensor) The the action taken (tensor(1))
-        :return: (Tensor, Tensor) Returns the log-probability for the passed-in action (tensor(1)) and the entropy for the action distribution (tensor(1)).
+        :return: (Tensor, Tensor) Returns the log-probability for the passed-in action (tensor(1)) and the entropy for the action
+            distribution (tensor(1)).
         """
         #: Raw action probabilities for each available action for this particular observation
         action_probs: torch.Tensor = self.actor(state_map_stack)
@@ -1163,28 +1079,25 @@ class Actor(nn.Module):
 
     def load_model(self, checkpoint_path: str) -> None:
         assert path.isfile(f"{checkpoint_path}/actor.pt"), "Model does not exist"
-        self.load_state_dict(
-            torch.load(
-                f"{checkpoint_path}/actor.pt", map_location=lambda storage, loc: storage
-            )
-        )
+        self.load_state_dict(torch.load(f"{checkpoint_path}/actor.pt", map_location=lambda storage, loc: storage))
 
     def get_config(self):
         return vars(self)
-        
-        
+
+
 class Critic(nn.Module):
     """
-    In deep reinforcement learning, a Critic is a neural network architecture that approximates the state-value V^pi(s) for the policy pi. This indicates how "good it is" to be
-    in any state. For RAD-TEAM, we use the Generalized Advantage Estimator (GAE) that does not require the Q-value, only the state-value. RAD-Team is set up to work with both a
-    per-agent critic and a global critic. A global critic can still work, in spite of the independent agent policies, due to the team-based reward. Learning aims to minimize
-    The mean-squared error. For RAD-TEAM, the Critic consists of a convolutional neural Network Architecture that includes two convolution layers, a maxpool layer, and three
-    fully connected layers to distill the previous layers into a single state-value. Following Alagha et al.'s multi-agent CNN architecture, each of the nodes are activated with
-    ReLU (to dodge vanishing gradient problems).
+    In deep reinforcement learning, a Critic is a neural network architecture that approximates the state-value V^pi(s) for the policy pi. This
+    indicates how "good it is" to be in any state. For RAD-TEAM, we use the Generalized Advantage Estimator (GAE) that does not require the
+    Q-value, only the state-value. RAD-Team is set up to work with both a per-agent critic and a global critic. A global critic can still work,
+    in spite of the independent agent policies, due to the team-based reward. Learning aims to minimize the mean-squared error. For RAD-TEAM,
+    the Critic consists of a convolutional neural Network Architecture that includes two convolution layers, a maxpool layer, and three fully
+    connected layers to distill the previous layers into a single state-value. Following Alagha et al.'s multi-agent CNN architecture, each of
+    the nodes are activated with ReLU (to dodge vanishing gradient problems).
 
-    The Critic, like the actor takes a stack of observation maps (numerical matrices/tensors) and processes them with the neural network architecture. Convolutional and pooling
-    layers train a series of filters that operate on the data and extract features from it. These features are then distilled through linear layers to produce a single state-value.
-    Note: Critic is estimating State-Value here, not Q-Value.
+    The Critic, like the actor takes a stack of observation maps (numerical matrices/tensors) and processes them with the neural network architecture.
+    Convolutional and pooling layers train a series of filters that operate on the data and extract features from it. These features are then
+    distilled through linear layers to produce a single state-value. Note: Critic is estimating State-Value here, not Q-Value.
 
     This Critic expects the input tensor shape: (batch size, number of channels, height of grid, width of grid) where
     *. batch size: How many mapstacks (default 1)
@@ -1192,11 +1105,11 @@ class Critic(nn.Module):
     *. Height: Map height (from map_dim)
     *. Width: Map width (from map_dim)
 
-    The network for RAD-TEAM expects mapstacks in tensor form, where the shape is [b, n, x, y]. Here b is the number of batches, n is the number of maps, x is the map
-    width and y is the map height.
+    The network for RAD-TEAM expects mapstacks in tensor form, where the shape is [b, n, x, y]. Here b is the number of batches, n is the number of
+    maps, x is the map width and y is the map height.
 
-    :param map_dim: (Tuple[int, int]) Map dimensions (discrete). This is the scaled height and width that each observation map will be. NOTE: dimensions must be equal to each other,
-        discrete, and real.
+    :param map_dim: (Tuple[int, int]) Map dimensions (discrete). This is the scaled height and width that each observation map will be.
+        NOTE: dimensions must be equal to each other, discrete, and real.
     :param batches: (int) Number of observation mapstacks to be processed - each step in the environment yields one mapstack. Defaults to 1.
     :param map_count: (int) Number of observation maps in a single mapstack. Defaults to 4.
     """
@@ -1204,31 +1117,21 @@ class Critic(nn.Module):
     def __init__(self, map_dim, batches: int = 1, map_count: int = 4):
         super(Critic, self).__init__()
 
-        assert (
-            map_dim[0] > 0 and map_dim[0] == map_dim[1]
-        ), "Map dimensions mismatched. Must have equal x and y bounds."
+        assert map_dim[0] > 0 and map_dim[0] == map_dim[1], "Map dimensions mismatched. Must have equal x and y bounds."
 
         self.map_count = map_count
         channels: int = map_count
-        pool_output: int = int(
-            ((map_dim[0] - 2) / 2) + 1
-        )  # Get maxpool output height/width and floor it
+        pool_output: int = int(((map_dim[0] - 2) / 2) + 1)  # Get maxpool output height/width and floor it
 
         # Critic network
         self.step1 = nn.Conv2d(
             in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1
         )  # output tensor with shape (batchs, 8, Height, Width)
         self.relu = nn.ReLU()
-        self.step2 = nn.MaxPool2d(
-            kernel_size=2, stride=2
-        )  # output height and width is floor(((Width - Size)/ Stride) +1)
-        self.step3 = nn.Conv2d(
-            in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1
-        )
+        self.step2 = nn.MaxPool2d(kernel_size=2, stride=2)  # output height and width is floor(((Width - Size)/ Stride) +1)
+        self.step3 = nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1)
         # nn.ReLU()
-        self.step4 = nn.Flatten(
-            start_dim=0, end_dim=-1
-        )  # output tensor with shape (1, x)
+        self.step4 = nn.Flatten(start_dim=0, end_dim=-1)  # output tensor with shape (1, x)
         self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32)
         # nn.ReLU()
         self.step6 = nn.Linear(in_features=32, out_features=16)
@@ -1242,12 +1145,8 @@ class Critic(nn.Module):
                 in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1
             ),  # output tensor with shape (batch_size, 8, Height, Width)
             nn.ReLU(),
-            nn.MaxPool2d(
-                kernel_size=2, stride=2
-            ),  # output tensor with shape (batch_size, 8, x, x) x is the floor(((Width - Size)/ Stride) +1)
-            nn.Conv2d(
-                in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1
-            ),  # output tensor with shape (batch_size, 16, 2, 2)
+            nn.MaxPool2d(kernel_size=2, stride=2),  # output tensor with shape (batch_size, 8, x, x) x is the floor(((Width - Size)/ Stride) +1)
+            nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (batch_size, 16, 2, 2)
             nn.ReLU(),
             nn.Flatten(start_dim=0, end_dim=-1),  # output tensor with shape (1, x)
             nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32),  # output tensor with shape (32)
@@ -1284,7 +1183,8 @@ class Critic(nn.Module):
     def forward(self, observation_map_stack: torch.Tensor) -> torch.Tensor:
         """
         Get the state-value for a given state-observation from the environment
-        :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height].
+        :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map
+            height].
         :return: (Tensor) Returns state-value for the given observation (tensor(1)).
         """
         return self.critic(observation_map_stack)
@@ -1292,7 +1192,8 @@ class Critic(nn.Module):
     def act(self, observation_map_stack: torch.Tensor) -> torch.Tensor:
         """
         Alias for "Forward()". Get the state-value for a given state-observation from the environment
-        :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height].
+        :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map
+            height].
         :return: (Tensor) Returns state-value for the given observation (tensor(1)).
         """
         return self.forward(observation_map_stack=observation_map_stack)
@@ -1333,16 +1234,15 @@ class Critic(nn.Module):
 
     def get_config(self):
         return vars(self)
-    
+
 
 class EmptyCritic:
     """
-    This is an empty critic object that simulates a critic for compatibility during evaluation runs in order to avoid the volume of conditional statements required otherwise.
+    This is an empty critic object that simulates a critic for compatibility during evaluation runs in order to avoid the volume of conditional
+    statements required otherwise.
     """
 
-    def __init__(
-        self, map_dim: Union[int, None] = None, batches: int = 1, map_count: int = 4
-    ):
+    def __init__(self, map_dim: Union[int, None] = None, batches: int = 1, map_count: int = 4):
         super(EmptyCritic, self).__init__()
         self.training: bool = False
         self.map_count = map_count
@@ -1387,6 +1287,7 @@ class EmptyCritic:
     def get_config(self):
         return None
 
+
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFRNNBaseCell(nn.Module):
     """Parent class for Particle Filter Recurrent Neural Networks"""
@@ -1420,9 +1321,7 @@ class PFRNNBaseCell(nn.Module):
         self.activation = activation
         self.initialize = "rand"
         if activation == "relu":
-            self.batch_norm = nn.BatchNorm1d(
-                self.num_particles, track_running_stats=False
-            )
+            self.batch_norm = nn.BatchNorm1d(self.num_particles, track_running_stats=False)
 
     def resampling(self, particles, prob):
         """soft-resampling
@@ -1435,17 +1334,13 @@ class PFRNNBaseCell(nn.Module):
             tuple -- particles
         """
 
-        resamp_prob = (
-            self.resamp_alpha * torch.exp(prob)
-            + (1 - self.resamp_alpha) * 1 / self.num_particles
-        )
+        resamp_prob = self.resamp_alpha * torch.exp(prob) + (1 - self.resamp_alpha) * 1 / self.num_particles
         resamp_prob = resamp_prob.view(self.num_particles, -1)
         indices = torch.multinomial(
             resamp_prob.transpose(0, 1),
             num_samples=self.num_particles,
             replacement=True,
         )
-        batch_size = indices.size(0)
         indices = indices.transpose(1, 0).contiguous()
         flatten_indices = indices.view(-1, 1).squeeze()
 
@@ -1460,9 +1355,7 @@ class PFRNNBaseCell(nn.Module):
             particles_new = particles[flatten_indices]
 
         prob_new = torch.exp(prob.view(-1, 1)[flatten_indices])
-        prob_new = prob_new / (
-            self.resamp_alpha * prob_new + (1 - self.resamp_alpha) / self.num_particles
-        )
+        prob_new = prob_new / (self.resamp_alpha * prob_new + (1 - self.resamp_alpha) / self.num_particles)
         prob_new = torch.log(prob_new).view(self.num_particles, -1)
         prob_new = prob_new - torch.logsumexp(prob_new, dim=0, keepdim=True)
 
@@ -1485,6 +1378,7 @@ class PFRNNBaseCell(nn.Module):
         eps = torch.FloatTensor(std.shape).normal_()
 
         return mu + eps * std
+
 
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFGRUCell(PFRNNBaseCell):
@@ -1576,9 +1470,7 @@ class PFGRUCell(PFRNNBaseCell):
     def init_hidden(self, batch_size):
         initializer = torch.rand if self.initialize == "rand" else torch.zeros
         h0 = initializer(batch_size * self.num_particles, self.h_dim)
-        p0 = torch.ones(batch_size * self.num_particles, 1) * np.log(
-            1 / self.num_particles
-        )
+        p0 = torch.ones(batch_size * self.num_particles, 1) * np.log(1 / self.num_particles)
         hidden = (h0, p0)
         return hidden
 
@@ -1599,39 +1491,43 @@ class PFGRUCell(PFRNNBaseCell):
         return nn.Sequential(*layers)
 
 
-
 @dataclass
 class CNNBase:
     """
-    This is the base class for the Actor-Critic (A2C) Convolutional Neural Network (CNN) architecture. The Actor subclass is an approximator for an Agent's policy.
-    The Critic subclass is an approximator for the value function (for more information, see Barto and Sutton's "Reinforcement Learning").
-    When an observation is fed to this base class, it is transformed into a series of stackable observation heatmaps maps (stored as matrices/tensors). As these maps are fed
-    through the subclass networks, Convolutional and pooling layers train a series of filters that operate on the data and extract features from it.
+    This is the base class for the Actor-Critic (A2C) Convolutional Neural Network (CNN) architecture. The Actor subclass is an approximator for an
+    Agent's policy. The Critic subclass is an approximator for the value function (for more information, see Barto and Sutton's "Reinforcement
+    Learning"). When an observation is fed to this base class, it is transformed into a series of stackable observation heatmaps maps (stored as
+    matrices/tensors). As these maps are fed through the subclass networks, Convolutional and pooling layers train a series of filters that operate
+    on the data and extract features from it.
 
     An adjustable resolution accuracy variable is computed to indicate the level of accuracy desired. Note: Higher accuracy increases training time.
 
     :param id: (int) Unique identifier key that is used to identify own observations from observation object during map conversions.
-    :param action_space: (int) Also called action-dimensions. From the environment, get the total number of actions an agent can take. This is used to configure the last
-        linear layer for action-selection in the Actor class.
-    :param observation_space: (int) Also called state-space or state-dimensions. The dimensions of the observation returned from the environment.For rad-search this will
-        be 11, for the 11 elements of the observation array. This is used for the PFGRU. Future work: make observation-to-map function accomodate differently sized state-spaces.
-    :param steps_per_episode: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each episode before resetting the environment. Used
-        for resolution accuracy calculation and during normalization of visits-counts map and a multiplier for the log base.
+    :param action_space: (int) Also called action-dimensions. From the environment, get the total number of actions an agent can take. This is used
+        to configure the last linear layer for action-selection in the Actor class.
+    :param observation_space: (int) Also called state-space or state-dimensions. The dimensions of the observation returned from the environment.For
+        rad-search this will be 11, for the 11 elements of the observation array. This is used for the PFGRU. Future work: make observation-to-map
+        function accomodate differently sized state-spaces.
+    :param steps_per_episode: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each episode before
+        resetting the environment. Used for resolution accuracy calculation and during normalization of visits-counts map and a multiplier for the
+        log base.
     :param number_of_agents: (int) Number of agents. Used during normalization of visits-counts map and a multiplier for the log base.
     :param detector_step_size: (int) Distance an agent can travel in one step (centimeters). Used for inflating scaled coordinates.
-    :param environment_scale: (int) Value that is being used to normalize grid coodinates for agent. This is later used to reinflate coordinates for increased accuracy, though
-        increased computation time, for convolutional networks.
-    :param bounds_offset: (tuple[float, float]) The difference between the search area and the observation area in the environemnt. This is used to ensure agents can search the
-        entire grid when boundaries are being enforced, not just the obstruction/spawning area. For the CNN, this expands the size of the network to accomodate these extra grid
-        coordinates. This is optional, but for this implementation, to remove this would require adjusting environment to not let agents through to that area when grid boundaries
-        are being enforced. Removing this also makes renders look very odd, as agent will not be able to travel to bottom coordinates.
-    :param grid_bounds: (tuple[float, float]) The grid bounds for the state returned by the environment. This represents the max x and the max y for the scaled coordinates
-        in the rad-search environment (usually (1, 1)). This is used for scaling in the map buffer by the resolution variable.
-    :resolution_multiplier: Multiplier used to indicate how accurate scaling should be for heatmaps. A value of 1 will represent the original accuracy presented by the environment.
-        By default, this is downsized to 0.01 in order to reduce the number of trainable parameters in the heatmaps, leading to faster convergence. Only for very small search spaces
-        is it recommended to use full accuracy - heatmaps indicate "area of interest trends", the values themselves are less important.
-    :param enforce_boundaries: Indicates whether or not agents can walk out of the gridworld. If they can, CNNs must be expanded to include the maximum step count so that all
-        coordinates can be encompased in a matrix element.
+    :param environment_scale: (int) Value that is being used to normalize grid coodinates for agent. This is later used to reinflate coordinates for
+        increased accuracy, though increased computation time, for convolutional networks.
+    :param bounds_offset: (tuple[float, float]) The difference between the search area and the observation area in the environemnt. This is used to
+        ensure agents can search the entire grid when boundaries are being enforced, not just the obstruction/spawning area. For the CNN, this expands
+        the size of the network to accomodate these extra grid coordinates. This is optional, but for this implementation, to remove this would
+        require adjusting environment to not let agents through to that area when grid boundaries are being enforced. Removing this also makes renders
+        look very odd, as agent will not be able to travel to bottom coordinates.
+    :param grid_bounds: (tuple[float, float]) The grid bounds for the state returned by the environment. This represents the max x and the max y for
+        the scaled coordinates in the rad-search environment (usually (1, 1)). This is used for scaling in the map buffer by the resolution variable.
+    :resolution_multiplier: Multiplier used to indicate how accurate scaling should be for heatmaps. A value of 1 will represent the original
+        accuracy presented by the environment. By default, this is downsized to 0.01 in order to reduce the number of trainable parameters in the
+        heatmaps, leading to faster convergence. Only for very small search spaces is it recommended to use full accuracy - heatmaps indicate "area
+        of interest trends", the values themselves are less important.
+    :param enforce_boundaries: Indicates whether or not agents can walk out of the gridworld. If they can, CNNs must be expanded to include the
+        maximum step count so that all coordinates can be encompased in a matrix element.
     :param GlobalCritc: (Critic) Actual global critic object
     :param no_critic: (bool) Used to indicate if A2C should be instatiated with a empty, stand-in critic object. This is used during evaluation.
 
@@ -1660,18 +1556,19 @@ class CNNBase:
     pi: Actor = field(init=False)
     #: Critic/Value network
     critic: Union[Critic, EmptyCritic] = field(default=None)  # type: ignore
-    #: Particle Filter Gated Recurrent Unit (PFGRU) for guessing the location of the radiation. This is named model for backwards compatibility reasons.
+    #: Particle Filter Gated Recurrent Unit (PFGRU) for guessing the location of the radiation. This is named model for backwards compatibility.
     model: PFGRUCell = field(init=False)
     #: Buffer that holds map-stacks and converts observations to maps
     maps: MapsBuffer = field(init=False)
     #: Mean Squared Error for loss for critic network
     mseLoss: nn.MSELoss = field(init=False)
-    #: How much unscaling to do to reinflate agent coordinates to full representation. If the boundary is being enforced, this will be set to the grid boundaries; if not, it will set
-    #:  it to the maximum possible steps an agent can take outside of a boundary.
+    #: How much unscaling to do to reinflate agent coordinates to full representation. If the boundary is being enforced, this will be set to the
+    #   grid boundaries; if not, it will set it to the maximum possible steps an agent can take outside of a boundary.
     scaled_offset: float = field(init=False)
-    #: An adjustable resolution accuracy variable is computed to indicate the level of accuracy desired. Higher accuracy increases training time. Current environment returnes
-    #:  scaled coordinates for each agent. A resolution_accuracy value of 1 here means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less
-    #:  memory intensive, reduce the resolution multiplier. To return to full inflation and full accuracy, change the multipier to 1.
+    #: An adjustable resolution accuracy variable is computed to indicate the level of accuracy desired. Higher accuracy increases training time.
+    #   Current environment returnes scaled coordinates for each agent. A resolution_accuracy value of 1 here means no unscaling, so all agents
+    #   will fit within 1x1 grid. To make it less accurate but less memory intensive, reduce the resolution multiplier. To return to full inflation
+    #   and full accuracy, change the multipier to 1.
     resolution_accuracy: float = field(init=False)
     #: Ensures heatmap renders to not overwrite eachother when saving to a file.
     render_counter: int = field(init=False)
@@ -1686,7 +1583,7 @@ class CNNBase:
         alpha = 0.7
 
         # Put agent number on save_path
-        if self.save_path == '.':
+        if self.save_path == ".":
             self.save_path = getcwd()
         self.save_path = f"{self.save_path}/{self.id}_agent"
         # Set resolution accuracy
@@ -1699,10 +1596,7 @@ class CNNBase:
         if self.enforce_boundaries:
             self.scaled_offset = self.environment_scale * max(self.bounds_offset)
         else:
-            self.scaled_offset = self.environment_scale * (
-                max(self.bounds_offset)
-                + (self.steps_per_episode * self.detector_step_size)
-            )
+            self.scaled_offset = self.environment_scale * (max(self.bounds_offset) + (self.steps_per_episode * self.detector_step_size))
 
         # For render
         self.render_counter = 0
@@ -1727,25 +1621,21 @@ class CNNBase:
             elif self.no_critic:
                 self.critic = EmptyCritic()
             else:
-                self.critic = Critic(map_dim=self.maps.map_dimensions)  
-            
+                self.critic = Critic(map_dim=self.maps.map_dimensions)
+
         elif SMALL_VERSION:
-            self.pi = Actor(
-                    map_dim=self.maps.map_dimensions, 
-                    action_dim=self.action_space, 
-                    map_count=3
-                )
+            self.pi = Actor(map_dim=self.maps.map_dimensions, action_dim=self.action_space, map_count=3)
             if self.GlobalCritic:
                 self.critic = self.GlobalCritic
             elif self.no_critic:
                 self.critic = EmptyCritic(map_count=3)
             else:
-                self.critic = Critic(map_dim=self.maps.map_dimensions, map_count=3)  
+                self.critic = Critic(map_dim=self.maps.map_dimensions, map_count=3)
         else:
             raise ValueError("Problem in actor intit")
 
         self.mseLoss = nn.MSELoss()
-        
+
         self.model = PFGRUCell(
             num_particles=number_of_particles,
             input_size=obs_dimensions_pfgru,
@@ -1753,8 +1643,8 @@ class CNNBase:
             resamp_alpha=alpha,
             use_resampling=True,
             activation="tanh",
-            hidden_size= self.predictor_hidden_size # (bpf_hsize) (hid_rec in cli)
-        )              
+            hidden_size=self.predictor_hidden_size,  # (bpf_hsize) (hid_rec in cli)
+        )
 
     def set_mode(self, mode: str) -> None:
         """
@@ -1771,9 +1661,7 @@ class CNNBase:
             self.model.eval()
 
         else:
-            raise Warning(
-                "Invalid mode set for Agent. Agent remains in their original training mode"
-            )
+            raise Warning("Invalid mode set for Agent. Agent remains in their original training mode")
 
     def get_map_stack(self, state_observation: Dict[int, npt.NDArray], id: int, location_prediction: Tuple[float, float]):
         actor_map_stack: torch.Tensor
@@ -1807,7 +1695,7 @@ class CNNBase:
                         ]
                     )
                 else:
-                   actor_map_stack = torch.stack(
+                    actor_map_stack = torch.stack(
                         [
                             torch.tensor(location_map),
                             torch.tensor(others_locations_map),
@@ -1823,7 +1711,7 @@ class CNNBase:
                         torch.tensor(visit_counts_map),
                         torch.tensor(obstacles_map),
                     ]
-                )                    
+                )
         elif SMALL_VERSION:
             with torch.no_grad():
                 (
@@ -1851,10 +1739,9 @@ class CNNBase:
                         torch.tensor(readings_map),
                         torch.tensor(obstacles_map),
                     ]
-                )      
+                )
         else:
-            raise ValueError("Something is wrong with your map fetcher")      
-            
+            raise ValueError("Something is wrong with your map fetcher")
 
         # Add single batch tensor dimension for action selection
         batched_actor_mapstack: torch.Tensor = torch.unsqueeze(actor_map_stack, dim=0)
@@ -1862,11 +1749,7 @@ class CNNBase:
 
         return batched_actor_mapstack, batched_critic_mapstack
 
-    def select_action(
-        self, state_observation: Dict[int, npt.NDArray], 
-        id: int,
-        hidden: torch.Tensor
-    ) -> Tuple[ActionChoice, HeatMaps]:
+    def select_action(self, state_observation: Dict[int, npt.NDArray], id: int, hidden: torch.Tensor) -> Tuple[ActionChoice, HeatMaps]:
         """
         Method to take a multi-agent observation and convert it to maps and store to a buffer. Then uses the actor network to select an
         action (and returns action logprobabilities) and the critic network to calculate state-value.
@@ -1878,32 +1761,30 @@ class CNNBase:
             if not SMALL_VERSION:
                 # Extract all observations for PFGRU
                 # TODO make CNN work with lists exclusively
-                obs_list = np.array([state_observation[i][:] for i in range(self.number_of_agents)]) # Create a list of just readings and locations for all agents
-                # obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)                
+                obs_list = np.array(
+                    [state_observation[i][:] for i in range(self.number_of_agents)]
+                )  # Create a list of just readings and locations for all agents
+                # obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)
                 # location_prediction, new_hidden = self.model(obs_tensor, hidden)
-            
-                obs_for_pfgru = torch.as_tensor(obs_list[:, :3], dtype=torch.float32).flatten().unsqueeze(0)
-                location_prediction, new_hidden = self.model(input_=obs_for_pfgru, hx=hidden)             
 
-                prediction_tuple: Tuple[float, float] = tuple(location_prediction.tolist()) # type: ignore
+                obs_for_pfgru = torch.as_tensor(obs_list[:, :3], dtype=torch.float32).flatten().unsqueeze(0)
+                location_prediction, new_hidden = self.model(input_=obs_for_pfgru, hx=hidden)
+
+                prediction_tuple: Tuple[float, float] = tuple(location_prediction.tolist())  # type: ignore
             else:
-                prediction_tuple = [] # type: ignore
+                prediction_tuple = []  # type: ignore
                 location_prediction = []
                 new_hidden = []
 
             # Process data and create maps
             batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(
-                id = id,
-                state_observation = state_observation,
-                location_prediction=prediction_tuple
+                id=id, state_observation=state_observation, location_prediction=prediction_tuple
             )
 
             # Get actions and values
             action, action_logprob = self.pi.act(batched_actor_mapstack)  # Choose action
 
-            state_value: Union[torch.Tensor, None] = self.critic.forward(
-                batched_critic_mapstack
-            )  # size(1)
+            state_value: Union[torch.Tensor, None] = self.critic.forward(batched_critic_mapstack)  # size(1)
 
         state_value_item: Union[float, None]
         if state_value:
@@ -1916,10 +1797,10 @@ class CNNBase:
                 action=action.item(),
                 action_logprob=action_logprob.item(),
                 state_value=state_value_item,
-                loc_pred = location_prediction,
-                hidden = new_hidden
+                loc_pred=location_prediction,
+                hidden=new_hidden,
             ),
-            HeatMaps(batched_actor_mapstack, batched_critic_mapstack), 
+            HeatMaps(batched_actor_mapstack, batched_critic_mapstack),
         )
 
     def get_map_dimensions(self) -> Tuple[int, int]:
@@ -1978,11 +1859,7 @@ class CNNBase:
         self.maps.reset()
         self.reset_flag += 1 if self.reset_flag < 100 else 1
 
-    def step(
-        self,
-        state_observation: Dict[int, npt.NDArray],
-        hidden: Tuple[torch.Tensor, torch.Tensor]
-    ) -> Tuple[ActionChoice, HeatMaps]:
+    def step(self, state_observation: Dict[int, npt.NDArray], hidden: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[ActionChoice, HeatMaps]:
         """Alias for select_action"""
         return self.select_action(state_observation=state_observation, id=self.id, hidden=hidden)
 
@@ -2013,26 +1890,8 @@ class CNNBase:
         :param hidden: hidden layers for PFGRU.
         """
 
-        # NOTE: Original had this create a new prediction, however this will cause the location_prediction map to not match the original. New maps can
-        # be made by pulling full observations from the full_observations_buffer in the ppo_buffer.get() function and uncomment if desired.
-
-        # with torch.no_grad():
-        #     obs_list = [state_observation[i][:3] for i in range(self.number_of_agents)] # Create a list of just readings and locations for all agents
-        #     obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)
-
-        #     location_prediction, _ = self.model(obs_tensor, hidden)
-
-        #     # Process data and create maps
-        #     batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(
-        #         id = id,
-        #         state_observation = state_observation,
-        #         location_prediction = tuple(location_prediction.tolist())
-        #     )
-
         # Get action logprobs and entroy WITH gradient
-        action_logprobs, dist_entropy = self.pi.get_action_information(
-            state_map_stack=actor_mapstack, action=action_taken
-        )
+        action_logprobs, dist_entropy = self.pi.get_action_information(state_map_stack=actor_mapstack, action=action_taken)
 
         # with torch.no_grad():
         #     state_value = self.critic.forward(critic_mapstack)
@@ -2072,37 +1931,25 @@ class CNNBase:
         visits_transposed: npt.NDArray = self.maps.visit_counts_map.T
         obstacles_transposed: npt.NDArray = self.maps.obstacles_map.T
 
-        fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax) = plt.subplots(
-            nrows=1, ncols=5, figsize=(30, 10), tight_layout=True
-        )
+        fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax) = plt.subplots(nrows=1, ncols=5, figsize=(30, 10), tight_layout=True)
 
-        loc_ax.imshow(
-            loc_transposed, cmap="viridis", interpolation=interpolation_method
-        )
+        loc_ax.imshow(loc_transposed, cmap="viridis", interpolation=interpolation_method)
         loc_ax.set_title("Agent Location")
         loc_ax.invert_yaxis()
 
-        other_ax.imshow(
-            other_transposed, cmap="viridis", interpolation=interpolation_method
-        )
+        other_ax.imshow(other_transposed, cmap="viridis", interpolation=interpolation_method)
         other_ax.set_title("Other Agent Locations")
         other_ax.invert_yaxis()
 
-        intensity_ax.imshow(
-            readings_transposed, cmap="viridis", interpolation=interpolation_method
-        )
+        intensity_ax.imshow(readings_transposed, cmap="viridis", interpolation=interpolation_method)
         intensity_ax.set_title("Radiation Intensity")
         intensity_ax.invert_yaxis()
 
-        visit_ax.imshow(
-            visits_transposed, cmap="viridis", interpolation=interpolation_method
-        )
+        visit_ax.imshow(visits_transposed, cmap="viridis", interpolation=interpolation_method)
         visit_ax.set_title("Visit Counts")
         visit_ax.invert_yaxis()
 
-        obs_ax.imshow(
-            obstacles_transposed, cmap="viridis", interpolation=interpolation_method
-        )
+        obs_ax.imshow(obstacles_transposed, cmap="viridis", interpolation=interpolation_method)
         obs_ax.set_title("Obstacles Detected")
         obs_ax.invert_yaxis()
 
@@ -2172,8 +2019,8 @@ class CNNBase:
 
         self.render_counter += 1
         plt.close(fig)
-    
-    def get_config(self)-> List:
+
+    def get_config(self) -> List:
         config = vars(self)
-        
-        return {'CNNBase': config}
+
+        return {"CNNBase": config}
