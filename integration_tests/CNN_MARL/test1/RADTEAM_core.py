@@ -1512,7 +1512,7 @@ class PFGRUCell(PFRNNBaseCell):
         self.fc_n = nn.Linear(self.h_dim + self.input_size, self.h_dim * 2)
 
         self.fc_obs = nn.Linear(self.h_dim + self.input_size, 1)
-        self.hid_obs = mlp([self.h_dim] + [24] + [2], nn.ReLU)
+        self.hid_obs = self.mlp([self.h_dim] + [24] + [2], nn.ReLU)
         self.hnn_dropout = nn.Dropout(p=0)
 
     def forward(self, input_, hx):
@@ -1581,6 +1581,23 @@ class PFGRUCell(PFRNNBaseCell):
         )
         hidden = (h0, p0)
         return hidden
+
+    def mlp(self, sizes, activation, output_activation=nn.Identity, layer_norm=False):
+        layers = []
+
+        if layer_norm:
+            for j in range(len(sizes) - 1):
+                act = activation if j < len(sizes) - 1 else output_activation
+                ln = nn.LayerNorm(sizes[j + 1]) if j < len(sizes) - 1 else None
+                layers += [nn.Linear(sizes[j], sizes[j + 1]), ln, act()]
+            if None in layers:
+                layers.remove(None)
+        else:
+            for j in range(len(sizes) - 1):
+                act = activation if j < len(sizes) - 1 else output_activation
+                layers += [nn.Linear(sizes[j], sizes[j + 1]), act()]
+        return nn.Sequential(*layers)
+
 
 
 @dataclass
@@ -1663,6 +1680,11 @@ class CNNBase:
     reset_flag: int = field(init=False, default=0)  # TODO switch out for pytest mock
 
     def __post_init__(self) -> None:
+        # Particle Filter args
+        obs_dimensions_pfgru = self.observation_space * 3
+        number_of_particles = 40
+        alpha = 0.7
+
         # Put agent number on save_path
         if self.save_path == '.':
             self.save_path = getcwd()
@@ -1725,8 +1747,11 @@ class CNNBase:
         self.mseLoss = nn.MSELoss()
         
         self.model = PFGRUCell(
-            input_size=self.observation_space - 8,
-            obs_size=self.observation_space - 8,
+            num_particles=number_of_particles,
+            input_size=obs_dimensions_pfgru,
+            obs_size=obs_dimensions_pfgru,
+            resamp_alpha=alpha,
+            use_resampling=True,
             activation="tanh",
             hidden_size= self.predictor_hidden_size # (bpf_hsize) (hid_rec in cli)
         )              
@@ -1852,10 +1877,14 @@ class CNNBase:
         with torch.no_grad():
             if not SMALL_VERSION:
                 # Extract all observations for PFGRU
-                obs_list = np.array([state_observation[i][:3] for i in range(self.number_of_agents)]) # Create a list of just readings and locations for all agents
-                obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)                
-                location_prediction, new_hidden = self.model(obs_tensor, hidden)
+                # TODO make CNN work with lists exclusively
+                obs_list = np.array([state_observation[i][:] for i in range(self.number_of_agents)]) # Create a list of just readings and locations for all agents
+                # obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)                
+                # location_prediction, new_hidden = self.model(obs_tensor, hidden)
             
+                obs_for_pfgru = torch.as_tensor(obs_list[:, :3], dtype=torch.float32).flatten().unsqueeze(0)
+                location_prediction, new_hidden = self.model(input_=obs_for_pfgru, hx=hidden)             
+
                 prediction_tuple: Tuple[float, float] = tuple(location_prediction.tolist()) # type: ignore
             else:
                 prediction_tuple = [] # type: ignore

@@ -230,6 +230,7 @@ def update(ac, args, buf, train_pi_iters, train_v_iters, train_pfgru_iters, opti
             
             model_loss = model_loss_arr.mean()
             
+            #model_optimizer.zero_grad()
             optimization.model_optimizer.zero_grad()
             
             model_loss.backward()
@@ -238,10 +239,11 @@ def update(ac, args, buf, train_pi_iters, train_v_iters, train_pfgru_iters, opti
             mpi_avg_grads(ac.model)
             torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
             
+            #model_optimizer.step() 
             optimization.model_optimizer.step()
             
         return model_loss
-      
+          
 
     ###################################################################################
     #data = buf.get(logger=logger)
@@ -370,7 +372,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     ac_kwargs["bounds_offset"] = env.observation_area
     ac_kwargs["grid_bounds"] = env.scaled_grid_max    
     ac_kwargs["steps_per_episode"] = 120
-    ac_kwargs["number_of_agents"] = 1
+    ac_kwargs["number_of_agents"] = number_of_agents
     ac_kwargs["enforce_boundaries"] = env.enforce_grid_boundaries
     
     obs_dim = env.observation_space.shape[0]
@@ -381,7 +383,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     agents = [actor_critic(**ac_kwargs) for _ in range(number_of_agents)]
 
     for ac in agents:    
-        logger.save_config(ac.get_config(), text='_agent')
+        logger.save_config(ac.get_config(), text='_agent', quiet=True)
 
     # TODO Make work with RAD-TEAM    
     # if load_model != 0:
