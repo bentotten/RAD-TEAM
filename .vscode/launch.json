@@ -251,6 +251,17 @@
       "args": ["--agents", "2"],
 
       "cwd": "${workspaceFolder}/integration_tests/RADA2C_MARL/test1"
-    }
+    },
+    {
+      "name": "Test RADTEAM Stage 1 - Test 1",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/integration_tests/CNN_MARL/test1/ppo.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": ["--agents", "2"],
+
+      "cwd": "${workspaceFolder}/integration_tests/CNN_MARL/test1"
+    }    
   ]
 }
