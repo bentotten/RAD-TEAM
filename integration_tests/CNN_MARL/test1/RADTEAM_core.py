@@ -1393,12 +1393,12 @@ class PFRNNBaseCell(nn.Module):
 
     def __init__(
         self,
-        num_particles: int,
-        input_size: int,
-        hidden_size: int,
-        resamp_alpha: float,
-        use_resampling: bool,
-        activation: str,
+        num_particles,
+        input_size,
+        hidden_size,
+        resamp_alpha,
+        use_resampling,
+        activation,
     ):
         """init function
 
@@ -1410,37 +1410,21 @@ class PFRNNBaseCell(nn.Module):
             use_resampling {bool} -- whether to use soft-resampling
             activation {str} -- activation function to use
         """
-        super().__init__()
-        self.num_particles: int = num_particles
-        self.samp_thresh: float = num_particles * 1.0
-        self.input_size: int = input_size
-        self.h_dim: int = hidden_size
-        self.resamp_alpha: float = resamp_alpha
-        self.use_resampling: bool = use_resampling
-        self.activation: str = activation
-        self.initialize: str = "rand"
+        super(PFRNNBaseCell, self).__init__()
+        self.num_particles = num_particles
+        self.samp_thresh = num_particles * 1.0
+        self.input_size = input_size
+        self.h_dim = hidden_size
+        self.resamp_alpha = resamp_alpha
+        self.use_resampling = use_resampling
+        self.activation = activation
+        self.initialize = "rand"
         if activation == "relu":
-            self.batch_norm: nn.BatchNorm1d = nn.BatchNorm1d(
+            self.batch_norm = nn.BatchNorm1d(
                 self.num_particles, track_running_stats=False
             )
 
-    @overload
-    def resampling(
-        self, particles: torch.Tensor, prob: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        ...
-
-    @overload
-    def resampling(
-        self, particles: Tuple[torch.Tensor, torch.Tensor], prob: torch.Tensor
-    ) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
-        ...
-
-    def resampling(
-        self,
-        particles: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]],
-        prob: torch.Tensor,
-    ) -> Tuple[Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], torch.Tensor]:
+    def resampling(self, particles, prob):
         """soft-resampling
 
         Arguments:
@@ -1448,7 +1432,7 @@ class PFRNNBaseCell(nn.Module):
             prob {tensor} -- particle weights
 
         Returns:
-            Tuple -- particles
+            tuple -- particles
         """
 
         resamp_prob = (
@@ -1456,27 +1440,24 @@ class PFRNNBaseCell(nn.Module):
             + (1 - self.resamp_alpha) * 1 / self.num_particles
         )
         resamp_prob = resamp_prob.view(self.num_particles, -1)
-        flatten_indices = (
-            torch.multinomial(
-                resamp_prob.transpose(0, 1),
-                num_samples=self.num_particles,
-                replacement=True,
-            )
-            .transpose(1, 0)
-            .contiguous()
-            .view(-1, 1)
-            .squeeze()
+        indices = torch.multinomial(
+            resamp_prob.transpose(0, 1),
+            num_samples=self.num_particles,
+            replacement=True,
         )
+        batch_size = indices.size(0)
+        indices = indices.transpose(1, 0).contiguous()
+        flatten_indices = indices.view(-1, 1).squeeze()
 
         # PFLSTM
-        if type(particles) == Tuple:
+        if type(particles) == tuple:
             particles_new = (
                 particles[0][flatten_indices],
                 particles[1][flatten_indices],
             )
         # PFGRU
         else:
-            particles_new = particles[flatten_indices]  # type: ignore
+            particles_new = particles[flatten_indices]
 
         prob_new = torch.exp(prob.view(-1, 1)[flatten_indices])
         prob_new = prob_new / (
@@ -1487,34 +1468,35 @@ class PFRNNBaseCell(nn.Module):
 
         return particles_new, prob_new
 
-    def reparameterize(self, mean: torch.Tensor, var: torch.Tensor) -> torch.Tensor:
+    def reparameterize(self, mu, var):
         """Implements the reparameterization trick introduced in [Auto-Encoding Variational Bayes](https://arxiv.org/abs/1312.6114)
 
         Arguments:
-            mean {tensor} -- learned mean
+            mu {tensor} -- learned mean
             var {tensor} -- learned variance
 
         Returns:
             tensor -- sample
         """
-        std: torch.Tensor = F.softplus(var)
-        eps: torch.Tensor = torch.FloatTensor(std.shape).normal_()
-        return mean + eps * std
+        std = torch.nn.functional.softplus(var)
+        # if torch.cuda.is_available():
+        #     eps = torch.cuda.FloatTensor(std.shape).normal_()
+        # else:
+        eps = torch.FloatTensor(std.shape).normal_()
 
+        return mu + eps * std
 
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFGRUCell(PFRNNBaseCell):
-    """Particle Filter Gated Recurrent Unit"""
-
     def __init__(
         self,
-        input_size: int,
-        obs_size: int,
-        activation: str,
-        use_resampling: bool = True,
-        num_particles: int = 40,
-        hidden_size: int = 64,
-        resamp_alpha: float = 0.7,
+        num_particles,
+        input_size,
+        obs_size,
+        hidden_size,
+        resamp_alpha,
+        use_resampling,
+        activation,
     ):
         super().__init__(
             num_particles,
@@ -1525,59 +1507,35 @@ class PFGRUCell(PFRNNBaseCell):
             activation,
         )
 
-        def mlp(
-            sizes: List[Shape],
-            activation,
-            output_activation=nn.Identity,
-            layer_norm: bool = False,
-        ) -> nn.Sequential:
-            """Create a Multi-Layer Perceptron"""
-            layers = []
-            for j in range(len(sizes) - 1):
-                layer = [nn.Linear(sizes[j], sizes[j + 1])]  # type: ignore
+        self.fc_z = nn.Linear(self.h_dim + self.input_size, self.h_dim)
+        self.fc_r = nn.Linear(self.h_dim + self.input_size, self.h_dim)
+        self.fc_n = nn.Linear(self.h_dim + self.input_size, self.h_dim * 2)
 
-                if layer_norm:
-                    ln = nn.LayerNorm(sizes[j + 1]) if j < len(sizes) - 1 else None  # type: ignore
-                    layer.append(ln)  # type: ignore
+        self.fc_obs = nn.Linear(self.h_dim + self.input_size, 1)
+        self.hid_obs = mlp([self.h_dim] + [24] + [2], nn.ReLU)
+        self.hnn_dropout = nn.Dropout(p=0)
 
-                layer.append(
-                    activation() if j < len(sizes) - 1 else output_activation()
-                )
-                layers += layer
-            if layer_norm and None in layers:
-                layers.remove(None)  #  type: ignore
-            return nn.Sequential(*layers)
-
-        self.fc_z: nn.Linear = nn.Linear(self.h_dim + self.input_size, self.h_dim)
-        self.fc_r: nn.Linear = nn.Linear(self.h_dim + self.input_size, self.h_dim)
-        self.fc_n: nn.Linear = nn.Linear(self.h_dim + self.input_size, self.h_dim * 2)
-
-        self.fc_obs: nn.Linear = nn.Linear(self.h_dim + self.input_size, 1)
-        self.hid_obs: nn.Sequential = mlp([self.h_dim, 24, 2], nn.ReLU)
-        self.hnn_dropout: nn.Dropout = nn.Dropout(p=0)
-
-    def forward(
-        self, input_: torch.Tensor, hx: Tuple[torch.Tensor, torch.Tensor]
-    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    def forward(self, input_, hx):
         """One step forward for PFGRU
 
         Arguments:
             input_ {tensor} -- the input tensor
-            hx {Tuple} -- previous hidden state (particles, weights)
+            hx {tuple} -- previous hidden state (particles, weights)
 
         Returns:
-            Tuple -- new tensor
+            tuple -- new tensor
         """
+
         h0, p0 = hx
         obs_in = input_.repeat(h0.shape[0], 1)
         obs_cat = torch.cat((h0, obs_in), dim=1)
 
         z = torch.sigmoid(self.fc_z(obs_cat))
         r = torch.sigmoid(self.fc_r(obs_cat))
-        n_1 = self.fc_n(torch.cat((r * h0, obs_in), dim=1))
+        n = self.fc_n(torch.cat((r * h0, obs_in), dim=1))
 
-        mu_n, var_n = torch.split(n_1, split_size_or_sections=self.h_dim, dim=1)
-        n: torch.Tensor = self.reparameterize(mu_n, var_n)
+        mu_n, var_n = torch.split(n, split_size_or_sections=self.h_dim, dim=1)
+        n = self.reparameterize(mu_n, var_n)
 
         if self.activation == "relu":
             # if we use relu as the activation, batch norm is require
@@ -1590,7 +1548,7 @@ class PFGRUCell(PFRNNBaseCell):
         else:
             raise ModuleNotFoundError
 
-        h1: torch.Tensor = (1 - z) * n + z * h0
+        h1 = (1 - z) * n + z * h0
 
         p1 = self.observation_likelihood(h1, obs_in, p0)
 
@@ -1598,46 +1556,32 @@ class PFGRUCell(PFRNNBaseCell):
             h1, p1 = self.resampling(h1, p1)
 
         p1 = p1.view(-1, 1)
-        mean_hid = torch.sum(torch.exp(p1) * self.hnn_dropout(h1), dim=0)
-        loc_pred: torch.Tensor = self.hid_obs(mean_hid)
+
+        mean_hid = (torch.exp(p1) * self.hnn_dropout(h1)).sum(axis=0)
+        loc_pred = self.hid_obs(mean_hid)
 
         return loc_pred, (h1, p1)
 
-    def observation_likelihood(
-        self, h1: torch.Tensor, obs_in: torch.Tensor, p0: torch.Tensor
-    ) -> torch.Tensor:
+    def observation_likelihood(self, h1, obs_in, p0):
         """observation function based on compatibility function"""
-        logpdf_obs: torch.Tensor = self.fc_obs(torch.cat((h1, obs_in), dim=1))
-        p1: torch.Tensor = logpdf_obs + p0
+        logpdf_obs = self.fc_obs(torch.cat((h1, obs_in), dim=1))
+
+        p1 = logpdf_obs + p0
+
         p1 = p1.view(self.num_particles, -1, 1)
-        p1 = F.log_softmax(p1, dim=0)
+        p1 = nn.functional.log_softmax(p1, dim=0)
+
         return p1
 
-    def init_hidden(self, batch_size: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        initializer: Callable[[int, int], torch.Tensor] = (
-            torch.rand if self.initialize == "rand" else torch.zeros
-        )
+    def init_hidden(self, batch_size):
+        initializer = torch.rand if self.initialize == "rand" else torch.zeros
         h0 = initializer(batch_size * self.num_particles, self.h_dim)
-        p0: torch.Tensor = torch.ones(batch_size * self.num_particles, 1) * np.log(
+        p0 = torch.ones(batch_size * self.num_particles, 1) * np.log(
             1 / self.num_particles
         )
         hidden = (h0, p0)
         return hidden
 
-    def save_model(self, checkpoint_path: str) -> None:
-        torch.save(self.state_dict(), f"{checkpoint_path}/predictor.pt")
-
-    def load_model(self, checkpoint_path: str) -> None:
-        assert path.isfile(f"{checkpoint_path}/predictor.pt"), "Model does not exist"
-        self.load_state_dict(
-            torch.load(
-                f"{checkpoint_path}/predictor.pt",
-                map_location=lambda storage, loc: storage,
-            )
-        )
-        
-    def get_config(self):
-        return vars(self)        
 
 @dataclass
 class CNNBase:
