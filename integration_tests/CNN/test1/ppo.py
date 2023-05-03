@@ -232,11 +232,9 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         data, pi_maps, v_maps = buf.get() # TODO use arrays not dicts for faster processing
 
         #Update function if using the PFGRU, fcn. performs multiple updates per call
-        #ac.model.train()
-        #loss_mod = update_model(data, args, loss=loss_fcn)
-
-        #Update function if using the regression GRU
-        #loss_mod = update_loc_rnn(data,env,loss)
+        if PFGRU:
+            ac.model.train()
+            loss_mod = update_model(data, args, loss=loss_fcn)
 
         sample_indexes = sample(data=data)
         kk = 0

@@ -55,7 +55,7 @@ from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 import core as RADA2C_core  # type: ignore
 
 # NOTE: Do not use Ray with env generator for random position generation; will create duplicates of identical episode configurations. Ok for TEST1
-USE_RAY = True
+USE_RAY = False
 
 
 @dataclass
@@ -91,7 +91,7 @@ class Distribution:
 
 
 # Uncomment when ready to run with Ray
-@ray.remote
+# @ray.remote
 @dataclass
 class EpisodeRunner:
     id: int
@@ -620,7 +620,7 @@ if __name__ == "__main__":
         "enforce_grid_boundaries": True,
         "DEBUG": True,
         "np_random": rng,
-        "TEST": 1,
+        "TEST": 2,
     }
 
     eval_kwargs = dict(

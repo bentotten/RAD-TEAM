@@ -16,79 +16,9 @@ from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar
 
 BATCHED_UPDATE = True
 
-def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0, 
-        steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
-        vf_lr=3e-4, train_pi_iters=40, train_v_iters=40, lam=0.9, max_ep_len=120, save_gif=False,
-        target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None, load_model=0, PFGRU=True):
-
-    # Special function to avoid certain slowdowns from PyTorch + MPI combo.
-    setup_pytorch_for_mpi()
-
-    # Set Pytorch random seed
-    torch.manual_seed(seed)
-
-    # Instantiate environment
-    env = env_fn()
-    #ac_kwargs['seed'] = seed
-    # ac_kwargs['pad_dim'] = 2
-    ac_kwargs["id"] = 0
-    ac_kwargs["action_space"] = env.detectable_directions  # Usually 8
-    ac_kwargs["observation_space"] = env.observation_space.shape[0]  # Also known as state dimensions: The dimensions of the observation returned from the environment. Usually 11
-    ac_kwargs["detector_step_size"] = env.step_size  # Usually 100 cm
-    ac_kwargs["environment_scale"] = env.scale
-    ac_kwargs["bounds_offset"] = env.observation_area
-    ac_kwargs["grid_bounds"] = env.scaled_grid_max    
-    ac_kwargs["steps_per_episode"] = 120
-    ac_kwargs["number_of_agents"] = 1
-    ac_kwargs["enforce_boundaries"] = env.enforce_grid_boundaries
-    ac_kwargs["PFGRU"] = PFGRU
     
-    # Set up logger and save configuration
-    logger = EpochLogger(**logger_kwargs)
-    logger.save_config(locals(), quiet=True)    
-
-    obs_dim = env.observation_space.shape[0]
-
-    #Instantiate A2C
-    ac = actor_critic(**ac_kwargs)
-    
-    logger.save_config(ac.get_config(), text='_agent', quiet=True)
-    
-    if load_model != 0:
-        ac.load_state_dict(torch.load('model.pt'))           
-    
-    # Sync params across processes
-    sync_params(ac.pi)
-    sync_params(ac.critic)
-    #sync_params(ac.model)
-
-    #PFGRU args, from Ma et al. 2020
-    bp_args = {
-        'bp_decay' : 0.1,
-        'l2_weight':1.0, 
-        'l1_weight':0.0,
-        'elbo_weight':1.0,
-        'area_scale':env.search_area[2][1]}
-
-    # Count variables
-    var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.critic, ac.model])
-    logger.log('\nNumber of parameters: \t Actor: %d, Critic: %d Predictor:%d \t'%var_counts)
-
-    # Set up trajectory buffer
-    local_steps_per_epoch = int(steps_per_epoch / num_procs())
-    #buf = PPOBuffer(obs_dim, act_dim, local_steps_per_epoch, gamma, lam, ac_kwargs['hidden_sizes_rec'][0])
-    buf = ppo_tools.PPOBuffer(observation_dimension=obs_dim, max_size=local_steps_per_epoch, max_episode_length=120, number_agents=1)
-    
-    save_gif_freq = epochs // 3
-    if proc_id() == 0:
-        print(f'Local steps per epoch: {local_steps_per_epoch}')
-
-    optimization = ppo_tools.OptimizationStorage(
-        pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
-        critic_optimizer= Adam(ac.critic.parameters(), lr=vf_lr), 
-        #model_optimizer=Adam(ac.model.parameters(), lr=vf_lr), 
-        MSELoss=torch.nn.MSELoss(reduction="mean"),
-    )    
+def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pfgru_iters, target_kl, clip_ratio, number_of_agents, id):
+    """Update for the localization and A2C modules"""
 
     def sample(data, minibatch=1):
         """Get sample indexes of episodes to train on"""
@@ -223,110 +153,178 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             critic_loss_list.append(compute_loss_critic(agent=agent, data=data, map_stack=map_buffer_maps, index=index))
 
         # take mean of everything for batch update
-        return torch.stack(critic_loss_list).mean()
+        return torch.stack(critic_loss_list).mean()    
     
-    def update(env, args, loss_fcn=optimization.MSELoss):
-        """Update for the localization and A2C modules"""
-        #data = buf.get(logger=logger)
-        ac.set_mode("train")
-        data, pi_maps, v_maps = buf.get() # TODO use arrays not dicts for faster processing
+    #data = buf.get(logger=logger)
+    ac.set_mode("train")
+    data, pi_maps, v_maps = buf.get() # TODO use arrays not dicts for faster processing
 
-        #Update function if using the PFGRU, fcn. performs multiple updates per call
-        #ac.model.train()
-        #loss_mod = update_model(data, args, loss=loss_fcn)
+    #Update function if using the PFGRU, fcn. performs multiple updates per call
+    #ac.model.train()
+    #loss_mod = update_model(data, args, loss=loss_fcn)
 
-        #Update function if using the regression GRU
-        #loss_mod = update_loc_rnn(data,env,loss)
+    #Update function if using the regression GRU
+    #loss_mod = update_loc_rnn(data,env,loss)
 
-        sample_indexes = sample(data=data)
-        kk = 0
-        kl_bound_flag = False
-        while kk < train_pi_iters and not kl_bound_flag:
-            if BATCHED_UPDATE:
-                optimization.pi_optimizer.zero_grad()           
-                                     
-                loss_pi, kl, entropy, clip_fraction = compute_batched_losses_pi(agent=ac, data=data, sample=sample_indexes, mapstacks_buffer=pi_maps)
+    sample_indexes = sample(data=data)
+    kk = 0
+    kl_bound_flag = False
+    while kk < train_pi_iters and not kl_bound_flag:
+        if BATCHED_UPDATE:
+            optimization.pi_optimizer.zero_grad()           
+                                    
+            loss_pi, kl, entropy, clip_fraction = compute_batched_losses_pi(agent=ac, data=data, sample=sample_indexes, mapstacks_buffer=pi_maps)
 
-                if kl < 1.5 * target_kl:
-                    loss_pi.backward()
-                    optimization.pi_optimizer.step()
-                else:
-                    logger.log('Early stopping at update iteration %d due to reaching max kl.'%kk)                    
-                    kl_bound_flag = True
-                    break
-                
-            elif not BATCHED_UPDATE:
-                for step in sample_indexes:
-                    ac.reset()
-                    optimization.pi_optimizer.zero_grad()
-                    
-                    loss_pi, kl, entropy, clip_fraction = compute_loss_pi(agent=ac, data=data, map_stack=pi_maps, index=step)
- 
-                    loss_pi.backward()
-                    optimization.pi_optimizer.step()
-                if kl < 1.5 * target_kl:
-                    logger.log('Early stopping at update iteration %d due to reaching max kl.'%kk)                        
-                    kl_bound_flag = True
-                    break       
+            if kl < 1.5 * target_kl:
+                loss_pi.backward()
+                optimization.pi_optimizer.step()
             else:
-                raise ValueError("Batched update problem")
-            kk += 1
-        
-        pi_info = dict(kl = kl, ent = entropy, cf = clip_fraction) # Just for last step          
+                print('Early stopping at update iteration %d due to reaching max kl.'%kk)                    
+                kl_bound_flag = True
+                break
+            
+        elif not BATCHED_UPDATE:
+            for step in sample_indexes:
+                ac.reset()
+                optimization.pi_optimizer.zero_grad()
+                
+                loss_pi, kl, entropy, clip_fraction = compute_loss_pi(agent=ac, data=data, map_stack=pi_maps, index=step)
 
-        # Update value function 
-        for i in range(train_v_iters):
-            if BATCHED_UPDATE:
+                loss_pi.backward()
+                optimization.pi_optimizer.step()
+            if kl < 1.5 * target_kl:
+                print('Early stopping at update iteration %d due to reaching max kl.'%kk)                        
+                kl_bound_flag = True
+                break       
+        else:
+            raise ValueError("Batched update problem")
+        kk += 1
+    
+    pi_info = dict(kl = kl, ent = entropy, cf = clip_fraction) # Just for last step          
+
+    # Update value function 
+    for i in range(train_v_iters):
+        if BATCHED_UPDATE:
+            optimization.critic_optimizer.zero_grad()
+            loss_v = compute_batched_losses_critic(agent=ac, data=data, sample=sample_indexes, map_buffer_maps=v_maps)
+            
+            loss_v.backward()
+            optimization.critic_optimizer.step()
+            
+        elif not BATCHED_UPDATE:
+            for step in sample_indexes:
+                ac.reset()
+
                 optimization.critic_optimizer.zero_grad()
-                loss_v = compute_batched_losses_critic(agent=ac, data=data, sample=sample_indexes, map_buffer_maps=v_maps)
-                
+                loss_v = compute_loss_critic(agent=ac, index=step, data=data, map_stack=v_maps)
                 loss_v.backward()
-                optimization.critic_optimizer.step()
-                
-            elif not BATCHED_UPDATE:
-                for step in sample_indexes:
-                    ac.reset()
+                mpi_avg_grads(ac.critic)    # average grads across MPI processes
+                optimization.critic_optimizer.step()    
+        else:
+            raise ValueError("Batched update problem")                            
+    
+    #Reduce learning rate
+    #pi_scheduler.step()
+    optimization.pi_scheduler.step()                
+    optimization.critic_scheduler.step()        
+    #model_scheduler.step()
+    #optimization.model_scheduler.step()
 
-                    optimization.critic_optimizer.zero_grad()
-                    loss_v = compute_loss_critic(agent=ac, index=step, data=data, map_stack=v_maps)
-                    loss_v.backward()
-                    mpi_avg_grads(ac.critic)    # average grads across MPI processes
-                    optimization.critic_optimizer.step()    
-            else:
-                raise ValueError("Batched update problem")                            
-        
-        #Reduce learning rate
-        #pi_scheduler.step()
-        optimization.pi_scheduler.step()                
-        optimization.critic_scheduler.step()        
-        #model_scheduler.step()
-        #optimization.model_scheduler.step()
+    # Log changes from update
+    kl, ent, cf = pi_info['kl'], pi_info['ent'], pi_info['cf']
 
-        logger.store(StopIter=kk)
+    # Log changes from update
+    kl, ent, cf = (
+        pi_info["kl"],
+        pi_info["ent"],
+        pi_info["cf"],
+    )
+    
+    # TODO implement when PFGRU is up
+    if PFGRU:
+        raise NotImplementedError("PFGRU update not yet implements")
+    LossModel=0 # loss_mod
+    LocLoss=0
+    VarExplain=0
 
-        # Log changes from update
-        kl, ent, cf = pi_info['kl'], pi_info['ent'], pi_info['cf']
+    ac.set_mode("eval")
 
-        # Log changes from update
-        kl, ent, cf = (
-            pi_info["kl"],
-            pi_info["ent"],
-            pi_info["cf"],
-        )
+    return loss_pi, loss_v, LossModel, kl, ent, cf, LocLoss, VarExplain, kk
 
-        logger.store(
-            LossPi=loss_pi.item(),
-            LossV=loss_v.item(),
-            LossModel=0, # loss_mod
-            KL=kl,
-            Entropy=ent,
-            ClipFrac=cf,
-            LocLoss=0,
-            VarExplain=0,
-        )
-        
-        ac.set_mode("eval")
-        ########################
+
+def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0, 
+        steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
+        vf_lr=3e-4, train_pi_iters=40, train_v_iters=40, lam=0.9, max_ep_len=120, save_gif=False,
+        target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None, load_model=0, PFGRU=True, number_of_agents=1):
+
+    # Special function to avoid certain slowdowns from PyTorch + MPI combo.
+    setup_pytorch_for_mpi()
+
+    # Set Pytorch random seed
+    torch.manual_seed(seed)
+
+    # Instantiate environment
+    env = env_fn()
+    #ac_kwargs['seed'] = seed
+    # ac_kwargs['pad_dim'] = 2
+    ac_kwargs["id"] = 0
+    ac_kwargs["action_space"] = env.detectable_directions  # Usually 8
+    ac_kwargs["observation_space"] = env.observation_space.shape[0]  # Also known as state dimensions: The dimensions of the observation returned from the environment. Usually 11
+    ac_kwargs["detector_step_size"] = env.step_size  # Usually 100 cm
+    ac_kwargs["environment_scale"] = env.scale
+    ac_kwargs["bounds_offset"] = env.observation_area
+    ac_kwargs["grid_bounds"] = env.scaled_grid_max    
+    ac_kwargs["steps_per_episode"] = 120
+    ac_kwargs["number_of_agents"] = 1
+    ac_kwargs["enforce_boundaries"] = env.enforce_grid_boundaries
+    ac_kwargs["PFGRU"] = PFGRU
+    
+    # Set up logger and save configuration
+    logger = EpochLogger(**logger_kwargs)
+    logger.save_config(locals(), quiet=True)    
+
+    obs_dim = env.observation_space.shape[0]
+
+    #Instantiate A2C
+    ac = actor_critic(**ac_kwargs)
+    
+    logger.save_config(ac.get_config(), text='_agent', quiet=True)
+    
+    if load_model != 0:
+        ac.load_state_dict(torch.load('model.pt'))           
+    
+    # Sync params across processes
+    sync_params(ac.pi)
+    sync_params(ac.critic)
+    #sync_params(ac.model)
+
+    #PFGRU args, from Ma et al. 2020
+    bp_args = {
+        'bp_decay' : 0.1,
+        'l2_weight':1.0, 
+        'l1_weight':0.0,
+        'elbo_weight':1.0,
+        'area_scale':env.search_area[2][1]}
+
+    # Count variables
+    var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.critic, ac.model])
+    logger.log('\nNumber of parameters: \t Actor: %d, Critic: %d Predictor:%d \t'%var_counts)
+
+    # Set up trajectory buffer
+    local_steps_per_epoch = int(steps_per_epoch / num_procs())
+    #buf = PPOBuffer(obs_dim, act_dim, local_steps_per_epoch, gamma, lam, ac_kwargs['hidden_sizes_rec'][0])
+    buf = ppo_tools.PPOBuffer(observation_dimension=obs_dim, max_size=local_steps_per_epoch, max_episode_length=120, number_agents=1)
+    
+    save_gif_freq = epochs // 3
+    if proc_id() == 0:
+        print(f'Local steps per epoch: {local_steps_per_epoch}')
+
+    optimization = ppo_tools.OptimizationStorage(
+        pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
+        critic_optimizer= Adam(ac.critic.parameters(), lr=vf_lr), 
+        #model_optimizer=Adam(ac.model.parameters(), lr=vf_lr), 
+        MSELoss=torch.nn.MSELoss(reduction="mean"),
+    )    
 
     ##########################################################################################################################################
     # Prepare for interaction with environment
@@ -442,9 +440,64 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         
             pass
 
-
         # Perform PPO update!
-        update(env, bp_args)
+        actor_loss = np.zeros(number_of_agents)     
+        critic_loss = np.zeros(number_of_agents)     
+        model_loss = np.zeros(number_of_agents)              
+        kl = np.zeros(number_of_agents)
+        entropy = np.zeros(number_of_agents)
+        clip_frac = np.zeros(number_of_agents)
+        loc_loss = np.zeros(number_of_agents)
+        VarExplain = np.zeros(number_of_agents)
+        stop_iteration = np.zeros(number_of_agents)        
+        
+        for id in range(number_of_agents):
+            (
+                actor_loss[id],
+                critic_loss[id],
+                model_loss[id],
+                kl[id],
+                entropy[id],
+                clip_frac[id],
+                loc_loss[id],
+                VarExplain[id],
+                stop_iteration[id],
+            ) = update( 
+                ac=ac,
+                buf=buf,
+                optimization=optimization,                
+                PFGRU=PFGRU,
+                train_pi_iters=train_pi_iters,
+                train_v_iters=train_v_iters,
+                train_pfgru_iters=0,
+                target_kl=target_kl,
+                clip_ratio=clip_ratio,                
+                number_of_agents=number_of_agents,
+                id=id,
+            )
+        
+        # Get averages
+        loss_pi = actor_loss.mean().item()        
+        loss_v = critic_loss.mean().item()
+        loss_mod = model_loss.mean().item()
+        loc_loss = loc_loss.mean().item()
+        kl = kl.mean().item()
+        ent = entropy.mean().item()
+        cf = clip_frac.mean().item()
+        var_explain = VarExplain.mean().item()     
+        stop_iteration = stop_iteration.mean().item()     
+        
+        logger.store(
+            LossPi=loss_pi,
+            LossV=loss_v,
+            LossModel=loss_mod, # loss_mod
+            KL=kl,
+            Entropy=ent,
+            ClipFrac=cf,
+            LocLoss=0,
+            VarExplain=var_explain,
+            StopIter=stop_iteration        
+        )        
 
         # Log info about epoch
         logger.log_tabular('Epoch', epoch)
@@ -489,6 +542,8 @@ if __name__ == '__main__':
     parser.add_argument('--net_type',type=str, default='rnn', help='Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp') 
     parser.add_argument('--alpha',type=float,default=0.1, help='Entropy reward term scaling') 
     parser.add_argument('--load_model', type=int, default=0)
+    parser.add_argument('--agents', type=int, default=1)
+    
     
     args = parser.parse_args()
 
@@ -541,5 +596,5 @@ if __name__ == '__main__':
     ppo(lambda : gym.make(args.env,**init_dims), actor_critic=CNNBase,
         ac_kwargs=ac_kwargs, gamma=args.gamma, alpha=args.alpha,
         seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,
-        logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model, PFGRU=PFGRU)
+        logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model, PFGRU=PFGRU, number_of_agents=args.agents)
     
