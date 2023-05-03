@@ -353,8 +353,6 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     # o = o[0]
     ep_ret, ep_len, done_count, a = 0, 0, 0, -1
 
-    oob = 0
-
     for id in range(number_of_agents):
         agents[id].set_mode("eval")
 
@@ -370,7 +368,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             
           #compute action and logp (Actor), compute value (Critic)            
             for id in range(number_of_agents):
-                result_single, heatmap_stack_single = ac.step(o, hidden=agents[id].reset_hidden())
+                result_single, heatmap_stack_single = agents[id].step(o, hidden=agents[id].reset_hidden())
                 results.append(result_single)
                 heatmap_stacks.append(heatmap_stack_single)
                 action_batch[id] = result_single.action
@@ -383,17 +381,6 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             ep_len += 1
 
             logger.store(VVals=values.mean())
-            # buf.store(
-            #     obs=o[0],
-            #     act=result.action,
-            #     val=result.state_value,
-            #     logp=result.action_logprob,
-            #     rew=r,
-            #     src=env.src_coords,
-            #     full_observation=o,
-            #     heatmap_stacks=heatmap_stack,
-            #     terminal=d,
-            # )
 
             for id in range(number_of_agents):
                 buffer[id].store(
@@ -420,7 +407,6 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     done_count += 1
                 if env.get_agent_outOfBounds_count(id=0) > 0:
                     # Log if agent went out of bounds
-                    oob += 1
                 if epoch_ended and not(terminal):
                     print(f'Warning: trajectory cut off by epoch at {ep_len} steps and time {t}.', flush=True)
 
@@ -475,10 +461,8 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     ep_ret, ep_len, a = 0, 0, -1    
                 else:
                     #Sample new environment parameters, log epoch results
-                    oob += env.get_agent_outOfBounds_count(id=0)
-                    logger.store(DoneCount=done_count, OutOfBound=oob)
+                    logger.store(DoneCount=done_count)
                     done_count = 0; 
-                    oob = 0
                     o, _, _, _ = env.reset()
                     ep_ret, ep_len, a = 0, 0, -1
 
