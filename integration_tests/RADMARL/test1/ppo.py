@@ -446,6 +446,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         loss_pi = actor_loss.mean().item()        
         loss_v = critic_loss.mean().item()
         loss_mod = model_loss.mean().item()
+        loc_loss = loc_loss.mean().item()
         kl = kl.mean().item()
         ent = entropy.mean().item()
         cf = clip_frac.mean().item()
@@ -459,6 +460,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             Entropy=ent,
             ClipFrac=cf,
             VarExplain=var_explain,
+            LocLoss = loc_loss,
         )
 
         # Log info about epoch
