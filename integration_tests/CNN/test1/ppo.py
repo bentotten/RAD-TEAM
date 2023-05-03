@@ -499,7 +499,7 @@ if __name__ == '__main__':
     PFGRU = False
 
     #Save directory and experiment name
-    args.env_name = 'stage_1'
+    args.env_name = 'stage_2'
     args.exp_name = (f'{args.exp_name}')
 
     init_dims = {
