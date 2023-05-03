@@ -351,7 +351,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     assert isinstance(o, dict), "Incompatible environment step return mode. Must be in Dict mode."
     
     # o = o[0]
-    ep_ret, ep_len, done_count, a = 0, 0, 0, -1
+    ep_ret, ep_len, done_count = 0, 0, 0
 
     for id in range(number_of_agents):
         agents[id].set_mode("eval")
@@ -359,6 +359,9 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     # Main loop: collect experience in env and update/log each epoch
     print(f'Proc id: {proc_id()} -> Starting main training loop!', flush=True)
     for epoch in range(epochs):
+        # For rendering labeling
+        episode_count = 0
+        
         for t in range(local_steps_per_epoch):
             # TODO make this with a numpy array instead
             results = []
@@ -403,6 +406,8 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             epoch_ended = t==local_steps_per_epoch-1
             
             if terminal or epoch_ended:
+                episode_count += 1
+                
                 if d and not timeout:
                     done_count += 1
                     
@@ -441,7 +446,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                         env.render(
                             path=logger.output_dir,
                             epoch_count=epoch,
-                            episode_count=ep_count,
+                            episode_count=episode_count,
                             silent=False,
                         )
                         # Render environment image
@@ -449,7 +454,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                             path=logger.output_dir,
                             epoch_count=epoch,
                             just_env=True,
-                            episode_count=ep_count,
+                            episode_count=episode_count,
                             silent=False,
                         )
                         for id in range(number_of_agents):
@@ -458,13 +463,13 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                 if not env.epoch_end:
                     #Reset detector position and episode tracking
                     o, _, _, _ = env.reset()
-                    ep_ret, ep_len, a = 0, 0, -1    
+                    ep_ret, ep_len = 0, 0 
                 else:
                     #Sample new environment parameters, log epoch results
                     logger.store(DoneCount=done_count)
                     done_count = 0; 
                     o, _, _, _ = env.reset()
-                    ep_ret, ep_len, a = 0, 0, -1
+                    ep_ret, ep_len = 0, 0
 
                 # Clear maps for next episode
                 for id in range(number_of_agents):
