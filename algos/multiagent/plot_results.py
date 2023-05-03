@@ -70,7 +70,12 @@ def get_datasets(logdir, condition=None):
             # exp_data.insert(len(exp_data.columns),'Unit',unit)
             exp_data.insert(len(exp_data.columns), "Condition1", condition1)
             exp_data.insert(len(exp_data.columns), "Condition2", condition2)
-            exp_data.insert(len(exp_data.columns), "Performance", exp_data[performance])
+            try:
+                exp_data.insert(len(exp_data.columns), "Performance", exp_data[performance])
+            except:
+                performance = "AverageEpRet"
+                exp_data.insert(len(exp_data.columns), "Performance", exp_data[performance])
+                
             datasets.append(exp_data)
     return datasets
 
