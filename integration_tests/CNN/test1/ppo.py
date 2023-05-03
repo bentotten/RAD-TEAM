@@ -233,8 +233,13 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
 
         #Update function if using the PFGRU, fcn. performs multiple updates per call
         if PFGRU:
-            ac.model.train()
-            loss_mod = update_model(data, args, loss=loss_fcn)
+            raise NotImplementedError("PFGRU update not implemented")
+            #Update function if using the PFGRU, fcn. performs multiple updates per call
+            #ac.model.train()
+            #loss_mod = update_model(data, args, loss=loss_fcn)
+
+            #Update function if using the regression GRU
+            #loss_mod = update_loc_rnn(data,env,loss)
 
         sample_indexes = sample(data=data)
         kk = 0
@@ -435,6 +440,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         if (epoch % save_freq == 0) or (epoch == epochs-1):
             fpath = "pyt_save"
             fpath = os.path.join(logger.output_dir, fpath)
+            logger.log(f"Saving model to {fpath}")
             os.makedirs(fpath, exist_ok=True)
             ac.save(checkpoint_path=fpath)            
         
