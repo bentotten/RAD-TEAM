@@ -405,8 +405,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             if terminal or epoch_ended:
                 if d and not timeout:
                     done_count += 1
-                if env.get_agent_outOfBounds_count(id=0) > 0:
-                    # Log if agent went out of bounds
+                    
                 if epoch_ended and not(terminal):
                     print(f'Warning: trajectory cut off by epoch at {ep_len} steps and time {t}.', flush=True)
 
@@ -414,7 +413,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     # if trajectory didn't reach terminal state, bootstrap value target
                     v = np.zeros(number_of_agents)
                     for id in range(number_of_agents):
-                        result, _ = ac.step(o, hidden=agents[id].reset_hidden())
+                        result, _ = agents[id].step(o, hidden=agents[id].reset_hidden())
                         v[id] = result.state_value
                     
                     if epoch_ended:
@@ -453,7 +452,8 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                             episode_count=ep_count,
                             silent=False,
                         )
-                        ac.render(savepath=logger.output_dir)
+                        for id in range(number_of_agents):
+                            agents[id].render(savepath=logger.output_dir)
                 
                 if not env.epoch_end:
                     #Reset detector position and episode tracking
@@ -467,16 +467,16 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     ep_ret, ep_len, a = 0, 0, -1
 
                 # Clear maps for next episode
-                ac.reset()
+                for id in range(number_of_agents):
+                    agents[id].reset()
 
         # Save model
         if (epoch % save_freq == 0) or (epoch == epochs-1):
-            fpath = "pyt_save"
-            fpath = os.path.join(logger.output_dir, fpath)
-            os.makedirs(fpath, exist_ok=True)
-            ac.save(checkpoint_path=fpath)            
-        
-            pass
+            for id in range(number_of_agents):
+                fpath = "{id}_agent"
+                fpath = os.path.join(logger.output_dir, fpath)
+                os.makedirs(fpath, exist_ok=True)
+                agents[id].save(checkpoint_path=fpath)
 
         # Perform PPO update!
         actor_loss = np.zeros(number_of_agents)     
@@ -501,7 +501,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                 VarExplain[id],
                 stop_iteration[id],
             ) = update( 
-                ac=ac,
+                ac=agents[id],
                 buf=buffer[id],
                 optimization=optimizaters[id],                
                 PFGRU=PFGRU,
