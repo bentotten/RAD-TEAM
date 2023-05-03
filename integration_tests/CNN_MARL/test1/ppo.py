@@ -4,7 +4,6 @@ from torch.optim import Adam
 import gym # type: ignore
 import time
 import os
-import core # type: ignore
 import ppo_tools # type: ignore
 import argparse
 
@@ -403,7 +402,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         'area_scale':env.search_area[2][1]}
 
     # Count variables
-    var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.critic, ac.model])
+    var_counts = tuple(ppo_tools.count_vars(module) for module in [ac.pi, ac.critic, ac.model])
     logger.log('\nNumber of parameters: \t pi: %d, critic: %d predictor: %d\t'%var_counts)
 
     # Set up trajectory buffer

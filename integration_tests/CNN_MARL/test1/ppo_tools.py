@@ -16,7 +16,6 @@ from typing import Union, cast, Optional, Any, NamedTuple, Tuple, Dict, List, Di
 import scipy.signal  # type: ignore
 import ray
 
-import core as RADA2C_core  # type: ignore
 from rl_tools.logx import EpochLogger # type: ignore
 from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads  # type: ignore
 from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs  # type: ignore
@@ -25,7 +24,9 @@ from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar
 # If prioritizing memory, only keep observations and reinflate heatmaps when update happens. Reduces memory requirements, but greatly slows down training.
 PRIO_MEMORY = False
 
+
 Shape: TypeAlias = Union[int, Tuple[int], Tuple[int, Any], Tuple[int, int, Any]]
+
 
 # Ok via unit testing
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
@@ -54,6 +55,7 @@ def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
         shape = cast(Tuple[int, Any], shape)
         return (length, *shape)
 
+
 # Ok via unit testing
 def discount_cumsum(
     x: npt.NDArray[np.float64], discount: float
@@ -79,6 +81,10 @@ def discount_cumsum(
 
     """
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
+
+
+def count_vars(module):
+    return sum([np.prod(p.shape) for p in module.parameters()])
 
 
 class UpdateResult(NamedTuple):
