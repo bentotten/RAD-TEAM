@@ -255,7 +255,7 @@ def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pf
 def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
         vf_lr=3e-4, pfgru_lr=5e-3,train_pi_iters=40, train_v_iters=40, train_pfgru_iters=15, lam=0.9, max_ep_len=120, save_gif=False,
-        target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None, load_model=0, PFGRU=True, number_of_agents=1):
+        target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None, load_model=0, model_path=None, PFGRU=True, number_of_agents=1):
 
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
     setup_pytorch_for_mpi()
@@ -287,11 +287,17 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
 
     #Instantiate A2C
     ac = actor_critic(**ac_kwargs)
+    agents = list()
+
+    for id in range(number_of_agents):
+        agents[id] = actor_critic(**ac_kwargs)
     
-    logger.save_config(ac.get_config(), text='_agent', quiet=True)
+        logger.save_config(agents[id].get_config(), text=f'_agent{id}', quiet=True)
     
-    if load_model != 0:
-        ac.load_state_dict(torch.load('model.pt'))           
+        if load_model != 0:
+            if not model_path:
+                model_path = os.getcwd()
+            agents[id].load(model_path)
     
     # Sync params across processes
     # sync_params(ac.pi)
@@ -307,7 +313,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         'area_scale':env.search_area[2][1]}
 
     # Count variables
-    var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.critic, ac.model])
+    var_counts = tuple(core.count_vars(module) for module in [agents[0].pi, agents[0].critic, agents[0].model])
     logger.log('\nNumber of parameters: \t Actor: %d, Critic: %d Predictor:%d \t'%var_counts)
 
     # Set up trajectory buffer
@@ -330,12 +336,12 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
 
     optimizaters = [
         ppo_tools.OptimizationStorage(
-            pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
-            critic_optimizer= Adam(ac.critic.parameters(), lr=vf_lr), 
-            model_optimizer=Adam(ac.model.parameters(), lr=pfgru_lr), 
+            pi_optimizer=Adam(agents[id].pi.parameters(), lr=pi_lr),
+            critic_optimizer= Adam(agents[id].critic.parameters(), lr=vf_lr), 
+            model_optimizer=Adam(agents[id].model.parameters(), lr=pfgru_lr), 
             MSELoss=torch.nn.MSELoss(reduction="mean"),
         )
-        for _ in range(number_of_agents)
+        for id in range(number_of_agents)
     ]               
 
     ##########################################################################################################################################
@@ -345,21 +351,18 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     assert isinstance(o, dict), "Incompatible environment step return mode. Must be in Dict mode."
     
     # o = o[0]
-    ep_ret, ep_len, done_count, a = 0, 0, 0, -1
+    ep_ret, ep_len, done_count = 0, 0, 0
 
-    oob = 0
+    for id in range(number_of_agents):
+        agents[id].set_mode("eval")
 
-    ac.set_mode("eval")
-
-    
     # Main loop: collect experience in env and update/log each epoch
     print(f'Proc id: {proc_id()} -> Starting main training loop!', flush=True)
     for epoch in range(epochs):
-        #Reset hidden state
-        hidden = ac.reset_hidden()
-        #hidden = []
+        # For rendering labeling
+        episode_count = 0
+        
         for t in range(local_steps_per_epoch):
-            
             # TODO make this with a numpy array instead
             results = []
             heatmap_stacks = []
@@ -368,7 +371,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             
           #compute action and logp (Actor), compute value (Critic)            
             for id in range(number_of_agents):
-                result_single, heatmap_stack_single = ac.step(o, hidden=hidden)
+                result_single, heatmap_stack_single = agents[id].step(o, hidden=agents[id].reset_hidden())
                 results.append(result_single)
                 heatmap_stacks.append(heatmap_stack_single)
                 action_batch[id] = result_single.action
@@ -381,17 +384,6 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             ep_len += 1
 
             logger.store(VVals=values.mean())
-            # buf.store(
-            #     obs=o[0],
-            #     act=result.action,
-            #     val=result.state_value,
-            #     logp=result.action_logprob,
-            #     rew=r,
-            #     src=env.src_coords,
-            #     full_observation=o,
-            #     heatmap_stacks=heatmap_stack,
-            #     terminal=d,
-            # )
 
             for id in range(number_of_agents):
                 buffer[id].store(
@@ -414,11 +406,11 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             epoch_ended = t==local_steps_per_epoch-1
             
             if terminal or epoch_ended:
+                episode_count += 1
+                
                 if d and not timeout:
                     done_count += 1
-                if env.get_agent_outOfBounds_count(id=0) > 0:
-                    # Log if agent went out of bounds
-                    oob += 1
+                    
                 if epoch_ended and not(terminal):
                     print(f'Warning: trajectory cut off by epoch at {ep_len} steps and time {t}.', flush=True)
 
@@ -426,7 +418,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     # if trajectory didn't reach terminal state, bootstrap value target
                     v = np.zeros(number_of_agents)
                     for id in range(number_of_agents):
-                        result, _ = ac.step(o, hidden=hidden)
+                        result, _ = agents[id].step(o, hidden=agents[id].reset_hidden())
                         v[id] = result.state_value
                     
                     if epoch_ended:
@@ -454,7 +446,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                         env.render(
                             path=logger.output_dir,
                             epoch_count=epoch,
-                            episode_count=ep_count,
+                            episode_count=episode_count,
                             silent=False,
                         )
                         # Render environment image
@@ -462,36 +454,34 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                             path=logger.output_dir,
                             epoch_count=epoch,
                             just_env=True,
-                            episode_count=ep_count,
+                            episode_count=episode_count,
                             silent=False,
                         )
-                        ac.render(savepath=logger.output_dir)
+                        for id in range(number_of_agents):
+                            agents[id].render(savepath=logger.output_dir)
                 
                 if not env.epoch_end:
                     #Reset detector position and episode tracking
-                    hidden = ac.reset_hidden()
                     o, _, _, _ = env.reset()
-                    ep_ret, ep_len, a = 0, 0, -1    
+                    ep_ret, ep_len = 0, 0 
                 else:
                     #Sample new environment parameters, log epoch results
-                    oob += env.get_agent_outOfBounds_count(id=0)
-                    logger.store(DoneCount=done_count, OutOfBound=oob)
+                    logger.store(DoneCount=done_count)
                     done_count = 0; 
-                    oob = 0
                     o, _, _, _ = env.reset()
-                    ep_ret, ep_len, a = 0, 0, -1
+                    ep_ret, ep_len = 0, 0
 
                 # Clear maps for next episode
-                ac.reset()
+                for id in range(number_of_agents):
+                    agents[id].reset()
 
         # Save model
         if (epoch % save_freq == 0) or (epoch == epochs-1):
-            fpath = "pyt_save"
-            fpath = os.path.join(logger.output_dir, fpath)
-            os.makedirs(fpath, exist_ok=True)
-            ac.save(checkpoint_path=fpath)            
-        
-            pass
+            for id in range(number_of_agents):
+                fpath = "{id}_agent"
+                fpath = os.path.join(logger.output_dir, fpath)
+                os.makedirs(fpath, exist_ok=True)
+                agents[id].save(checkpoint_path=fpath)
 
         # Perform PPO update!
         actor_loss = np.zeros(number_of_agents)     
@@ -516,7 +506,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                 VarExplain[id],
                 stop_iteration[id],
             ) = update( 
-                ac=ac,
+                ac=agents[id],
                 buf=buffer[id],
                 optimization=optimizaters[id],                
                 PFGRU=PFGRU,
