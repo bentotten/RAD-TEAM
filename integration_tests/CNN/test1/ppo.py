@@ -44,7 +44,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     
     # Set up logger and save configuration
     logger = EpochLogger(**logger_kwargs)
-    logger.save_config(locals())    
+    logger.save_config(locals(), quiet=True)    
 
     obs_dim = env.observation_space.shape[0]
 
