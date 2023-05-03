@@ -505,7 +505,6 @@ def ppo(
         raise ValueError("Env not giving observations in dict. Must be in a dict.")
 
     ep_ret, ep_len, done_count, a = 0, 0, 0, -1
-    ep_ret_ls = []
     ep_count = 0
     hidden = [None for _ in range(len(agents))]
 
@@ -540,7 +539,6 @@ def ppo(
 
             ep_ret += r["team_reward"]
             ep_len += 1
-            ep_ret_ls.append(ep_ret)
 
             for id in range(len(agents)):
                 buffer[id].store(
@@ -617,8 +615,6 @@ def ppo(
                 if epoch_ended:
                     ep_count = 0
 
-                # Reset returns list
-                ep_ret_ls = []
                 if not env.epoch_end:
                     # Reset detector position and episode tracking
                     for id in range(len(agents)):
