@@ -230,7 +230,7 @@ def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logg
     # entropy[id], 
     # location_loss[id]    
     
-    return pi_l, loss_v, loss_mod, kk, kl, ent, loc_loss
+    return pi_l, loss_v, loss_mod, kk, kl, ent, loc_loss, cf
 
 
 def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0, 
@@ -416,6 +416,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                         env.epoch_end = True
                 else:
                     values = [0 for _ in range(len(agents))]
+
+                # Calculate Advantage and complete filling buffers
                 # buf.GAE_advantage_and_rewardsToGO(v)
                 for id in range(len(agents)):
                     buffer[id].GAE_advantage_and_rewardsToGO(values[id])
@@ -448,6 +450,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 if epoch_ended:
                     ep_count = 0                     
                 
+                # Reset returns list
                 ep_ret_ls = []
                 # stat_buff.reset()
                 for id in range(len(agents)):
@@ -501,7 +504,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 stop_iteration[id],
                 kl[id], 
                 entropy[id], 
-                location_loss[id]
+                location_loss[id],
+                clip_frac[id]
             ) = update(
                 ac=agents[id], 
                 env=env,

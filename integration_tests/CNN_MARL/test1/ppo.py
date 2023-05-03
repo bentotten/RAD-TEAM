@@ -6,6 +6,7 @@ import time
 import os
 import core # type: ignore
 import ppo_tools # type: ignore
+import argparse
 
 from RADTEAM_core import StatisticStandardization, CNNBase
 
@@ -315,7 +316,7 @@ def update(ac, args, buf, train_pi_iters, train_v_iters, train_pfgru_iters, opti
             raise ValueError("Batched update problem")                            
     
     # Update predictor model (iterations happen within function)
-    update_model(data, args)
+    loss_mod = update_model(data, args)
 
     #Reduce learning rate
     #pi_scheduler.step()
@@ -335,24 +336,16 @@ def update(ac, args, buf, train_pi_iters, train_v_iters, train_pfgru_iters, opti
         pi_info["ent"],
         pi_info["cf"],
     )
-
-    logger.store(
-        LossPi=loss_pi.item(),
-        LossV=loss_v.item(),
-        LossModel=0, # loss_mod
-        KL=kl,
-        Entropy=ent,
-        ClipFrac=cf,
-        LocLoss=0,
-        VarExplain=0,
-    )
     
     ac.set_mode("eval")
+
+    return loss_pi, loss_v, loss_mod, kk, kl, ent, cf
+
 
 
 def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
-        vf_lr=3e-4, pfgru_lr=5e-3,train_pi_iters=40, train_v_iters=40, lam=0.9, max_ep_len=120, save_gif=False,
+        vf_lr=3e-4, pfgru_lr=5e-3,train_pi_iters=40, train_v_iters=40, train_pfgru_iters=15, reduce_pfgru_iters=True, lam=0.9, max_ep_len=120, save_gif=False,
         target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None, load_model=0, number_of_agents=1):
     
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
@@ -387,7 +380,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     #Instantiate A2C
     # ac = actor_critic(**ac_kwargs)
     observation_size = obs_dim * number_of_agents
-    agents = [actor_critic(observation_size, env.action_space, **ac_kwargs) for _ in range(number_of_agents)]
+    agents = [actor_critic(**ac_kwargs) for _ in range(number_of_agents)]
 
     for ac in agents:    
         logger.save_config(ac.get_config(), text='_agent')
@@ -452,6 +445,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     
     ep_ret, ep_len, done_count, a = 0, 0, 0, -1
     ep_ret_ls = []
+    ep_count = 0
     hidden = [None for _ in range(len(agents))]    
 
     ac.set_mode("eval")
@@ -462,7 +456,6 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         #Reset hidden state
         for id in range(len(agents)):
             hidden[id] = agents[id].reset_hidden()
-            agents[id].pi.logits_net.v_net.eval()
 
         for t in range(local_steps_per_epoch):
             # Artifact - overwrites o because python
@@ -480,23 +473,27 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                 logprobs.append(result.action_logprob)
 
             next_o, r, d, _ = env.step(actions)
-            next_o, r, d = next_o[0], r['individual_reward'][0], d[0]
-            ep_ret += r
+            d = True if True in d.values() else False
+
+            ep_ret += r['team_reward']
             ep_len += 1
             ep_ret_ls.append(ep_ret)
 
+            for id in range(len(agents)):
+                buffer[id].store(
+                    obs=obs_std[id],
+                    act=result.action,
+                    val=result.state_value,
+                    logp=result.action_logprob,
+                    rew=r,
+                    src=env.src_coords,
+                    full_observation=obs_std,
+                    heatmap_stacks=heatmap_stack,
+                    terminal=d,
+                )
+
             logger.store(VVals=result.state_value)
-            buf.store(
-                obs=obs_std,
-                act=result.action,
-                val=result.state_value,
-                logp=result.action_logprob,
-                rew=r,
-                src=env.src_coords,
-                full_observation={0: obs_std},
-                heatmap_stacks=heatmap_stack,
-                terminal=d,
-            )
+
             # Update obs (critical!)
             o = next_o
 
@@ -507,52 +504,68 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             if terminal or epoch_ended:
                 if d and not timeout:
                     done_count += 1
-                if env.get_agent_outOfBounds_count(id=0) > 0:
-                    # Log if agent went out of bounds
-                    oob += 1
+
                 if epoch_ended and not(terminal):
                     print(f'Warning: trajectory cut off by epoch at {ep_len} steps and time {t}.', flush=True)
 
                 if timeout or epoch_ended:
                     # if trajectory didn't reach terminal state, bootstrap value target
-                    
-                    result, _ = ac.step({0: obs_std}, hidden=hidden)
-                    v = result.state_value
+                    values = []
+                    for id in range(len(agents)):
+
+                        result, _ = ac.step(obs_std, hidden=hidden[id])
+                        values.append(result.state_value)
                     
                     if epoch_ended:
                         #Set flag to sample new environment parameters
                         env.epoch_end = True
                 else:
-                    v = 0
-                #buf.finish_path(v)
-                buf.GAE_advantage_and_rewardsToGO(v)
+                    values = [0 for _ in range(len(agents))]
+                
+                # Calculate Advantage and complete filling buffers
+                for id in range(len(agents)):
+                    buffer[id].GAE_advantage_and_rewardsToGO(values[id])
                 
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
                     logger.store(EpRet=ep_ret, EpLen=ep_len)
-                    buf.store_episode_length(episode_length=ep_len)
+                    for id in range(len(agents)):
+                        buffer[id].store_episode_length(episode_length=ep_len)
 
                 if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1 ) == epochs)):
                     #Check agent progress during training
-                    if proc_id() == 0 and epoch != 0:
-                        env.render(save_gif=save_gif,path=logger.output_dir,epoch_count=epoch,
-                                   ep_rew=ep_ret_ls)
+                        # Render gif
+                        env.render(
+                            path=logger.output_dir,
+                            epoch_count=epoch,
+                            episode_count=ep_count,
+                            silent=False,
+                        )
+                        # Render environment image
+                        env.render(
+                            path=logger.output_dir,
+                            epoch_count=epoch,
+                            just_env=True,
+                            episode_count=ep_count,
+                            silent=False,
+                        )   
+                if epoch_ended:
+                    ep_count = 0                           
                 
+                # Reset returns list
                 ep_ret_ls = []
                 if not env.epoch_end:
                     #Reset detector position and episode tracking
-                    hidden = ac.reset_hidden()
+                    for id in range(len(agents)):
+                        hidden[id] = agents[id].reset_hidden()
                     o, _, _, _ = env.reset()
-                    o = o[0]
                     ep_ret, ep_len, a = 0, 0, -1    
                 else:
                     #Sample new environment parameters, log epoch results
-                    oob += env.get_agent_outOfBounds_count(id=0)
-                    logger.store(DoneCount=done_count, OutOfBound=oob)
+                    logger.store(DoneCount=done_count)
                     done_count = 0; 
                     oob = 0
                     o, _, _, _ = env.reset()
-                    o = o[0]
                     ep_ret, ep_len, a = 0, 0, -1
 
                 # Clear maps for next episode
@@ -560,16 +573,68 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
 
         # Save model
         if (epoch % save_freq == 0) or (epoch == epochs-1):
-            fpath = "pyt_save"
-            fpath = os.path.join(logger.output_dir, fpath)
-            os.makedirs(fpath, exist_ok=True)
-            ac.save(checkpoint_path=fpath)            
-        
-            pass
+            for id in range(len(agents)):
+                fpath = f"{id}agent"
+                fpath = os.path.join(logger.output_dir, fpath)
+                os.makedirs(fpath, exist_ok=True)
+                ac.save(checkpoint_path=fpath)            
 
+        #Reduce localization module training iterations after 100 epochs to speed up training
+        if reduce_pfgru_iters and epoch > 99:
+            train_pfgru_iters = 5
+            reduce_pfgru_iters = False
 
         # Perform PPO update!
-        update(env, bp_args)
+        # update(agent, env, bp_args)
+        stop_iteration = np.zeros((len(agents)))
+        kl = np.zeros((len(agents)))
+        entropy = np.zeros((len(agents)))
+        clip_frac = np.zeros((len(agents)))
+        actor_loss = np.zeros((len(agents)))                
+        critic_loss = np.zeros((len(agents)))
+        model_loss = np.zeros((len(agents)))
+        
+        for id in range(len(agents)):
+            (
+                actor_loss[id], 
+                critic_loss[id],
+                model_loss[id],                
+                stop_iteration[id],
+                kl[id], 
+                entropy[id], 
+                clip_frac[id]
+            ) = update(
+                ac=agents[id], 
+                args=bp_args,
+                buf=buffer[id],
+                train_pi_iters=train_pi_iters,
+                train_v_iters=train_v_iters,
+                train_pfgru_iters=train_pfgru_iters,
+                optimization=optimization[id],
+                logger=logger,
+                clip_ratio=clip_ratio,
+                target_kl=target_kl,
+                alpha=alpha,
+                number_agents=number_of_agents,
+                id=id
+                )
+
+        logger.store(StopIter=stop_iteration.mean().item())
+
+        # Log changes from update
+        kl, ent, cf, loss_v = kl.mean().item(), entropy.mean().item(), clip_frac.mean().item(), critic_loss.mean().item()
+        loss_pi = actor_loss.mean().item()
+        loss_mod = model_loss.mean().item()
+
+        logger.store(
+            LossPi=loss_pi,
+            LossV=loss_v, 
+            LossModel= loss_mod,
+            KL=kl, 
+            Entropy=ent, 
+            ClipFrac=cf,
+            VarExplain=0
+            )     
 
         # Log info about epoch
         logger.log_tabular('Epoch', epoch)
@@ -580,7 +645,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         logger.log_tabular('LossPi', average_only=True)
         logger.log_tabular('LossV', average_only=True)
         logger.log_tabular('LossModel', average_only=True)
-        logger.log_tabular('LocLoss', average_only=True)
+        # logger.log_tabular('LocLoss', average_only=True)
         logger.log_tabular('Entropy', average_only=True)
         logger.log_tabular('KL', average_only=True)
         logger.log_tabular('ClipFrac', average_only=True)
@@ -591,7 +656,6 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         logger.dump_tabular()
 
 if __name__ == '__main__':
-    import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--env', type=str, default='gym_rad_search:RadSearchMulti-v1')
     parser.add_argument('--hid_gru', type=int, default=[24],help='A2C GRU hidden state size')

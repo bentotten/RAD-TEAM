@@ -36,8 +36,8 @@ import matplotlib.pyplot as plt  # type: ignore
 import warnings
 import json
 
-PFGRU = False # If wanting to use the PFGRU TODO turn this into a parameter
-SMALL_VERSION = True
+PFGRU = True # If wanting to use the PFGRU TODO turn this into a parameter
+SMALL_VERSION = False
 
 # Maps
 #: [New Type] Array indicies to access a GridSquare (x, y). Type: Tuple[float, float]
@@ -791,10 +791,6 @@ class MapsBuffer:
                 self.combined_location_map[last_coordinates[0]][last_coordinates[1]]
                 > -1
             ), "Location map grid coordinate reset where agent was not present"
-        else:
-            assert (
-                self.combined_location_map.max() < self.number_of_agents
-            ), "Location exists on map however no last coordinates buffer passed for processing."
 
         self.combined_location_map[current_coordinates[0]][current_coordinates[1]] += 1
 
@@ -2071,7 +2067,6 @@ class CNNBase:
         return action_logprobs, dist_entropy  # type: ignore
 
     def reset_hidden(self, batch_size=1) -> Tuple[torch.Tensor, torch.Tensor]:
-        """For compatibility - returns nothing"""
         model_hidden = self.model.init_hidden(batch_size)
         return model_hidden
 
