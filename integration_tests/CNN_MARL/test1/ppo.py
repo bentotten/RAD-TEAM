@@ -185,7 +185,7 @@ def update(
             model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
             for ii, ep in enumerate(ep_form):
                 sl = len(ep[0])
-                hidden = ac.reset_hidden()[0]
+                hidden = ac.reset_hidden()
                 src_tar = ep[0][:, source_loc_idx:].clone()
                 src_tar[:, :2] = src_tar[:, :2] / args["area_scale"]
 

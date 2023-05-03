@@ -1490,6 +1490,16 @@ class PFGRUCell(PFRNNBaseCell):
                 layers += [nn.Linear(sizes[j], sizes[j + 1]), act()]
         return nn.Sequential(*layers)
 
+    def save_model(self, checkpoint_path: str) -> None:
+        """Save model to a file"""
+        torch.save(self.state_dict(), f"{checkpoint_path}/predictor.pt")
+
+    def load_model(self, checkpoint_path: str) -> None:
+        assert path.isfile(f"{checkpoint_path}/predictor.pt"), "Model does not exist"
+        self.load_state_dict(torch.load(f"{checkpoint_path}/predictor.pt", map_location=lambda storage, loc: storage))
+
+    def get_config(self):
+        return vars(self)
 
 @dataclass
 class CNNBase:
@@ -1578,7 +1588,7 @@ class CNNBase:
 
     def __post_init__(self) -> None:
         # Particle Filter args
-        obs_dimensions_pfgru = self.observation_space * 3
+        obs_dimensions_pfgru = self.number_of_agents * 3  # Only takes coordinates and radiation reading
         number_of_particles = 40
         alpha = 0.7
 
