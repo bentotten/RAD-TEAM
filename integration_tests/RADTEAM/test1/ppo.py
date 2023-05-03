@@ -290,7 +290,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     agents = list()
 
     for id in range(number_of_agents):
-        agents[id] = actor_critic(**ac_kwargs)
+        agents.append(actor_critic(**ac_kwargs))
     
         logger.save_config(agents[id].get_config(), text=f'_agent{id}', quiet=True)
     
@@ -556,7 +556,6 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         logger.log_tabular('KL', average_only=True)
         logger.log_tabular('ClipFrac', average_only=True)
         logger.log_tabular('DoneCount', sum_only=True)
-        logger.log_tabular('OutOfBound', average_only=True)
         logger.log_tabular('StopIter', average_only=True)
         logger.log_tabular('Time', time.time()-start_time)
         logger.dump_tabular()
