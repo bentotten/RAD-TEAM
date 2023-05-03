@@ -19,7 +19,7 @@ BATCHED_UPDATE = True
 def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
         vf_lr=3e-4, train_pi_iters=40, train_v_iters=40, lam=0.9, max_ep_len=120, save_gif=False,
-        target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None, load_model=0):
+        target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None, load_model=0, PFGRU=True):
 
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
     setup_pytorch_for_mpi()
@@ -41,6 +41,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     ac_kwargs["steps_per_episode"] = 120
     ac_kwargs["number_of_agents"] = 1
     ac_kwargs["enforce_boundaries"] = env.enforce_grid_boundaries
+    ac_kwargs["PFGRU"] = PFGRU
     
     # Set up logger and save configuration
     logger = EpochLogger(**logger_kwargs)
@@ -51,7 +52,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     #Instantiate A2C
     ac = actor_critic(**ac_kwargs)
     
-    logger.save_config(ac.get_config(), text='_agent')
+    logger.save_config(ac.get_config(), text='_agent', quiet=True)
     
     if load_model != 0:
         ac.load_state_dict(torch.load('model.pt'))           
@@ -70,8 +71,8 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         'area_scale':env.search_area[2][1]}
 
     # Count variables
-    var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.critic])
-    logger.log('\nNumber of parameters: \t pi: %d, critic: %d \t'%var_counts)
+    var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.critic, ac.model])
+    logger.log('\nNumber of parameters: \t Actor: %d, Critic: %d Predictor:%d \t'%var_counts)
 
     # Set up trajectory buffer
     local_steps_per_epoch = int(steps_per_epoch / num_procs())
@@ -410,6 +411,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     if proc_id() == 0 and epoch != 0:
                         env.render(save_gif=save_gif,path=logger.output_dir,epoch_count=epoch,
                                    ep_rew=ep_ret_ls)
+                        ac.render(savepath=logger.output_dir)
                 
                 ep_ret_ls = []
                 if not env.epoch_end:
@@ -492,6 +494,9 @@ if __name__ == '__main__':
 
     #Change mini-batch size, only been tested with size of 1
     args.batch = 1
+    
+    # To use PFGRU or not
+    PFGRU = False
 
     #Save directory and experiment name
     args.env_name = 'stage_1'
@@ -536,5 +541,5 @@ if __name__ == '__main__':
     ppo(lambda : gym.make(args.env,**init_dims), actor_critic=CNNBase,
         ac_kwargs=ac_kwargs, gamma=args.gamma, alpha=args.alpha,
         seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,
-        logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model)
+        logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model, PFGRU=PFGRU)
     
