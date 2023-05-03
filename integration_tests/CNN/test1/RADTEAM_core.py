@@ -36,7 +36,7 @@ import matplotlib.pyplot as plt  # type: ignore
 import warnings
 import json
 
-PFGRU = True  # If wanting to use the PFGRU TODO turn this into a parameter
+PFGRU = False  # If wanting to use the PFGRU TODO turn this into a parameter
 SMALL_VERSION = False
 
 # Maps
@@ -543,13 +543,15 @@ class MapsBuffer:
         self,
         observation: Union[Dict[int, npt.NDArray], npt.NDArray],
         id: int,
-        loc_prediciton: Tuple[float, float],
+        loc_prediciton: Tuple[float, float] = None,
     ) -> MapStack:
         """
         Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation. Also updates tools.
 
         :param observation: (dict) Dictionary of agent IDs and their individual observations from the environment.
         :param id: (int) Current Agent's ID, used to differentiate between the agent location map and the other agents map.
+        :param loc_prediction: (Tuple) PFGRU's guess for source location
+        
         :return: Returns a tuple of five 2d map arrays.
         """
 
@@ -577,10 +579,10 @@ class MapsBuffer:
 
             self.locations_matrix.append(inflated_agent_coordinates)
 
-            last_prediction: Tuple = self.tools.last_prediction
-
             # Update Prediction maps
             if PFGRU:
+                last_prediction: Tuple = self.tools.last_prediction
+                
                 self._update_prediction_map(
                     current_prediction=inflated_prediction,
                     last_prediction=last_prediction,
@@ -1803,10 +1805,17 @@ class CNNBase:
 
         # Set up actor and critic
         if not SMALL_VERSION:
+            if PFGRU:
+                actor_map_count = 6
+            else:
+                actor_map_count = 5
+            
+            # Create Actor
             self.pi = Actor(
-                map_dim=self.maps.map_dimensions, action_dim=self.action_space
+                map_dim=self.maps.map_dimensions, action_dim=self.action_space, map_count=actor_map_count
             )
 
+            # Create Critic
             if self.GlobalCritic:
                 self.critic = self.GlobalCritic
             elif self.no_critic:
