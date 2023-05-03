@@ -294,8 +294,8 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         ac.load_state_dict(torch.load('model.pt'))           
     
     # Sync params across processes
-    sync_params(ac.pi)
-    sync_params(ac.critic)
+    # sync_params(ac.pi)
+    # sync_params(ac.critic)
     #sync_params(ac.model)
 
     #PFGRU args, from Ma et al. 2020
@@ -330,7 +330,9 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     # Prepare for interaction with environment
     start_time = time.time()
     o, _, _, _ = env.reset()
-    o = o[0]
+    assert isinstance(o, dict), "Incompatible environment step return mode. Must be in Dict mode."
+    
+    # o = o[0]
     ep_ret, ep_len, done_count, a = 0, 0, 0, -1
 
     ep_ret_ls = []
@@ -346,26 +348,24 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
         hidden = ac.reset_hidden()
         #hidden = []
         for t in range(local_steps_per_epoch):
-            #Standardize input using running statistics per episode
-            obs_std = o
             
             #compute action and logp (Actor), compute value (Critic)
-            result, heatmap_stack = ac.step({0: obs_std}, hidden=hidden)
+            result, heatmap_stack = ac.step(o, hidden=hidden)
             next_o, r, d, _ = env.step({0: result.action})
-            next_o, r, d = next_o[0], r['individual_reward'][0], d[0]
+            r, d = r['individual_reward'][0], d[0]
             ep_ret += r
             ep_len += 1
             ep_ret_ls.append(ep_ret)
 
             logger.store(VVals=result.state_value)
             buf.store(
-                obs=obs_std,
+                obs=o[0],
                 act=result.action,
                 val=result.state_value,
                 logp=result.action_logprob,
                 rew=r,
                 src=env.src_coords,
-                full_observation={0: obs_std},
+                full_observation=o,
                 heatmap_stacks=heatmap_stack,
                 terminal=d,
             )
@@ -388,7 +388,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                 if timeout or epoch_ended:
                     # if trajectory didn't reach terminal state, bootstrap value target
                     
-                    result, _ = ac.step({0: obs_std}, hidden=hidden)
+                    result, _ = ac.step(o, hidden=hidden)
                     v = result.state_value
                     
                     if epoch_ended:
@@ -416,7 +416,6 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     #Reset detector position and episode tracking
                     hidden = ac.reset_hidden()
                     o, _, _, _ = env.reset()
-                    o = o[0]
                     ep_ret, ep_len, a = 0, 0, -1    
                 else:
                     #Sample new environment parameters, log epoch results
@@ -425,7 +424,6 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                     done_count = 0; 
                     oob = 0
                     o, _, _, _ = env.reset()
-                    o = o[0]
                     ep_ret, ep_len, a = 0, 0, -1
 
                 # Clear maps for next episode
