@@ -254,7 +254,7 @@ def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pf
 
 def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
-        vf_lr=3e-4, train_pi_iters=40, train_v_iters=40, lam=0.9, max_ep_len=120, save_gif=False,
+        vf_lr=3e-4, pfgru_lr=5e-3,train_pi_iters=40, train_v_iters=40, train_pfgru_iters=15, lam=0.9, max_ep_len=120, save_gif=False,
         target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None, load_model=0, PFGRU=True, number_of_agents=1):
 
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
@@ -328,12 +328,15 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
     if proc_id() == 0:
         print(f'Local steps per epoch: {local_steps_per_epoch}')
 
-    optimization = ppo_tools.OptimizationStorage(
-        pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
-        critic_optimizer= Adam(ac.critic.parameters(), lr=vf_lr), 
-        #model_optimizer=Adam(ac.model.parameters(), lr=vf_lr), 
-        MSELoss=torch.nn.MSELoss(reduction="mean"),
-    )    
+    optimizaters = [
+        ppo_tools.OptimizationStorage(
+            pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
+            critic_optimizer= Adam(ac.critic.parameters(), lr=vf_lr), 
+            model_optimizer=Adam(ac.model.parameters(), lr=pfgru_lr), 
+            MSELoss=torch.nn.MSELoss(reduction="mean"),
+        )
+        for _ in range(number_of_agents)
+    ]               
 
     ##########################################################################################################################################
     # Prepare for interaction with environment
@@ -515,7 +518,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             ) = update( 
                 ac=ac,
                 buf=buffer[id],
-                optimization=optimization,                
+                optimization=optimizaters[id],                
                 PFGRU=PFGRU,
                 train_pi_iters=train_pi_iters,
                 train_v_iters=train_v_iters,
