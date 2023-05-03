@@ -36,8 +36,8 @@ import matplotlib.pyplot as plt  # type: ignore
 import warnings
 import json
 
-PFGRU = True  # If wanting to use the PFGRU TODO turn this into a parameter
 SMALL_VERSION = False
+# PFGRU = False  # If wanting to use the PFGRU TODO turn this into a parameter
 
 # Maps
 #: [New Type] Array indicies to access a GridSquare (x, y). Type: Tuple[float, float]
@@ -452,7 +452,9 @@ class MapsBuffer:
     )  # If wrong, may just be slow for map resets
     offset: float = field(default=0.22727272727272727)
     obstacle_state_offset: int = field(default=3)
-
+    
+    # Whether to use PFGRU or not 
+    PFGRU: bool = field(default=True)
     # Initialized elsewhere
     #: Maximum x bound in observation maps, used to fill observation maps with zeros during initialization. This defaults to 27.
     x_limit_scaled: int = field(init=False)
@@ -493,10 +495,6 @@ class MapsBuffer:
     # Buffers
     #: Data preprocessing tools for standardization, normalization, and estimating values in order to input into a observation map.
     tools: ConversionTools = field(default_factory=lambda: ConversionTools())
-    #: This needs to be moved to PPO, but currently holds a set of stackable maps in an experience buffer to later be used for updates.
-    observation_buffer: List = field(
-        default_factory=lambda: list()
-    )  # TODO move to PPO buffer
 
     # Reset flag for unit testing
     reset_flag: int = field(init=False, default=0)  # TODO switch out for pytest mock
@@ -543,13 +541,15 @@ class MapsBuffer:
         self,
         observation: Union[Dict[int, npt.NDArray], npt.NDArray],
         id: int,
-        loc_prediciton: Tuple[float, float],
+        loc_prediciton: Tuple[float, float] = None,
     ) -> MapStack:
         """
         Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation. Also updates tools.
 
         :param observation: (dict) Dictionary of agent IDs and their individual observations from the environment.
         :param id: (int) Current Agent's ID, used to differentiate between the agent location map and the other agents map.
+        :param loc_prediction: (Tuple) PFGRU's guess for source location
+        
         :return: Returns a tuple of five 2d map arrays.
         """
 
@@ -564,7 +564,7 @@ class MapsBuffer:
             inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(
                 single_observation=observation[agent_id]
             )
-            if PFGRU:
+            if self.PFGRU:
                 inflated_prediction: Tuple[int, int] = self._inflate_coordinates(
                     single_observation=loc_prediciton
                 )
@@ -577,10 +577,10 @@ class MapsBuffer:
 
             self.locations_matrix.append(inflated_agent_coordinates)
 
-            last_prediction: Tuple = self.tools.last_prediction
-
             # Update Prediction maps
-            if PFGRU:
+            if self.PFGRU:
+                last_prediction: Tuple = self.tools.last_prediction
+                
                 self._update_prediction_map(
                     current_prediction=inflated_prediction,
                     last_prediction=last_prediction,
@@ -621,7 +621,7 @@ class MapsBuffer:
 
             # Update last coordinates
             self.tools.last_coords[agent_id] = inflated_agent_coordinates
-            if PFGRU:
+            if self.PFGRU:
                 self.tools.last_prediction = inflated_prediction
 
         return MapStack(
@@ -1742,6 +1742,7 @@ class CNNBase:
     GlobalCritic: Union[Critic, None] = field(default=None)
     no_critic: bool = field(default=False)
     save_path: str = field(default=".")
+    PFGRU: bool = field(default=True)
 
     # Initialized elsewhere
     #: Policy/Actor network
@@ -1799,14 +1800,22 @@ class CNNBase:
             steps_per_episode=self.steps_per_episode,
             number_of_agents=self.number_of_agents,
             resolution_multiplier=self.resolution_multiplier,
+            PFGRU=self.PFGRU
         )
 
         # Set up actor and critic
         if not SMALL_VERSION:
+            if self.PFGRU:
+                actor_map_count = 6
+            else:
+                actor_map_count = 5
+            
+            # Create Actor
             self.pi = Actor(
-                map_dim=self.maps.map_dimensions, action_dim=self.action_space
+                map_dim=self.maps.map_dimensions, action_dim=self.action_space, map_count=actor_map_count
             )
 
+            # Create Critic
             if self.GlobalCritic:
                 self.critic = self.GlobalCritic
             elif self.no_critic:
@@ -1886,7 +1895,7 @@ class CNNBase:
                 )
 
                 # Convert map to tensor
-                if PFGRU:
+                if self.PFGRU:
                     actor_map_stack = torch.stack(
                         [
                             torch.tensor(prediction_map),

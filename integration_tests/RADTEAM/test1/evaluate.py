@@ -166,6 +166,7 @@ class EpisodeRunner:
     env_dict: Dict = field(default_factory=lambda: dict())
 
     render_first_episode: bool = field(default=True)
+    PFGRU: bool = field(default=True)
 
     # Initialized elsewhere
     #: Object that holds agents
@@ -216,6 +217,7 @@ class EpisodeRunner:
                 GlobalCritic=None,
                 no_critic=True,
                 save_path=self.save_path_for_ac,
+                PFGRU=self.PFGRU
             )
         elif self.actor_critic_architecture == "rnn":
             actor_critic_args = dict(
@@ -754,6 +756,9 @@ class evaluate_PPO:
 
 
 if __name__ == "__main__":
+    
+    PFGRU = False
+    
     seed = 2
     # Generate a large random seed and random generator object for reproducibility
     rng = np.random.default_rng(seed)
@@ -787,6 +792,7 @@ if __name__ == "__main__":
         render_path=".",
         save_path_for_ac=".",
         seed=seed,
+        PFGRU=PFGRU
     )
 
     test = evaluate_PPO(eval_kwargs=eval_kwargs)
