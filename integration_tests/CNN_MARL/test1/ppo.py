@@ -342,7 +342,6 @@ def update(ac, args, buf, train_pi_iters, train_v_iters, train_pfgru_iters, opti
     return loss_pi, loss_v, loss_mod, kk, kl, ent, cf
 
 
-
 def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
         vf_lr=3e-4, pfgru_lr=5e-3,train_pi_iters=40, train_v_iters=40, train_pfgru_iters=15, reduce_pfgru_iters=True, lam=0.9, max_ep_len=120, save_gif=False,
@@ -463,7 +462,8 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             
             actions = {id: None for id in range(len(agents))}
             values = []
-            logprobs = []            
+            logprobs = [] 
+            heatmap_stacks = []
 
             #compute action and logp (Actor), compute value (Critic)
             for id in range(len(agents)):            
@@ -471,6 +471,7 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
                 actions[id] = result.action
                 values.append(result.state_value)
                 logprobs.append(result.action_logprob)
+                heatmap_stacks.append(heatmap_stack)
 
             next_o, r, d, _ = env.step(actions)
             d = True if True in d.values() else False
@@ -482,13 +483,13 @@ def ppo(env_fn, actor_critic=CNNBase, ac_kwargs=dict(), seed=0,
             for id in range(len(agents)):
                 buffer[id].store(
                     obs=obs_std[id],
-                    act=result.action,
-                    val=result.state_value,
-                    logp=result.action_logprob,
-                    rew=r,
+                    act=actions[id],
+                    val=values[id],
+                    logp=logprobs[id],
+                    rew=r['team_reward'],
                     src=env.src_coords,
                     full_observation=obs_std,
-                    heatmap_stacks=heatmap_stack,
+                    heatmap_stacks=heatmap_stacks[id],
                     terminal=d,
                 )
 
@@ -746,5 +747,5 @@ if __name__ == '__main__':
     ppo(lambda : gym.make(args.env,**init_dims), actor_critic=CNNBase,
         ac_kwargs=ac_kwargs, gamma=args.gamma, alpha=args.alpha,
         seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,
-        logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model)
+        logger_kwargs=logger_kwargs,render=False, save_gif=False, load_model=args.load_model, number_of_agents=args.agents)
     

@@ -104,6 +104,8 @@ def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logg
         o_inx_start = 11 * id
         o_idx_end = 3 + (11 * id) # Offset to the correct observation
 
+        observation_stop = 11 * number_agents
+
         for jj in range(train_v_iters):
             model_loss_arr_buff.zero_()
             model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
@@ -112,7 +114,15 @@ def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logg
                 hidden = ac.reset_hidden()[0]
                 src_tar =  ep[0][:,source_loc_idx:].clone()
                 src_tar[:,:2] = src_tar[:,:2]/args['area_scale']
-                obs_t = torch.as_tensor(ep[0][:,o_inx_start:o_idx_end], dtype=torch.float32)
+
+                observations_slice = ep[0][:, 0:observation_stop]
+                obs_for_pfgru = torch.zeros((len(observations_slice), number_agents * 3))
+                for offset in range(number_agents):
+                    slice_obs = observations_slice[:, (offset*11):(offset*11+3)]
+                    obs_for_pfgru[:, offset*3:offset*3+3] = slice_obs
+                    
+                obs_t = obs_for_pfgru
+                
                 loc_pred = torch.empty_like(src_tar)
                 particle_pred = torch.empty((sl,ac.model.num_particles,src_tar.shape[1]))
                 
@@ -220,7 +230,7 @@ def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logg
     # entropy[id], 
     # location_loss[id]    
     
-    return pi_l, loss_v, loss_mod, kk, kl, ent, loc_loss
+    return pi_l, loss_v, loss_mod, kk, kl, ent, loc_loss, cf
 
 
 def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0, 
@@ -406,6 +416,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                         env.epoch_end = True
                 else:
                     values = [0 for _ in range(len(agents))]
+
+                # Calculate Advantage and complete filling buffers
                 # buf.GAE_advantage_and_rewardsToGO(v)
                 for id in range(len(agents)):
                     buffer[id].GAE_advantage_and_rewardsToGO(values[id])
@@ -438,6 +450,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 if epoch_ended:
                     ep_count = 0                     
                 
+                # Reset returns list
                 ep_ret_ls = []
                 # stat_buff.reset()
                 for id in range(len(agents)):
@@ -491,7 +504,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 stop_iteration[id],
                 kl[id], 
                 entropy[id], 
-                location_loss[id]
+                location_loss[id],
+                clip_frac[id]
             ) = update(
                 ac=agents[id], 
                 env=env,
@@ -561,7 +575,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', '-s', type=int, default=2,help='Random seed control')
     parser.add_argument('--cpu', type=int, default=1,help='Number of cores/environments to train the agent with')
     parser.add_argument('--steps_per_epoch', type=int, default=480,help='Number of timesteps per epoch per cpu. Default is equal to 4 episodes per cpu per epoch.')      
-    parser.add_argument('--epochs', type=int, default=300,help='Number of epochs to train the agent')
+    parser.add_argument('--epochs', type=int, default=100,help='Number of epochs to train the agent')
     parser.add_argument('--exp_name', type=str,default='alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh',help='Name of experiment for saving')
     parser.add_argument('--dims', type=list, default=[[0.0,0.0],[2700.0,0.0],[2700.0,2700.0],[0.0,2700.0]],
                         help='Dimensions of radiation source search area in cm, decreased by area_obs param. to ensure visilibity graph setup is valid.')
@@ -606,7 +620,7 @@ if __name__ == '__main__':
         'obstruction_count':args.obstruct,
         "number_agents": args.agents, 
         "enforce_grid_boundaries": args.enforce_boundaries,
-        "step_data_mode": "list",        
+        "step_data_mode": "list",
         "DEBUG": args.DEBUG,
         "TEST": args.test
         }
