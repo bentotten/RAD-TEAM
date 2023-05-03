@@ -246,7 +246,6 @@ class EpisodeRunner:
             id: self.agents[id].reset_hidden() for id in self.agents
         }  # For RAD-A2C compatibility
 
-        initial_prediction = np.zeros((3,))
         for id, ac in self.agents.items():
             stat_buffers[id] = RADA2C_core.StatBuff()
             stat_buffers[id].update(observations[id][0])
@@ -612,6 +611,7 @@ if __name__ == "__main__":
     seed = 2
     # Generate a large random seed and random generator object for reproducibility
     rng = np.random.default_rng(seed)
+    
     env_kwargs = {
         "bbox": [[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]],
         "observation_area": [100.0, 100.0],

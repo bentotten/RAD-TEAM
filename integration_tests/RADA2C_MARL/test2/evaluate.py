@@ -54,8 +54,8 @@ from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 # Neural Networks
 import core as RADA2C_core  # type: ignore
 
-
-USE_RAY = True
+# NOTE: Do not use Ray with env generator for random position generation; will create duplicates of identical episode configurations. Ok for TEST1
+USE_RAY = False
 
 
 @dataclass
@@ -91,7 +91,7 @@ class Distribution:
 
 
 # Uncomment when ready to run with Ray
-@ray.remote
+# @ray.remote
 @dataclass
 class EpisodeRunner:
 
@@ -124,7 +124,7 @@ class EpisodeRunner:
     snr: str = field(default="high")
 
     render_first_episode: bool = field(default=True)
-    env_dict: Dict = field(default_factory=lambda: dict())    
+    env_dict: Dict = field(default_factory=lambda: dict())
 
     # Initialized elsewhere
     #: Object that holds agents
@@ -426,29 +426,31 @@ class evaluate_PPO:
     runners: Dict = field(init=False)
     #: Number of monte carlo runs per episode configuration
     montecarlo_runs: int = field(init=False)
+    #: Path to save results to
+    save_path: Union[str, None] = field(default=None)
 
     def __post_init__(self) -> None:
         self.montecarlo_runs = self.eval_kwargs["montecarlo_runs"]
-        # Initialize Ray
+        if not self.save_path:
+            self.save_path = eval_kwargs["model_path"]  # type: ignore
+        # Initialize ray
         if USE_RAY:
             try:
                 ray.init(address="auto")
             except:
                 print("Ray failed to initialize. Running on single server.")
-                
+
     def evaluate(self):
         """Driver"""
         start_time = time.time()
         if USE_RAY:
-        # Uncomment when ready to run with Ray
-            runners = {i: EpisodeRunner
-                       .remote(
-                            id=i,
-                            current_dir=os.getcwd(),
-                            **self.eval_kwargs
-                        )
-                    for i in range(self.eval_kwargs['episodes'])
-                }
+            # Uncomment when ready to run with Ray
+            runners = {
+                i: EpisodeRunner.remote(
+                    id=i, current_dir=os.getcwd(), **self.eval_kwargs
+                )
+                for i in range(self.eval_kwargs["episodes"])
+            }
 
             full_results = ray.get([runner.run.remote() for runner in runners.values()])
         else:
@@ -463,87 +465,110 @@ class evaluate_PPO:
         print("Runtime: {}", time.time() - start_time)
 
         score = self.calc_stats(results=full_results)
-        with open(f"{self.save_path}/results.json", 'w+') as f:
+        with open(f"{self.save_path}/results.json", "w+") as f:
             f.write(json.dumps(score, indent=4))
-            
-        for result in full_results:
-            print(result)
-            print(result.to_json())
-            
+
         # Convert to raw results
-        raw_results = list()        
+        counter = 0
+        raw_results = list()
         for index, result in enumerate(full_results):
             raw_results.append(dict())
-            raw_results[index]['id'] = result.id            
-            raw_results[index]['completed_runs'] = result.completed_runs
-            raw_results[index]['success_counter'] = result.success_counter
-            raw_results[index]['total_episode_length'] = result.total_episode_length
-            raw_results[index]['total_episode_return'] = result.total_episode_length
-            raw_results[index]['successful'] = dict()
-            
-            raw_results[index]['successful']['episode_length'] = result.successful.episode_length
-            raw_results[index]['successful']['episode_return'] = result.successful.episode_return
-            raw_results[index]['successful']['intensity'] = result.successful.intensity
+            raw_results[index]["id"] = result.id
+            raw_results[index]["completed_runs"] = result.completed_runs
+            raw_results[index]["success_counter"] = result.success_counter
+            raw_results[index]["total_episode_length"] = result.total_episode_length
+            raw_results[index]["total_episode_return"] = result.total_episode_length
+            raw_results[index]["successful"] = dict()
 
-            raw_results[index]['unsuccessful'] = dict()                
-            raw_results[index]['unsuccessful']['episode_length'] = result.unsuccessful.episode_length
-            raw_results[index]['unsuccessful']['episode_return'] = result.unsuccessful.episode_return
-            raw_results[index]['unsuccessful']['intensity'] = result.unsuccessful.intensity
+            raw_results[index]["successful"][
+                "episode_length"
+            ] = result.successful.episode_length
+            raw_results[index]["successful"][
+                "episode_return"
+            ] = result.successful.episode_return
+            raw_results[index]["successful"]["intensity"] = result.successful.intensity
 
-        with open(f"{self.save_path}/results_raw.json", 'w+') as f:
+            raw_results[index]["unsuccessful"] = dict()
+            raw_results[index]["unsuccessful"][
+                "episode_length"
+            ] = result.unsuccessful.episode_length
+            raw_results[index]["unsuccessful"][
+                "episode_return"
+            ] = result.unsuccessful.episode_return
+            raw_results[index]["unsuccessful"][
+                "intensity"
+            ] = result.unsuccessful.intensity
+
+            counter += result.completed_runs
+
+        with open(f"{self.save_path}/results_raw.json", "w+") as f:
             f.write(json.dumps(raw_results, indent=4))
-            
-        print(f"Accuracy - Median Success Counts: {score['accuracy']['median']} with std {score['accuracy']['std']}")
-        print(f"Speed - Median Successful Episode Length: {score['speed']['median']} with std {score['speed']['std']}")        
-        print(f"Learning - Median Episode Return: {score['score']['median']} with std {score['score']['std']}")
 
-    
+        print(f"Total Runs: {counter}")
+        print(
+            f"Accuracy - Median Success Counts: {score['accuracy']['median']} with std {score['accuracy']['std']}"
+        )
+        print(
+            f"Speed - Median Successful Episode Length: {score['speed']['median']} with std {score['speed']['std']}"
+        )
+        print(
+            f"Learning - Median Episode Return: {score['score']['median']} with std {score['score']['std']}"
+        )
+
     def calc_stats(self, results, mc=None):
         """
         Calculate results from the evaluation. Performance is determined by accuracy and speed.
-        Accuracy: Median value of the count of successully found sources from each episode configuration. 
+        Accuracy: Median value of the count of successully found sources from each episode configuration.
         Speed: The median value of all epsiode lengths from all successful runs.
         After review, for only 1000 values, a weighted median does not add enough benefit to warrant reimplementation.
         """
         if not mc:
             mc = self.montecarlo_runs
-        
+
         success_counts = np.zeros(len(results))
         successful_episode_lengths = np.empty(len(results) * mc)
         successful_episode_lengths[:] = np.nan
         episode_returns = np.zeros(len(results) * mc)
-        
-        # Pointer for episode lengths, as shape is not known ahead of time
-        ep_start_ptr = 0
+
+        # Pointers for episode
+        ep_len_start_ptr = 0
+        ep_ret_start_ptr = 0
 
         for ep_index, episode in enumerate(results):
             success_counts[ep_index] = episode.success_counter
-            episode_returns[ep_index : ep_index + mc] = episode.total_episode_return
-            
-            successful_episode_lengths[ep_start_ptr : ep_start_ptr + len(episode.successful.episode_length)] = episode.successful.episode_length[:]
-            ep_start_ptr = ep_start_ptr + len(episode.successful.episode_length)
-            
-        success_counts_median = np.median(sorted(success_counts))
+            episode_returns[
+                ep_ret_start_ptr : ep_ret_start_ptr + mc
+            ] = episode.total_episode_return
+            ep_ret_start_ptr = ep_ret_start_ptr + mc
+
+            successful_episode_lengths[
+                ep_len_start_ptr : ep_len_start_ptr
+                + len(episode.successful.episode_length)
+            ] = episode.successful.episode_length[:]
+            ep_len_start_ptr = ep_len_start_ptr + len(episode.successful.episode_length)
+
+        success_counts_median = np.nanmedian(sorted(success_counts))
         success_lengths_median = np.nanmedian(sorted(successful_episode_lengths))
-        return_medidan = np.median(sorted(episode_returns))
-        
-        succ_std = round(np.std(success_counts_median), 3)
-        len_std = round(np.std(success_lengths_median), 3)
-        ret_std = round(np.std(return_medidan), 3)
-        
-        print(f"Accuracy - Median Success Counts: {success_counts_median} with std {succ_std}")
-        print(f"Speed - Median Successful Episode Length: {success_lengths_median} with std {len_std}")        
-        print(f"Learning - Median Episode Return: {return_medidan} with std {ret_std}")
-        
-    
+        return_median = np.nanmedian(sorted(episode_returns))
+
+        succ_std = round(np.nanstd(success_counts), 3)
+        len_std = round(np.nanstd(successful_episode_lengths), 3)
+        ret_std = round(np.nanstd(episode_returns), 3)
+
+        return {
+            "accuracy": {"median": success_counts_median, "std": succ_std},
+            "speed": {"median": success_lengths_median, "std": len_std},
+            "score": {"median": return_median, "std": ret_std},
+        }
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--agents', type=int, default=1)
     args = parser.parse_args()    
     
-    #Generate a large random seed and random generator object for reproducibility
-    rng = np.random.default_rng(2) 
+    seed = 2
+    # Generate a large random seed and random generator object for reproducibility
+    rng = np.random.default_rng(seed)
        
     
     env_kwargs = {
@@ -554,7 +579,7 @@ if __name__ == "__main__":
         "enforce_grid_boundaries": True,
         "DEBUG": True,
         "np_random": rng,        
-        "TEST": 1,
+        "TEST": 2,
         "step_data_mode": "list"
         }    
     
@@ -577,7 +602,7 @@ if __name__ == "__main__":
         save_gif_freq = 1,
         render_path = ".",
         save_path_for_ac = ".",
-        seed = 2,
+        seed = seed,
     )
     
     test = evaluate_PPO(eval_kwargs=eval_kwargs)
