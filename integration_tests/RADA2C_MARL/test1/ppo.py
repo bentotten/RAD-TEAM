@@ -409,6 +409,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                     for id in range(len(agents)):
                         obs_std[id][0] = stat_buffers[id].standardize(o[id][0])                    
                     
+                    for id in range(len(agents)):                    
                         _, v, _, _, _ = agents[id].step(obs_std, hidden=hidden[id], id=id, obs_count=number_of_agents)
                         values.append(v)
                     if epoch_ended:
@@ -591,19 +592,19 @@ if __name__ == '__main__':
         "--enforce-boundaries",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Indicate if each agent should have their own critic or a global.",
+        help="Indicate if boundaries should be enforced.",
     )    
     parser.add_argument(
         "--DEBUG",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Indicate if each agent should have their own critic or a global.",
+        help="Indicate if debug mode.",
     )        
     parser.add_argument(
         "--render",
         action=argparse.BooleanOptionalAction,
         default=False,
-        help="Indicate if each agent should have their own critic or a global.",
+        help="If gif should be rendered or not.",
     )      
     args = parser.parse_args()
 
