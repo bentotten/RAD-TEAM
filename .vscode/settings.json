@@ -2,13 +2,17 @@
     "python.testing.pytestArgs": [
         "."
     ],
-    "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
     "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": true,
     "python.linting.enabled": true,
-    "[python]": {
-        "editor.defaultFormatter": "ms-python.black-formatter"
-    },
-    "python.formatting.provider": "none",
-    "python.linting.mypyEnabled": true
+    "python.formatting.provider": "black",
+    "python.formatting.blackArgs": [
+        "--line-length",
+        "150"
+    ],
+    
+    "python.linting.flake8Args": [
+        "--max-line-length=150",
+    ],
 }

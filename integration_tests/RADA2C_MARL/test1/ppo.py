@@ -45,7 +45,7 @@ def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logg
             act = trajectories[:, action_idx]
             logp_old = trajectories[:, logp_old_idx]
             adv = trajectories[:, advantage_idx]
-            ret= trajectories[:, return_idx,None]
+            ret= trajectories[:, return_idx, None]
             src_tar = trajectories[:, source_loc_idx:].clone()
             
             #Calculate new log prob.
@@ -101,6 +101,8 @@ def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logg
         model_loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
         # source_loc_idx = 15
         source_loc_idx = 4 + (11 * number_agents)
+        
+        # For individual agents observation within array
         o_inx_start = 11 * id
         o_idx_end = 3 + (11 * id) # Offset to the correct observation
 
@@ -117,6 +119,7 @@ def update(ac, env, args, buf, train_pi_iters, train_v_iters, optimization, logg
 
                 observations_slice = ep[0][:, 0:observation_stop]
                 obs_for_pfgru = torch.zeros((len(observations_slice), number_agents * 3))
+                # Remove obstacle detection from observations
                 for offset in range(number_agents):
                     slice_obs = observations_slice[:, (offset*11):(offset*11+3)]
                     obs_for_pfgru[:, offset*3:offset*3+3] = slice_obs
