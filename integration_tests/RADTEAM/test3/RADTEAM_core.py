@@ -1974,7 +1974,7 @@ class CNNBase:
         :param id: (int) ID of the agent who's observation is being processed. This allows any agent to recreate mapbuffers for any other agent
         """
         with torch.no_grad():
-            if not SMALL_VERSION:
+            if not SMALL_VERSION and self.PFGRU:
                 # Extract all observations for PFGRU
                 obs_list = np.array(
                     [state_observation[i][:3] for i in range(self.number_of_agents)]
