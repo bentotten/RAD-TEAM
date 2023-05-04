@@ -4,7 +4,6 @@ from torch.optim import Adam
 import gym  # type: ignore
 import time
 import os
-import core  # type: ignore
 import ppo_tools  # type: ignore
 
 from RADTEAM_core import CNNBase
@@ -260,6 +259,7 @@ def ppo(
     train_pi_iters=40,
     train_v_iters=40,
     train_pfgru_iters=15,
+    reduce_pfgru_iters=True,    
     lam=0.9,
     max_ep_len=120,
     save_gif=False,
@@ -276,13 +276,17 @@ def ppo(
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
     setup_pytorch_for_mpi()
 
+    # Set up logger and save configuration
+    logger = EpochLogger(**logger_kwargs)
+    logger.save_config(locals(), quiet=True)
+
     # Set Pytorch random seed
     torch.manual_seed(seed)
 
     # Instantiate environment
     env = env_fn()
-    # ac_kwargs['seed'] = seed
-    # ac_kwargs['pad_dim'] = 2
+    
+    # Setup A2C args
     ac_kwargs["id"] = 0
     ac_kwargs["action_space"] = env.detectable_directions  # Usually 8
     ac_kwargs["observation_space"] = env.observation_space.shape[
@@ -296,10 +300,6 @@ def ppo(
     ac_kwargs["number_of_agents"] = 1
     ac_kwargs["enforce_boundaries"] = env.enforce_grid_boundaries
     ac_kwargs["PFGRU"] = PFGRU
-
-    # Set up logger and save configuration
-    logger = EpochLogger(**logger_kwargs)
-    logger.save_config(locals(), quiet=True)
 
     obs_dim = env.observation_space.shape[0]
 
@@ -326,7 +326,7 @@ def ppo(
     bp_args = {"bp_decay": 0.1, "l2_weight": 1.0, "l1_weight": 0.0, "elbo_weight": 1.0, "area_scale": env.search_area[2][1]}
 
     # Count variables
-    var_counts = tuple(core.count_vars(module) for module in [agents[0].pi, agents[0].critic, agents[0].model])
+    var_counts = tuple(ppo_tools.count_vars(module) for module in [agents[0].pi, agents[0].critic, agents[0].model])
     logger.log("\nNumber of parameters: \t Actor: %d, Critic: %d Predictor:%d \t" % var_counts)
 
     # Set up trajectory buffer
@@ -439,15 +439,13 @@ def ppo(
                         env.epoch_end = True
                 else:
                     v = np.zeros(number_of_agents)
-                # buf.finish_path(v)
-                # buf.GAE_advantage_and_rewardsToGO(v)
+                # Calculate Advantage and complete filling buffers
                 for id in range(number_of_agents):
                     buffer[id].GAE_advantage_and_rewardsToGO(v[id])
 
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
                     logger.store(EpRet=ep_ret, EpLen=ep_len)
-                    # buf.store_episode_length(episode_length=ep_len)
                     for id in range(number_of_agents):
                         buffer[id].store_episode_length(episode_length=ep_len)
 
@@ -491,11 +489,15 @@ def ppo(
         # Save model
         if (epoch % save_freq == 0) or (epoch == epochs - 1):
             for id in range(number_of_agents):
-                fpath = "{id}_agent"
+                fpath = f"{id}agent"
                 fpath = os.path.join(logger.output_dir, fpath)
                 os.makedirs(fpath, exist_ok=True)
                 agents[id].save(checkpoint_path=fpath)
 
+        # Reduce localization module training iterations after 100 epochs to speed up training
+        if PFGRU and reduce_pfgru_iters and epoch > 99:
+            train_pfgru_iters = 5
+            reduce_pfgru_iters = False
         # Perform PPO update!
         actor_loss = np.zeros(number_of_agents)
         critic_loss = np.zeros(number_of_agents)
@@ -632,7 +634,7 @@ if __name__ == "__main__":
         "bbox": args.dims,
         "observation_area": args.area_obs,
         "obstruction_count": args.obstruct,
-        "number_agents": 1,
+        "number_agents": args.agents,
         "enforce_grid_boundaries": True,
         "DEBUG": True,
         "TEST": 1,

@@ -508,7 +508,8 @@ def ppo(
     ep_count = 0
     hidden = [None for _ in range(len(agents))]
 
-    ac.set_mode("eval")
+    for id in range(len(agents)):
+        agents[id].set_mode("eval")
 
     # Main loop: collect experience in env and update/log each epoch
     print(f"Proc id: {proc_id()} -> Starting main training loop!", flush=True)
@@ -630,7 +631,8 @@ def ppo(
                     ep_ret, ep_len, a = 0, 0, -1
 
                 # Clear maps for next episode
-                ac.reset()
+                for id in range(number_of_agents):
+                    agents[id].reset()
 
         # Save model
         if (epoch % save_freq == 0) or (epoch == epochs - 1):
@@ -638,7 +640,7 @@ def ppo(
                 fpath = f"{id}agent"
                 fpath = os.path.join(logger.output_dir, fpath)
                 os.makedirs(fpath, exist_ok=True)
-                ac.save(checkpoint_path=fpath)
+                agents[id].save(checkpoint_path=fpath)
 
         # Reduce localization module training iterations after 100 epochs to speed up training
         if reduce_pfgru_iters and epoch > 99:
