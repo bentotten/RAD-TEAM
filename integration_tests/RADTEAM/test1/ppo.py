@@ -286,7 +286,6 @@ def ppo(
     env = env_fn()
 
     # Setup A2C args
-    ac_kwargs["id"] = 0
     ac_kwargs["action_space"] = env.detectable_directions  # Usually 8
     # Also known as state dimensions: The dimensions of the observation returned from the environment. Usually 11    
     ac_kwargs["observation_space"] = env.observation_space.shape[0]
@@ -310,13 +309,10 @@ def ppo(
             batches=prototype.get_batch_size(),
             map_count=prototype.get_critic_map_count(),
         )
-
         ac_kwargs["GlobalCritic"] = GlobalCritic
-        GlobalCriticOptimizer = Adam(GlobalCritic.parameters(), lr=vf_lr)
 
     elif mode == 'collaborative':
         GlobalCritic = None
-        GlobalCriticOptimizer = None
 
     elif mode == 'competative':
         raise NotImplementedError("Competative mode not implemented.")
@@ -325,7 +321,7 @@ def ppo(
 
     agents = list()
     for id in range(number_of_agents):
-        agents.append(actor_critic(**ac_kwargs))
+        agents.append(actor_critic(id=id, **ac_kwargs))
 
         logger.save_config(agents[id].get_config(), text=f"_agent{id}", quiet=True)
 
@@ -340,7 +336,8 @@ def ppo(
             model_optimizer=Adam(agents[id].model.parameters(), lr=pfgru_lr),
             MSELoss=torch.nn.MSELoss(reduction="mean"),
             critic_optimizer=Adam(
-                agents[id].critic.parameters(), lr=vf_lr if not GlobalCriticOptimizer else GlobalCriticOptimizer
+                agents[id].critic.parameters() if not GlobalCritic else GlobalCritic.parameters(),
+                lr=vf_lr
             ),
         )
         for id in range(number_of_agents)
@@ -350,7 +347,6 @@ def ppo(
     if mode == "cooperative":
         for id in range(number_of_agents):
             assert agents[id].critic is GlobalCritic
-            assert (optimizaters[id].critic_optimizer is GlobalCriticOptimizer)
 
     # Sync params across processes
     # sync_params(ac.pi)
@@ -567,6 +563,7 @@ def ppo(
                 clip_ratio=clip_ratio,
                 number_of_agents=number_of_agents,
                 id=id,
+                mode=mode,
             )
 
         # Get averages
