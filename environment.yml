@@ -17,7 +17,9 @@ dependencies:
   - cudatoolkit
   - sphinx
   - pip
+  - ray
+  - joblib
+  - mpi4py
   - pip:
-      - -e ../../gym_rad_search
-      - -U ray
+      - -e ./gym_rad_search
       - sphinx-rtd-theme
