@@ -30,7 +30,7 @@ import RADTEAM_core as RADCNN_core  # type: ignore
 # import RADA2C_core as RADA2C_core  # type: ignore
 
 # NOTE: Do not use Ray with env generator for random position generation; will create duplicates of identical episode configurations. Ok for TEST1
-USE_RAY = True
+USE_RAY = False
 
 ALL_ACKWARGS_SAVED = False
 
@@ -67,7 +67,7 @@ class Distribution:
 
 
 # Uncomment when ready to run with Ray
-@ray.remote
+# @ray.remote
 @dataclass
 class EpisodeRunner:
     """
@@ -175,29 +175,23 @@ class EpisodeRunner:
             original_configs = obj  # Original project save format
 
         # Set up static A2C actor-critic args
-        if self.actor_critic_architecture == "cnn":
-            actor_critic_args = dict(
-                action_space=self.env.detectable_directions,
-                # Also known as state dimensions: The dimensions of the observation returned from the environment                
-                observation_space=self.env.observation_space.shape[0],
-                steps_per_episode=self.steps_per_episode,
-                number_of_agents=self.number_of_agents,
-                detector_step_size=self.env.step_size,
-                environment_scale=self.env.scale,
-                bounds_offset=self.env.observation_area,
-                enforce_boundaries=self.enforce_boundaries,
-                grid_bounds=self.env.scaled_grid_max,
-                resolution_multiplier=self.resolution_multiplier,
-                GlobalCritic=None,
-                no_critic=True,
-                save_path=self.save_path_for_ac,
-                PFGRU=self.PFGRU
-            )
-        else:
-            raise ValueError("Unsupported net type")
-
-        if self.actor_critic_architecture != "cnn":
-            assert self.team_mode == "individual"  # No global critic for RAD-A2C
+        actor_critic_args = dict(
+            action_space=self.env.detectable_directions,
+            # Also known as state dimensions: The dimensions of the observation returned from the environment                
+            observation_space=self.env.observation_space.shape[0],
+            steps_per_episode=self.steps_per_episode,
+            number_of_agents=self.number_of_agents,
+            detector_step_size=self.env.step_size,
+            environment_scale=self.env.scale,
+            bounds_offset=self.env.observation_area,
+            enforce_boundaries=self.enforce_boundaries,
+            grid_bounds=self.env.scaled_grid_max,
+            resolution_multiplier=self.resolution_multiplier,
+            GlobalCritic=None,
+            no_critic=True,
+            save_path=self.save_path_for_ac,
+            PFGRU=self.PFGRU
+        )
 
         # Check current important parameters match parameters read in
         if ALL_ACKWARGS_SAVED:
@@ -234,35 +228,13 @@ class EpisodeRunner:
 
         # Initialize agents and load agent models
         for i in range(self.number_of_agents):
-            if self.actor_critic_architecture == "cnn":
-                self.agents[i] = RADCNN_core.CNNBase(
-                    id=i, **actor_critic_args
-                )  # NOTE: No updates, do not need PPO
-                self.agents[i].load(checkpoint_path=agent_models[i])
+            self.agents[i] = RADCNN_core.CNNBase(
+                id=i, **actor_critic_args
+            )  # NOTE: No updates, do not need PPO
+            self.agents[i].load(checkpoint_path=agent_models[i])
 
-                # Sanity check
-                assert self.agents[i].critic.is_mock_critic()
-
-            elif self.actor_critic_architecture == "rnn":
-                self.agents[i] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
-                self.agents[i].load_state_dict(
-                    torch.load(f"{agent_models[i]}/pyt_save/model.pt")
-                )
-            elif self.actor_critic_architecture == "og":
-                # Add in needed params
-                actor_critic_args["obs_dim"] = self.env.observation_space.shape[0]
-                actor_critic_args["act_dim"] = self.env.detectable_directions
-                actor_critic_args["seed"] = self.seed
-                actor_critic_args["pad_dim"] = 2
-
-                self.agents[i] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
-                self.agents[i].load_state_dict(
-                    torch.load(f"{agent_models[i]}/pyt_save/model.pt")
-                )
-
-                self.actor_critic_architecture = "rnn"  # Should be ok now
-            else:
-                raise ValueError("Unsupported net type")
+            # Sanity check
+            assert self.agents[i].critic.is_mock_critic()
 
     def run(self) -> MonteCarloResults:
         # Prepare tracking buffers and counters
@@ -657,23 +629,22 @@ class evaluate_PPO:
 
 if __name__ == "__main__":
 
-    number_of_agents = 2
-    mode = "collaborative"
+    number_of_agents = 1
+    mode = "collaborative"  # No critic, ok to leave as collaborative for all tests
     render = False
+    obstruction_count = 0
 
     PFGRU = False
     seed = 2
     # Generate a large random seed and random generator object for reproducibility
     rng = np.random.default_rng(seed)
     env_kwargs = {
-        "bbox": [[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]],
-        "observation_area": [100.0, 100.0],
-        "obstruction_count": 0,
+        "bbox": [[0.0, 0.0], [2700.0, 0.0], [2700.0, 2700.0], [0.0, 2700.0]],
+        "observation_area": [200.0, 500.0],
+        "obstruction_count": obstruction_count,
         "number_agents": number_of_agents,
         "enforce_grid_boundaries": True,
-        "DEBUG": True,
         "np_random": rng,
-        "TEST": 1,
     }
 
     eval_kwargs = dict(
@@ -684,7 +655,7 @@ if __name__ == "__main__":
         montecarlo_runs=100,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
         actor_critic_architecture="cnn",  # Neural network type (control)
         snr="none",  # signal to noise ratio [none, low, medium, high]
-        obstruction_count=0,  # number of obstacles [0 - 7] (num_obs)
+        obstruction_count=obstruction_count,  # number of obstacles [0 - 7] (num_obs)
         steps_per_episode=120,
         number_of_agents=number_of_agents,
         enforce_boundaries=True,
