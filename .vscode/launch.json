@@ -106,48 +106,26 @@
       "cwd": "${workspaceFolder}/algos/multiagent"
     },
     {
-      "name": "Test CNN Stage 1 - Test 1",
+      "name": "Test RADTEAM Stage 3 - Test 5",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/integration_tests/CNN/test1/ppo.py",
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      // "args": ["--agents", "2"],
-
-      "cwd": "${workspaceFolder}/integration_tests/CNN/test1"
-    },    
-    {
-      "name": "Test RADMARL Stage 1 - Test 1",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/integration_tests/RADMARL/test1/ppo.py",
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      // "args": ["--agents", "2"],
-
-      "cwd": "${workspaceFolder}/integration_tests/RADMARL/test1"
-    },
-    {
-      "name": "Test RADTEAM Stage 1 - Test 1",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/integration_tests/RADTEAM/test1/evaluate.py",
+      "program": "${workspaceFolder}/integration_tests/RADTEAM/test5/ppo.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": ["--agents", "2", "--mode", "collaborative"],
 
-      "cwd": "${workspaceFolder}/integration_tests/RADTEAM/test1"
+      "cwd": "${workspaceFolder}/integration_tests/RADTEAM/test5"
     },
     {
-      "name": "Test RADTEAM Stage 1 - Test 3",
+      "name": "Test RADTEAM Stage 3 - Test 6",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/integration_tests/RADTEAM/test3/ppo.py",
+      "program": "${workspaceFolder}/integration_tests/RADTEAM/test6/ppo.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": ["--agents", "2", "--mode", "collaborative"],
 
-      "cwd": "${workspaceFolder}/integration_tests/RADTEAM/test3"
-    }       
+      "cwd": "${workspaceFolder}/integration_tests/RADTEAM/test6"
+    }     
   ]
 }

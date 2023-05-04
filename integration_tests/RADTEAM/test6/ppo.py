@@ -654,7 +654,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--obstruct",
         type=int,
-        default=0,
+        default=1,
         help="Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7",
     )
     parser.add_argument("--net_type", type=str, default="rnn", help="Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp")
@@ -678,7 +678,7 @@ if __name__ == "__main__":
     PFGRU = False
 
     # Save directory and experiment name
-    args.env_name = "stage_2"
+    args.env_name = "stage_3"
     args.exp_name = f"{args.exp_name}"
 
     init_dims = {
