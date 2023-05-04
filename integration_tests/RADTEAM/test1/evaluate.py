@@ -30,7 +30,7 @@ import RADTEAM_core as RADCNN_core  # type: ignore
 # import RADA2C_core as RADA2C_core  # type: ignore
 
 # NOTE: Do not use Ray with env generator for random position generation; will create duplicates of identical episode configurations. Ok for TEST1
-USE_RAY = False
+USE_RAY = True
 
 ALL_ACKWARGS_SAVED = False
 
@@ -67,7 +67,7 @@ class Distribution:
 
 
 # Uncomment when ready to run with Ray
-# @ray.remote
+@ray.remote
 @dataclass
 class EpisodeRunner:
     """
@@ -659,7 +659,7 @@ if __name__ == "__main__":
 
     number_of_agents = 2
     mode = "collaborative"
-    render = True
+    render = False
 
     PFGRU = False
     seed = 2

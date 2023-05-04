@@ -3,48 +3,25 @@ Evaluate agents and update neural networks using simulation environment.
 """
 
 import os
-import sys
 import time
-import random
-from datetime import datetime
-import math
-from statsmodels.stats.weightstats import DescrStatsW  # type: ignore
-
 import torch
-from torch.optim import Adam
-import torch.nn.functional as F
-import torch.nn as nn
-
 import numpy as np
-import numpy.random as npr
-import numpy.typing as npt
 
 from typing import (
-    Any,
     List,
-    Literal,
-    NewType,
-    Optional,
-    TypedDict,
-    cast,
-    get_args,
     Dict,
-    NamedTuple,
-    Type,
     Union,
     Tuple,
 )
-from typing_extensions import TypeAlias
 from dataclasses import dataclass, field
 
 import json
-import joblib  # type: ignore
 import ray
 
 # Simulation Environment
 import gym  # type: ignore
 from gym_rad_search.envs import rad_search_env  # type: ignore
-from gym_rad_search.envs.rad_search_env import RadSearch, StepResult  # type: ignore
+from gym_rad_search.envs.rad_search_env import RadSearch  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
 # Neural Networks
@@ -191,21 +168,18 @@ class EpisodeRunner:
             if child.is_dir() and "general" in child.name:
                 general_config_path = child.path
 
-        obj = json.load(open(f"{self.model_path}/config.json"))
+        obj = json.load(open(f"{self.model_path}/config_agent0.json"))
         if "self" in obj.keys():
-            original_configs = list(obj["self"].values())[0]["ppo_kwargs"][
-                "actor_critic_args"
-            ]
+            original_configs = list(obj["self"].values())[0]["ppo_kwargs"]["actor_critic_args"]
         else:
-            original_configs = obj["ac_kwargs"]  # Original project save format
+            original_configs = obj  # Original project save format
 
         # Set up static A2C actor-critic args
         if self.actor_critic_architecture == "cnn":
             actor_critic_args = dict(
                 action_space=self.env.detectable_directions,
-                observation_space=self.env.observation_space.shape[
-                    0
-                ],  # Also known as state dimensions: The dimensions of the observation returned from the environment
+                # Also known as state dimensions: The dimensions of the observation returned from the environment                
+                observation_space=self.env.observation_space.shape[0],
                 steps_per_episode=self.steps_per_episode,
                 number_of_agents=self.number_of_agents,
                 detector_step_size=self.env.step_size,
@@ -219,33 +193,6 @@ class EpisodeRunner:
                 save_path=self.save_path_for_ac,
                 PFGRU=self.PFGRU
             )
-        elif self.actor_critic_architecture == "rnn":
-            actor_critic_args = dict(
-                obs_dim=self.env.observation_space.shape[0],
-                act_dim=self.env.detectable_directions,
-                hidden_sizes_pol=[[32]],
-                hidden_sizes_val=[[32]],
-                hidden_sizes_rec=[24],
-                hidden=[[24]],
-                net_type="rnn",
-                batch_s=1,
-                seed=self.seed,
-                pad_dim=2,
-            )
-        elif self.actor_critic_architecture == "og":
-            actor_critic_args = dict(
-                # obs_dim=self.env.observation_space.shape[0],
-                # act_dim=self.env.detectable_directions,
-                hidden_sizes_pol=[[32]],
-                hidden_sizes_val=[[32]],
-                hidden_sizes_rec=[24],
-                hidden=[[24]],
-                net_type="rnn",
-                batch_s=1,
-                # seed=self.seed,
-                # pad_dim=2,
-            )
-            original_configs["net_type"] = original_configs["lstm"]
         else:
             raise ValueError("Unsupported net type")
 
@@ -319,7 +266,7 @@ class EpisodeRunner:
 
     def run(self) -> MonteCarloResults:
         # Prepare tracking buffers and counters
-        episode_return: Dict[int, float] = {id: 0.0 for id in self.agents}
+        episode_return = 0
         steps_in_episode: int = 0
         terminal_counter: Dict[int, int] = {
             id: 0 for id in self.agents
@@ -328,8 +275,6 @@ class EpisodeRunner:
 
         # Prepare results buffers
         results = MonteCarloResults(id=self.id)
-        # For RAD-A2C Compatibility
-        stat_buffers: Dict[int, StatisticStandardization] = dict()
 
         # Reset environment and save test env parameters
         observations, _, _, _ = self.env.reset()
@@ -353,27 +298,14 @@ class EpisodeRunner:
             id: self.agents[id].reset_hidden() for id in self.agents
         }  # For RAD-A2C compatibility
 
-        # If RAD-A2C, instatiate stat buffer and load/standardize first observation
-        if (
-            self.actor_critic_architecture == "rnn"
-            or self.actor_critic_architecture == "mlp"
-        ):
-            initial_prediction = np.zeros((3,))
-            for id, ac in self.agents.items():
-                stat_buffers[id] = StatisticStandardization()
-                stat_buffers[id].update(observations[id][0])
-                observations[id][0] = stat_buffers[id].standardize(observations[id][0])
-
         while run_counter < self.montecarlo_runs:
             # Get agent thoughts on current state. Actor: Compute action and logp (log probability); Critic: compute state-value
             agent_thoughts.clear()
             for id, ac in self.agents.items():
                 with torch.no_grad():
-                    agent_thoughts[id], heatmaps = ac.step(observations, hiddens[id])
+                    agent_thoughts[id], _ = ac.step(observations, hiddens[id])
 
-                hiddens[id] = agent_thoughts[
-                    id
-                ].hidden  # For RAD-A2C - save latest hiddens for use in next steps.
+                hiddens[id] = agent_thoughts[id].hidden
 
             # Create action list to send to environment
             agent_action_decisions = {
@@ -387,35 +319,15 @@ class EpisodeRunner:
                 action=agent_action_decisions
             )
 
-            if (
-                self.actor_critic_architecture == "rnn"
-                or self.actor_critic_architecture == "mlp"
-            ):
-                for id, ac in self.agents.items():
-                    stat_buffers[id].update(observations[id][0])
-                    observations[id][0] = stat_buffers[id].standardize(
-                        observations[id][0]
-                    )
-
-            # Incremement Counters and save new (individual) cumulative returns
-            if self.team_mode == "individual":
-                for id in range(self.number_of_agents):
-                    episode_return[id] += np.array(
-                        rewards["individual_reward"][id], dtype="float32"
-                    ).item()
-            else:
-                for id in self.agents:
-                    episode_return[id] += np.array(
-                        rewards["team_reward"], dtype="float32"
-                    ).item()  # TODO if saving team reward, no need to keep duplicates for each agent
-
+            # Incremement Counters
+            episode_return += rewards["team_reward"]
             steps_in_episode += 1
 
             # Tally up ending conditions
             # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not all, this will need to be changed.
             terminal_reached_flag = False
             for id in terminal_counter:
-                if terminals[id] == True and not timeout:
+                if terminals[id] is True:
                     terminal_counter[id] += 1
                     terminal_reached_flag = True
 
@@ -448,23 +360,23 @@ class EpisodeRunner:
                     results.success_counter += 1
                     results.successful.episode_length.append(steps_in_episode)
                     results.successful.episode_return.append(
-                        episode_return[0]
-                    )  # TODO change for individual mode
+                        episode_return
+                    )  
                 else:
                     results.unsuccessful.episode_length.append(steps_in_episode)
                     results.unsuccessful.episode_return.append(
-                        episode_return[0]
-                    )  # TODO change for individual mode
+                        episode_return
+                    )  
 
                 results.total_episode_return.append(
-                    episode_return[0]
-                )  # TODO change for individual mode
+                    episode_return
+                ) 
 
                 # Incremenet run counter
                 run_counter += 1
 
                 # Reset environment without performing an env.reset()
-                episode_return = {id: 0.0 for id in self.agents}
+                episode_return = 0
                 steps_in_episode = 0
                 terminal_counter = {
                     id: 0 for id in self.agents
@@ -474,21 +386,9 @@ class EpisodeRunner:
                     env_dict=self.env_dict, id=0, num_obs=self.obstruction_count
                 )
 
-                # Reset stat buffer for RAD-A2C
-                if (
-                    self.actor_critic_architecture == "rnn"
-                    or self.actor_critic_architecture == "mlp"
-                ):
-                    for id, ac in self.agents.items():
-                        stat_buffers[id].reset()
-                        stat_buffers[id].update(observations[id][0])
-                        observations[id][0] = stat_buffers[id].standardize(
-                            observations[id][0]
-                        )
-                else:
-                    # Reset agents
-                    for agent in self.agents.values():
-                        agent.reset()
+                # Reset agents
+                for agent in self.agents.values():
+                    agent.reset()
 
         results.completed_runs = run_counter
 
@@ -534,7 +434,7 @@ class EpisodeRunner:
                 path=self.render_path,
                 epoch_count=run_counter,
                 episode_count=id,
-                silent=True,
+                silent=False,
             )
             # Render environment image
             self.env.render(
@@ -756,9 +656,12 @@ class evaluate_PPO:
 
 
 if __name__ == "__main__":
-    
+
+    number_of_agents = 2
+    mode = "collaborative"
+    render = False
+
     PFGRU = False
-    
     seed = 2
     # Generate a large random seed and random generator object for reproducibility
     rng = np.random.default_rng(seed)
@@ -766,7 +669,7 @@ if __name__ == "__main__":
         "bbox": [[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]],
         "observation_area": [100.0, 100.0],
         "obstruction_count": 0,
-        "number_agents": 1,
+        "number_agents": number_of_agents,
         "enforce_grid_boundaries": True,
         "DEBUG": True,
         "np_random": rng,
@@ -783,11 +686,11 @@ if __name__ == "__main__":
         snr="none",  # signal to noise ratio [none, low, medium, high]
         obstruction_count=0,  # number of obstacles [0 - 7] (num_obs)
         steps_per_episode=120,
-        number_of_agents=1,
+        number_of_agents=number_of_agents,
         enforce_boundaries=True,
         resolution_multiplier=0.01,
-        team_mode="individual",
-        render=False,
+        team_mode=mode,
+        render=render,
         save_gif_freq=1,
         render_path=".",
         save_path_for_ac=".",
