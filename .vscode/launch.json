@@ -134,7 +134,7 @@
       "program": "${workspaceFolder}/integration_tests/RADTEAM/test1/ppo.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      // "args": ["--agents", "1"],
+      "args": ["--agents", "2", "--mode", "collaborative"],
 
       "cwd": "${workspaceFolder}/integration_tests/RADTEAM/test1"
     }    
