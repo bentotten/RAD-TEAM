@@ -30,7 +30,7 @@
       "program": "${workspaceFolder}/algos/multiagent/plot_results.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "args": ["--data_dir", "${workspaceFolder}/models", "--smooth", "10"],
+      "args": ["--data_dir", "/u/ttotten/models/train/stage_3/RADTEAM_test5_1agent_collab_emme_s2", "--smooth", "10"],
       "cwd": "${workspaceFolder}/algos/multiagent"
     },
     {
