@@ -802,7 +802,7 @@ class RadSearch(gym.Env):
         else:
             raise ValueError("Incompatible Action type")
         # Parse rewards
-        if not PROPORTIONAL_REWARD: 
+        if not PROPORTIONAL_REWARD:
             # if Global shortest path was used as min shortest path distance        
             if self.step_data_mode == 'dict':
                 for agent_id in self.agents:
@@ -812,7 +812,7 @@ class RadSearch(gym.Env):
                     elif max_reward < aggregate_reward_result[agent_id]:
                         max_reward = aggregate_reward_result[agent_id]
             elif self.step_data_mode == 'list':
-                max_reward = aggregate_reward_result.max() # type: ignore
+                max_reward = aggregate_reward_result.max()  # type: ignore
             else:
                 raise ValueError("Unknown step data type mode")
                             
@@ -829,8 +829,8 @@ class RadSearch(gym.Env):
             
         # Save cumulative team reward for rendering
         for agent in self.agents.values():
-            if max_reward:
-                agent.team_reward_sto.append(max_reward + agent.team_reward_sto[-1] if len(agent.team_reward_sto) > 0 else max_reward )            
+            if max_reward or max_reward == 0:
+                agent.team_reward_sto.append(max_reward + agent.team_reward_sto[-1] if len(agent.team_reward_sto) > 0 else max_reward)
 
         return (
             aggregate_observation_result,

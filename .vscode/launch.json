@@ -131,12 +131,23 @@
       "name": "Test RADTEAM Stage 1 - Test 1",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/integration_tests/RADTEAM/test1/ppo.py",
+      "program": "${workspaceFolder}/integration_tests/RADTEAM/test1/evaluate.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": ["--agents", "2", "--mode", "collaborative"],
 
       "cwd": "${workspaceFolder}/integration_tests/RADTEAM/test1"
-    }    
+    },
+    {
+      "name": "Test RADTEAM Stage 1 - Test 3",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/integration_tests/RADTEAM/test3/ppo.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": ["--agents", "2", "--mode", "collaborative"],
+
+      "cwd": "${workspaceFolder}/integration_tests/RADTEAM/test3"
+    }       
   ]
 }

@@ -215,6 +215,8 @@ def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pf
                 raise ValueError("Batched update problem")
 
         optimization.critic_scheduler.step()
+    else:
+        loss_v = None
 
     optimization.pi_scheduler.step()
 

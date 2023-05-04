@@ -23,6 +23,7 @@ profile_tottime*
 # Visuals
 *.gif
 *.png
+*.eps
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
