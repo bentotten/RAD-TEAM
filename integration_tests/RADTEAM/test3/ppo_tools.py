@@ -27,6 +27,9 @@ PRIO_MEMORY = False
 
 Shape: TypeAlias = Union[int, Tuple[int], Tuple[int, Any], Tuple[int, int, Any]]
 
+def count_vars(module):
+    return sum([np.prod(p.shape) for p in module.parameters()])
+
 # Ok via unit testing
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     """
