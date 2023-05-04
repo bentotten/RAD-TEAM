@@ -6,7 +6,7 @@ import time
 import os
 import ppo_tools  # type: ignore
 
-from RADTEAM_core import CNNBase
+from RADTEAM_core import CNNBase, Critic
 
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 from rl_tools.logx import EpochLogger  # type: ignore
@@ -16,7 +16,7 @@ from rl_tools.mpi_tools import mpi_fork, proc_id, num_procs  # type: ignore
 BATCHED_UPDATE = True
 
 
-def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pfgru_iters, target_kl, clip_ratio, number_of_agents, id):
+def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pfgru_iters, target_kl, clip_ratio, number_of_agents, id, mode):
     """Update for the localization and A2C modules"""
 
     def sample(data, minibatch=1):
@@ -192,33 +192,31 @@ def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pf
 
     pi_info = dict(kl=kl, ent=entropy, cf=clip_fraction)  # Just for last step
 
-    # Update value function
-    for i in range(train_v_iters):
-        if BATCHED_UPDATE:
-            optimization.critic_optimizer.zero_grad()
-            loss_v = compute_batched_losses_critic(agent=ac, data=data, sample=sample_indexes, map_buffer_maps=v_maps)
-
-            loss_v.backward()
-            optimization.critic_optimizer.step()
-
-        elif not BATCHED_UPDATE:
-            for step in sample_indexes:
-                ac.reset()
-
+    # Update value function (in cooperative mode, only first agent updates global critic)
+    if mode != 'cooperative' or id == 0:
+        for i in range(train_v_iters):
+            if BATCHED_UPDATE:
                 optimization.critic_optimizer.zero_grad()
-                loss_v = compute_loss_critic(agent=ac, index=step, data=data, map_stack=v_maps)
-                loss_v.backward()
-                mpi_avg_grads(ac.critic)  # average grads across MPI processes
-                optimization.critic_optimizer.step()
-        else:
-            raise ValueError("Batched update problem")
+                loss_v = compute_batched_losses_critic(agent=ac, data=data, sample=sample_indexes, map_buffer_maps=v_maps)
 
-    # Reduce learning rate
-    # pi_scheduler.step()
+                loss_v.backward()
+                optimization.critic_optimizer.step()
+
+            elif not BATCHED_UPDATE:
+                for step in sample_indexes:
+                    ac.reset()
+
+                    optimization.critic_optimizer.zero_grad()
+                    loss_v = compute_loss_critic(agent=ac, index=step, data=data, map_stack=v_maps)
+                    loss_v.backward()
+                    mpi_avg_grads(ac.critic)  # average grads across MPI processes
+                    optimization.critic_optimizer.step()
+            else:
+                raise ValueError("Batched update problem")
+
+        optimization.critic_scheduler.step()
+
     optimization.pi_scheduler.step()
-    optimization.critic_scheduler.step()
-    # model_scheduler.step()
-    # optimization.model_scheduler.step()
 
     # Log changes from update
     kl, ent, cf = pi_info["kl"], pi_info["ent"], pi_info["cf"]
@@ -244,6 +242,7 @@ def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pf
 
 def ppo(
     env_fn,
+    mode='cooperative',
     actor_critic=CNNBase,
     ac_kwargs=dict(),
     seed=0,
@@ -259,7 +258,7 @@ def ppo(
     train_pi_iters=40,
     train_v_iters=40,
     train_pfgru_iters=15,
-    reduce_pfgru_iters=True,    
+    reduce_pfgru_iters=True,
     lam=0.9,
     max_ep_len=120,
     save_gif=False,
@@ -285,13 +284,12 @@ def ppo(
 
     # Instantiate environment
     env = env_fn()
-    
+
     # Setup A2C args
     ac_kwargs["id"] = 0
     ac_kwargs["action_space"] = env.detectable_directions  # Usually 8
-    ac_kwargs["observation_space"] = env.observation_space.shape[
-        0
-    ]  # Also known as state dimensions: The dimensions of the observation returned from the environment. Usually 11
+    # Also known as state dimensions: The dimensions of the observation returned from the environment. Usually 11    
+    ac_kwargs["observation_space"] = env.observation_space.shape[0]
     ac_kwargs["detector_step_size"] = env.step_size  # Usually 100 cm
     ac_kwargs["environment_scale"] = env.scale
     ac_kwargs["bounds_offset"] = env.observation_area
@@ -304,9 +302,28 @@ def ppo(
     obs_dim = env.observation_space.shape[0]
 
     # Instantiate A2C
-    ac = actor_critic(**ac_kwargs)
-    agents = list()
+    if mode == 'cooperative':
+        # Initialize Global Critic
+        prototype = CNNBase(id=-1, **ac_kwargs)
+        GlobalCritic = Critic(
+            map_dim=prototype.get_map_dimensions(),
+            batches=prototype.get_batch_size(),
+            map_count=prototype.get_critic_map_count(),
+        )
 
+        ac_kwargs["GlobalCritic"] = GlobalCritic
+        GlobalCriticOptimizer = Adam(GlobalCritic.parameters(), lr=vf_lr)
+
+    elif mode == 'collaborative':
+        GlobalCritic = None
+        GlobalCriticOptimizer = None
+
+    elif mode == 'competative':
+        raise NotImplementedError("Competative mode not implemented.")
+    else:
+        raise ValueError("Unknown game mode")
+
+    agents = list()
     for id in range(number_of_agents):
         agents.append(actor_critic(**ac_kwargs))
 
@@ -316,6 +333,24 @@ def ppo(
             if not model_path:
                 model_path = os.getcwd()
             agents[id].load(model_path)
+
+    optimizaters = [
+        ppo_tools.OptimizationStorage(
+            pi_optimizer=Adam(agents[id].pi.parameters(), lr=pi_lr),
+            model_optimizer=Adam(agents[id].model.parameters(), lr=pfgru_lr),
+            MSELoss=torch.nn.MSELoss(reduction="mean"),
+            critic_optimizer=Adam(
+                agents[id].critic.parameters(), lr=vf_lr if not GlobalCriticOptimizer else GlobalCriticOptimizer
+            ),
+        )
+        for id in range(number_of_agents)
+    ]
+
+    # Sanity check
+    if mode == "cooperative":
+        for id in range(number_of_agents):
+            assert agents[id].critic is GlobalCritic
+            assert (optimizaters[id].critic_optimizer is GlobalCriticOptimizer)
 
     # Sync params across processes
     # sync_params(ac.pi)
@@ -346,16 +381,6 @@ def ppo(
     save_gif_freq = epochs // 3
     if proc_id() == 0:
         print(f"Local steps per epoch: {local_steps_per_epoch}")
-
-    optimizaters = [
-        ppo_tools.OptimizationStorage(
-            pi_optimizer=Adam(agents[id].pi.parameters(), lr=pi_lr),
-            critic_optimizer=Adam(agents[id].critic.parameters(), lr=vf_lr),
-            model_optimizer=Adam(agents[id].model.parameters(), lr=pfgru_lr),
-            MSELoss=torch.nn.MSELoss(reduction="mean"),
-        )
-        for id in range(number_of_agents)
-    ]
 
     ##########################################################################################################################################
     # Prepare for interaction with environment
@@ -392,6 +417,16 @@ def ppo(
 
             next_o, r, d, _ = env.step(action_batch)
 
+            # Parse reward according to mode
+            reward = np.zeros(number_of_agents)
+            for id in range(number_of_agents):
+                if mode == 'cooperative':
+                    reward[id] = r["team_reward"]
+                elif mode == 'collaborative':
+                    reward[id] = r["individual_reward"][id]
+                else:
+                    raise ValueError("Unsupported game mode.")
+
             d = True if True in d.values() else False
             ep_ret += r["team_reward"]  # Used for progress logging, not update
             ep_len += 1
@@ -404,7 +439,7 @@ def ppo(
                     act=results[id].action,
                     val=results[id].state_value,
                     logp=results[id].action_logprob,
-                    rew=r["individual_reward"][id],
+                    rew=reward[id],
                     src=env.src_coords,
                     full_observation=o,
                     heatmap_stacks=heatmap_stacks[id],
@@ -615,10 +650,16 @@ if __name__ == "__main__":
     )
     parser.add_argument("--net_type", type=str, default="rnn", help="Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp")
     parser.add_argument("--alpha", type=float, default=0.1, help="Entropy reward term scaling")
-    parser.add_argument("--load_model", type=int, default=0)
-    parser.add_argument("--agents", type=int, default=1)
+    parser.add_argument("--load_model", type=int, default=0, help="Load parameters from saved model. 0 is false, 1 is true")
+    parser.add_argument("--agents", type=int, default=1, help="Number of agents")
+    parser.add_argument("--mode", type=str, default="cooperative", 
+                        help="Game mode: Cooperative is global critic and team reward, Collaborative is individual critic and inv reward, Competative is individual zero-sum game"
+                        )
 
     args = parser.parse_args()
+
+    if args.mode == 'competative':
+        raise NotImplementedError("Competative mode not implemented yet")
 
     # Change mini-batch size, only been tested with size of 1
     args.batch = 1
@@ -683,4 +724,5 @@ if __name__ == "__main__":
         load_model=args.load_model,
         PFGRU=PFGRU,
         number_of_agents=args.agents,
+        mode = args.mode
     )
