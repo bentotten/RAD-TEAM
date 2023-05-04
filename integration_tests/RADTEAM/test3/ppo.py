@@ -246,13 +246,13 @@ def ppo(
     actor_critic=CNNBase,
     ac_kwargs=dict(),
     seed=0,
-    steps_per_epoch=4000,
-    epochs=50,
+    steps_per_epoch=480,
+    epochs=3000,
     gamma=0.99,
     alpha=0,
+    mp_mm=[5, 5],    
     clip_ratio=0.2,
     pi_lr=3e-4,
-    mp_mm=[5, 5],
     vf_lr=3e-4,
     pfgru_lr=5e-3,
     train_pi_iters=40,
@@ -293,8 +293,8 @@ def ppo(
     ac_kwargs["environment_scale"] = env.scale
     ac_kwargs["bounds_offset"] = env.observation_area
     ac_kwargs["grid_bounds"] = env.scaled_grid_max
-    ac_kwargs["steps_per_episode"] = 120
-    ac_kwargs["number_of_agents"] = 1
+    ac_kwargs["steps_per_episode"] = max_ep_len
+    ac_kwargs["number_of_agents"] = number_of_agents
     ac_kwargs["enforce_boundaries"] = env.enforce_grid_boundaries
     ac_kwargs["PFGRU"] = PFGRU
 
@@ -368,7 +368,7 @@ def ppo(
         ppo_tools.PPOBuffer(
             observation_dimension=obs_dim,
             max_size=local_steps_per_epoch,
-            max_episode_length=120,
+            max_episode_length=max_ep_len,
             number_agents=number_of_agents,
         )
         for _ in range(number_of_agents)
@@ -390,11 +390,16 @@ def ppo(
     for id in range(number_of_agents):
         agents[id].set_mode("eval")
 
+    hidden = [None for _ in range(number_of_agents)]
+
     # Main loop: collect experience in env and update/log each epoch
     print(f"Proc id: {proc_id()} -> Starting main training loop!", flush=True)
     for epoch in range(epochs):
         # For rendering labeling
         episode_count = 0
+
+        for id in range(number_of_agents):
+            hidden[id] = agents[id].reset_hidden()
 
         for t in range(local_steps_per_epoch):
             # TODO make this with a numpy array instead
@@ -405,11 +410,12 @@ def ppo(
 
             # compute action and logp (Actor), compute value (Critic)
             for id in range(number_of_agents):
-                result_single, heatmap_stack_single = agents[id].step(o, hidden=agents[id].reset_hidden())
+                result_single, heatmap_stack_single = agents[id].step(o, hidden=hidden[id])
                 results.append(result_single)
                 heatmap_stacks.append(heatmap_stack_single)
                 action_batch[id] = result_single.action
                 values[id] = result_single.state_value
+                hidden[id] = result_single.hidden
 
             next_o, r, d, _ = env.step(action_batch)
 
@@ -462,7 +468,7 @@ def ppo(
                     # if trajectory didn't reach terminal state, bootstrap value target
                     v = np.zeros(number_of_agents)
                     for id in range(number_of_agents):
-                        result, _ = agents[id].step(o, hidden=agents[id].reset_hidden())
+                        result, _ = agents[id].step(o, hidden=hidden[id])
                         v[id] = result.state_value
 
                     if epoch_ended:
@@ -504,6 +510,9 @@ def ppo(
 
                 if not env.epoch_end:
                     # Reset detector position and episode tracking
+                    for id in range(number_of_agents):
+                        hidden[id] = agents[id].reset_hidden()
+                    
                     o, _, _, _ = env.reset()
                     ep_ret, ep_len = 0, 0
                 else:

@@ -390,11 +390,16 @@ def ppo(
     for id in range(number_of_agents):
         agents[id].set_mode("eval")
 
+    hidden = [None for _ in range(number_of_agents)]
+
     # Main loop: collect experience in env and update/log each epoch
     print(f"Proc id: {proc_id()} -> Starting main training loop!", flush=True)
     for epoch in range(epochs):
         # For rendering labeling
         episode_count = 0
+
+        for id in range(number_of_agents):
+            hidden[id] = agents[id].reset_hidden()
 
         for t in range(local_steps_per_epoch):
             # TODO make this with a numpy array instead
@@ -405,11 +410,12 @@ def ppo(
 
             # compute action and logp (Actor), compute value (Critic)
             for id in range(number_of_agents):
-                result_single, heatmap_stack_single = agents[id].step(o, hidden=agents[id].reset_hidden())
+                result_single, heatmap_stack_single = agents[id].step(o, hidden=hidden[id])
                 results.append(result_single)
                 heatmap_stacks.append(heatmap_stack_single)
                 action_batch[id] = result_single.action
                 values[id] = result_single.state_value
+                hidden[id] = result_single.hidden
 
             next_o, r, d, _ = env.step(action_batch)
 
@@ -462,7 +468,7 @@ def ppo(
                     # if trajectory didn't reach terminal state, bootstrap value target
                     v = np.zeros(number_of_agents)
                     for id in range(number_of_agents):
-                        result, _ = agents[id].step(o, hidden=results[id].hidden())
+                        result, _ = agents[id].step(o, hidden=hidden[id])
                         v[id] = result.state_value
 
                     if epoch_ended:
@@ -504,6 +510,9 @@ def ppo(
 
                 if not env.epoch_end:
                     # Reset detector position and episode tracking
+                    for id in range(number_of_agents):
+                        hidden[id] = agents[id].reset_hidden()
+                    
                     o, _, _, _ = env.reset()
                     ep_ret, ep_len = 0, 0
                 else:
