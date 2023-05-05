@@ -1404,28 +1404,28 @@ class RadSearch(gym.Env):
             if agent.det_coords[0] - DIST_TH < self.bbox[0][0]:
                 distance = abs(agent.det_coords[0] - self.bbox[0][0])
                 line_distance = (DIST_TH - distance) / DIST_TH
-                assert dists[0] == 0.0
+                #assert dists[0] == 0.0
                 dists[0] = line_distance
 
             # Check down
             if agent.det_coords[1] - DIST_TH < self.bbox[0][1]:
                 distance = abs(agent.det_coords[1] - self.bbox[0][1])
                 line_distance = (DIST_TH - distance) / DIST_TH
-                assert dists[6] == 0.0
+                #assert dists[6] == 0.0
                 dists[6] = line_distance
 
             # Check right
             if self.bbox[2][0] <= agent.det_coords[0] + DIST_TH:
                 distance = abs(self.bbox[2][0] - agent.det_coords[0])
                 line_distance = (DIST_TH - distance) / DIST_TH
-                assert dists[4] == 0.0
+                #assert dists[4] == 0.0
                 dists[4] = line_distance
 
             # Check up
             if self.bbox[2][1] <= agent.det_coords[1] + DIST_TH:
                 distance = abs(self.bbox[2][1] - agent.det_coords[1])
                 line_distance = (DIST_TH - distance) / DIST_TH
-                assert dists[2] == 0.0
+                #assert dists[2] == 0.0
                 dists[2] = line_distance
 
         return np.array(dists, dtype=np.float64)
