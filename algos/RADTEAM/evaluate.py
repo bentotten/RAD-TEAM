@@ -639,8 +639,14 @@ class evaluate_PPO:
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--obstruct', type=int, default=0, help="Number of obstructions")
+    parser.add_argument("--agents", type=int, default=1, help="Number of agents")
+    parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
+    args = parser.parse_args()
 
-    number_of_agents = 1
+    number_of_agents = args.agents
     mode = "collaborative"  # No critic, ok to leave as collaborative for all tests
     render = False
     obstruction_count = 0
@@ -656,7 +662,7 @@ if __name__ == "__main__":
         "number_agents": number_of_agents,
         "enforce_grid_boundaries": True,
         "np_random": rng,
-        "TEST": "FULL"
+        "TEST": args.test
     }
 
     eval_kwargs = dict(
@@ -674,7 +680,7 @@ if __name__ == "__main__":
         resolution_multiplier=0.01,
         team_mode=mode,
         render=render,
-        save_gif_freq=1,
+        save_gif_freq=100,
         render_path=".",
         save_path_for_ac=".",
         seed=seed,

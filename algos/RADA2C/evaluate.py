@@ -605,6 +605,13 @@ class evaluate_PPO:
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--obstruct', type=int, default=0, help="Number of obstructions")
+    parser.add_argument("--agents", type=int, default=1, help="Number of agents")
+    parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
+    args = parser.parse_args()
+        
     seed = 2
     # Generate a large random seed and random generator object for reproducibility
     rng = np.random.default_rng(seed)
@@ -612,12 +619,12 @@ if __name__ == "__main__":
     env_kwargs = {
         "bbox": [[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]],
         "observation_area": [100.0, 100.0],
-        "obstruction_count": 0,
-        "number_agents": 1,
+        "obstruction_count": args.obstruct,
+        "number_agents": args.agents,
         "enforce_grid_boundaries": True,
         "DEBUG": True,
         "np_random": rng,
-        "TEST": 1,
+        "TEST": args.test,
     }
 
     eval_kwargs = dict(

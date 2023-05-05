@@ -522,6 +522,7 @@ if __name__ == '__main__':
     parser.add_argument('--net_type',type=str, default='rnn', help='Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp') 
     parser.add_argument('--alpha',type=float,default=0.1, help='Entropy reward term scaling') 
     parser.add_argument('--load_model', type=int, default=0)
+    parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
     
     args = parser.parse_args()
 
@@ -529,7 +530,7 @@ if __name__ == '__main__':
     args.batch = 1
 
     #Save directory and experiment name
-    args.env_name = 'stage_1'
+    args.env_name = 'results'
     args.exp_name = (f'{args.exp_name}')
 
     init_dims = {
@@ -539,7 +540,7 @@ if __name__ == '__main__':
         "number_agents": 1, 
         "enforce_grid_boundaries": True,
         "DEBUG": True,
-        "TEST": "ZERO"
+        "TEST": args.test
         }
     max_ep_step = 120
     if args.cpu > 1:

@@ -665,6 +665,7 @@ if __name__ == "__main__":
                         help="Game mode: Cooperative is global critic and team reward, Collaborative is individual critic and inv reward, Competative\
                               is individual zero-sum game"
                         )
+    parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
 
     args = parser.parse_args()
 
@@ -688,7 +689,7 @@ if __name__ == "__main__":
         "obstruction_count": args.obstruct,
         "number_agents": args.agents,
         "enforce_grid_boundaries": True,
-        "TEST": "FULL"
+        "TEST": args.test
     }
     max_ep_step = 120
     if args.cpu > 1:
