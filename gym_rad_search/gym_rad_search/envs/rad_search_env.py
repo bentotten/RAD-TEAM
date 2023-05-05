@@ -483,12 +483,21 @@ class RadSearch(gym.Env):
 
         # FULL RUN: 15x15 grid, [1-5] obstructions
         elif self.TEST == "FULL":
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 7 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
-            self.observation_area = Interval((100.0,100.0))
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   FULL RUN MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.observation_area = Interval((100.0, 200.0))
             self.obstruction_count = -1
             self.DEBUG = False
-            self.MIN_STARTING_DISTANCE = 500 # cm                                
+            self.MIN_STARTING_DISTANCE = 500 # cm          
+            
+        # FULL RUN: 15x15 grid, [1-5] obstructions
+        elif self.TEST == "ZERO":
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   ZERO RUN MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.observation_area = Interval((100.0, 200.0))
+            self.obstruction_count = 0
+            self.DEBUG = False
+            self.MIN_STARTING_DISTANCE = 500 # cm                                       
             
 
         self.search_area: BBox = BBox(
