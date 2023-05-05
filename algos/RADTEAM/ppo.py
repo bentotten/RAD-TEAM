@@ -637,7 +637,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--steps_per_epoch", type=int, default=480, help="Number of timesteps per epoch per cpu. Default is equal to 4 episodes per cpu per epoch."
     )
-    parser.add_argument("--epochs", type=int, default=200, help="Number of epochs to train the agent")
+    parser.add_argument("--epochs", type=int, default=500, help="Number of epochs to train the agent")
     parser.add_argument(
         "--exp_name",
         type=str,
@@ -654,7 +654,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--obstruct",
         type=int,
-        default=0,
+        default=-1,
         help="Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7",
     )
     parser.add_argument("--net_type", type=str, default="rnn", help="Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp")
@@ -678,7 +678,8 @@ if __name__ == "__main__":
     PFGRU = False
 
     # Save directory and experiment name
-    args.env_name = "stage_3"
+    save_freq = 250
+    args.env_name = "results"
     args.exp_name = f"{args.exp_name}"
 
     init_dims = {
@@ -687,7 +688,7 @@ if __name__ == "__main__":
         "obstruction_count": args.obstruct,
         "number_agents": args.agents,
         "enforce_grid_boundaries": True,
-        "TEST": 5
+        "TEST": "ZERO"
     }
     max_ep_step = 120
     if args.cpu > 1:
@@ -708,12 +709,7 @@ if __name__ == "__main__":
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed, data_dir="../../models/train", env_name=args.env_name)
 
     ac_kwargs = dict(
-        # hidden_sizes_pol=[args.hid_pol]*args.l_pol,
-        # hidden_sizes_val=[args.hid_val]*args.l_val,
         predictor_hidden_size=args.hid_rec[0],
-        # hidden=[args.hid_gru],
-        # net_type=args.net_type,
-        # batch_s=args.batch
     )
 
     # Run ppo training function
@@ -733,5 +729,6 @@ if __name__ == "__main__":
         load_model=args.load_model,
         PFGRU=PFGRU,
         number_of_agents=args.agents,
-        mode=args.mode
+        mode=args.mode,
+        save_freq=save_freq
     )

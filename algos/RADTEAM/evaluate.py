@@ -35,6 +35,17 @@ USE_RAY = False
 ALL_ACKWARGS_SAVED = False
 
 
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)
+
+
 @dataclass
 class Results:
     episode_length: List[int] = field(default_factory=lambda: list())
@@ -531,7 +542,7 @@ class evaluate_PPO:
 
         score = self.calc_stats(results=full_results)
         with open(f"{self.save_path}/results.json", "w+") as f:
-            f.write(json.dumps(score, indent=4))
+            f.write(json.dumps(score, indent=4, cls=NpEncoder))
 
         # Convert to raw results
         counter = 0
@@ -640,12 +651,12 @@ if __name__ == "__main__":
     rng = np.random.default_rng(seed)
     env_kwargs = {
         "bbox": [[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]],
-        "observation_area": [200.0, 500.0],
+        "observation_area": [100.0, 100.0],
         "obstruction_count": obstruction_count,
         "number_agents": number_of_agents,
         "enforce_grid_boundaries": True,
         "np_random": rng,
-        "TEST": 5
+        "TEST": "FULL"
     }
 
     eval_kwargs = dict(
