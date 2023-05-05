@@ -541,8 +541,7 @@ class evaluate_PPO:
         print("Runtime: {}", time.time() - start_time)
 
         score = self.calc_stats(results=full_results)
-        with open(f"{self.save_path}/results.json", "w+") as f:
-            f.write(json.dumps(score, indent=4, cls=NpEncoder))
+
 
         # Convert to raw results
         counter = 0
@@ -577,9 +576,6 @@ class evaluate_PPO:
 
             counter += result.completed_runs
 
-        with open(f"{self.save_path}/results_raw.json", "w+") as f:
-            f.write(json.dumps(raw_results, indent=4))
-
         print(f"Total Runs: {counter}")
         print(
             f"Accuracy - Median Success Counts: {score['accuracy']['median']} with std {score['accuracy']['std']}"
@@ -590,6 +586,12 @@ class evaluate_PPO:
         print(
             f"Learning - Median Episode Return: {score['score']['median']} with std {score['score']['std']}"
         )
+        
+        with open(f"{self.save_path}/results.json", "w+") as f:
+            f.write(json.dumps(score, indent=4, cls=NpEncoder))
+            
+        with open(f"{self.save_path}/results_raw.json", "w+") as f:
+            f.write(json.dumps(raw_results, indent=4, cls=NpEncoder))
 
     def calc_stats(self, results, mc=None):
         """
@@ -644,6 +646,9 @@ if __name__ == "__main__":
     parser.add_argument('--obstruct', type=int, default=0, help="Number of obstructions")
     parser.add_argument("--agents", type=int, default=1, help="Number of agents")
     parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
+    parser.add_argument("--episodes", type=int, default=100)
+    parser.add_argument("--runs", type=int, default=100)
+    
     args = parser.parse_args()
 
     number_of_agents = args.agents
@@ -669,8 +674,8 @@ if __name__ == "__main__":
         env_name="gym_rad_search:RadSearchMulti-v1",
         env_kwargs=env_kwargs,
         model_path=(lambda: os.getcwd())(),
-        episodes=100,  # Number of episodes to test on [1 - 1000]
-        montecarlo_runs=100,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
+        episodes=args.episodes,  # Number of episodes to test on [1 - 1000]
+        montecarlo_runs=args.runs,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
         actor_critic_architecture="cnn",  # Neural network type (control)
         snr="none",  # signal to noise ratio [none, low, medium, high]
         obstruction_count=obstruction_count,  # number of obstacles [0 - 7] (num_obs)

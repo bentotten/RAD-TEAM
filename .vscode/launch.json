@@ -126,6 +126,17 @@
       "args": ["--agents", "2", "--mode", "collaborative"],
 
       "cwd": "${workspaceFolder}/integration_tests/RADTEAM/test6"
-    }     
+    },
+    {
+      "name": "Test RADTEAM",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/RADTEAM/evaluate.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": ["--agents", "1", "--test", "ZERO", "--episodes", "2", "--runs", "2"],
+
+      "cwd": "${workspaceFolder}/algos/RADTEAM"
+    }         
   ]
 }

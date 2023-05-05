@@ -54,6 +54,17 @@ import core as RADA2C_core  # type: ignore
 USE_RAY = True
 
 
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NpEncoder, self).default(obj)
+
+
 @dataclass
 class Results:
     episode_length: List[int] = field(default_factory=lambda: list())
@@ -507,8 +518,6 @@ class evaluate_PPO:
         print("Runtime: {}", time.time() - start_time)
 
         score = self.calc_stats(results=full_results)
-        with open(f"{self.save_path}/results.json", "w+") as f:
-            f.write(json.dumps(score, indent=4))
 
         # Convert to raw results
         counter = 0
@@ -542,9 +551,7 @@ class evaluate_PPO:
             ] = result.unsuccessful.intensity
 
             counter += result.completed_runs
-
-        with open(f"{self.save_path}/results_raw.json", "w+") as f:
-            f.write(json.dumps(raw_results, indent=4))
+            
 
         print(f"Total Runs: {counter}")
         print(
@@ -556,6 +563,12 @@ class evaluate_PPO:
         print(
             f"Learning - Median Episode Return: {score['score']['median']} with std {score['score']['std']}"
         )
+        
+        with open(f"{self.save_path}/results.json", "w+") as f:
+            f.write(json.dumps(score, indent=4, cls=NpEncoder))
+            
+        with open(f"{self.save_path}/results_raw.json", "w+") as f:
+            f.write(json.dumps(raw_results, indent=4, cls=NpEncoder))        
 
     def calc_stats(self, results, mc=None):
         """
