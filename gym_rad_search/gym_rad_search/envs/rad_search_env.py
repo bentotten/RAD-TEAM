@@ -338,6 +338,7 @@ class RadSearch(gym.Env):
     observation_area: Interval = field(default_factory=lambda: Interval((200.0, 500.0)))
     np_random: npr.Generator = field(default_factory=lambda: npr.default_rng(0))
     obstruction_count: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
+    obstruction_max: int = field(default=6)
     enforce_grid_boundaries: bool = field(default=False)
     save_gif: bool = field(default=False)
     env_ls: List[Polygon] = field(init=False)
@@ -434,7 +435,7 @@ class RadSearch(gym.Env):
             self.DEBUG = True
             self.DEBUG_SOURCE_LOCATION = Point((1, 1))
 
-        # Test 3: 15x15 grid, no obstructions, fixed start point
+        # Test 3: 7x7 grid, no obstructions, fixed start point
         elif self.TEST == 3:
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 3 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0,0.0)),Point((700.0,0.0)),Point((700.0, 700.0)), Point((0.0, 700.0))))
@@ -444,7 +445,7 @@ class RadSearch(gym.Env):
             self.DEBUG_DETECTOR_LOCATION = Point((699.0, 699.0))
             self.MIN_STARTING_DISTANCE = 350 # cm
 
-        # Test 2: 15x15 grid, no obstructions
+        # Test 4: 7x7 grid, no obstructions
         elif self.TEST == 4:
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 4 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0,0.0)),Point((700.0,0.0)),Point((700.0, 700.0)), Point((0.0, 700.0))))
@@ -452,6 +453,43 @@ class RadSearch(gym.Env):
             self.obstruction_count = 0
             self.DEBUG = True
             self.MIN_STARTING_DISTANCE = 350 # cm
+            
+        # Test 5: 15x15 grid, no obstructions
+        elif self.TEST == 5:
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 5 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.observation_area = Interval((100.0,100.0))
+            self.obstruction_count = 0
+            self.DEBUG = False
+            self.MIN_STARTING_DISTANCE = 500 # cm    
+                    
+        # Test 6: 15x15 grid, 1 obstruction
+        elif self.TEST == 6:
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 6 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.observation_area = Interval((100.0,100.0))
+            self.obstruction_count = 1
+            self.DEBUG = False
+            self.MIN_STARTING_DISTANCE = 500 # cm      
+            
+        # Test 7: 15x15 grid, 3 obstructions
+        elif self.TEST == 7:
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 7 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.observation_area = Interval((100.0,100.0))
+            self.obstruction_count = 3
+            self.DEBUG = False
+            self.MIN_STARTING_DISTANCE = 500 # cm        
+
+        # FULL RUN: 15x15 grid, [1-5] obstructions
+        elif self.TEST == "FULL":
+            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 7 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.observation_area = Interval((100.0,100.0))
+            self.obstruction_count = -1
+            self.DEBUG = False
+            self.MIN_STARTING_DISTANCE = 500 # cm                                
+            
 
         self.search_area: BBox = BBox(
             (
@@ -855,7 +893,7 @@ class RadSearch(gym.Env):
 
         if self.epoch_end:
             if self.obstruction_count == -1:
-                self.num_obs = self.np_random.integers(1, 6)  # type: ignore
+                self.num_obs = self.np_random.integers(1, self.obstruction_max)  # type: ignore
             elif self.obstruction_count == 0:
                 self.num_obs = 0
             else:

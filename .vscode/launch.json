@@ -109,7 +109,7 @@
       "name": "Test RADTEAM Stage 3 - Test 5",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/integration_tests/RADTEAM/test5/evaluate.py",
+      "program": "${workspaceFolder}/integration_tests/RADTEAM/test5/ppo.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": ["--agents", "2", "--mode", "collaborative"],
