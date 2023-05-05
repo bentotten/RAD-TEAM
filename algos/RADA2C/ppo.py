@@ -512,12 +512,12 @@ if __name__ == '__main__':
     parser.add_argument('--seed', '-s', type=int, default=2,help='Random seed control')
     parser.add_argument('--cpu', type=int, default=1,help='Number of cores/environments to train the agent with')
     parser.add_argument('--steps_per_epoch', type=int, default=480,help='Number of timesteps per epoch per cpu. Default is equal to 4 episodes per cpu per epoch.')      
-    parser.add_argument('--epochs', type=int, default=100,help='Number of epochs to train the agent')
+    parser.add_argument('--epochs', type=int, default=3000,help='Number of epochs to train the agent')
     parser.add_argument('--exp_name', type=str,default='alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh',help='Name of experiment for saving')
     parser.add_argument('--dims', type=list, default=[[0.0,0.0],[1500.0,0.0],[1500.0,1500.0],[0.0,1500.0]],
                         help='Dimensions of radiation source search area in cm, decreased by area_obs param. to ensure visilibity graph setup is valid.')
     parser.add_argument('--area_obs', type=list, default=[100.0,100.0], help='Interval for each obstruction area in cm')
-    parser.add_argument('--obstruct', type=int, default=0, 
+    parser.add_argument('--obstruct', type=int, default=-1, 
                         help='Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions')
     parser.add_argument('--net_type',type=str, default='rnn', help='Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp') 
     parser.add_argument('--alpha',type=float,default=0.1, help='Entropy reward term scaling') 
@@ -539,7 +539,7 @@ if __name__ == '__main__':
         "number_agents": 1, 
         "enforce_grid_boundaries": True,
         "DEBUG": True,
-        "TEST": 1
+        "TEST": "ZERO"
         }
     max_ep_step = 120
     if args.cpu > 1:

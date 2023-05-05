@@ -637,7 +637,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--steps_per_epoch", type=int, default=480, help="Number of timesteps per epoch per cpu. Default is equal to 4 episodes per cpu per epoch."
     )
-    parser.add_argument("--epochs", type=int, default=500, help="Number of epochs to train the agent")
+    parser.add_argument("--epochs", type=int, default=1000, help="Number of epochs to train the agent")
     parser.add_argument(
         "--exp_name",
         type=str,
@@ -688,7 +688,7 @@ if __name__ == "__main__":
         "obstruction_count": args.obstruct,
         "number_agents": args.agents,
         "enforce_grid_boundaries": True,
-        "TEST": "ZERO"
+        "TEST": "FULL"
     }
     max_ep_step = 120
     if args.cpu > 1:
