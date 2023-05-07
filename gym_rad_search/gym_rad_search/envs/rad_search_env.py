@@ -436,7 +436,7 @@ class RadSearch(gym.Env):
             self.MIN_STARTING_DISTANCE = 350  # cm
 
         # Test 5: 15x15 grid, no obstructions
-        elif self.TEST == 5:
+        elif self.TEST == "5":
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 5 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
             self.observation_area = Interval((100.0, 100.0))
@@ -445,7 +445,7 @@ class RadSearch(gym.Env):
             self.MIN_STARTING_DISTANCE = 500  # cm
 
         # Test 6: 15x15 grid, 1 obstruction
-        elif self.TEST == 6:
+        elif self.TEST == "6":
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 6 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
             self.observation_area = Interval((100.0, 100.0))
@@ -454,7 +454,7 @@ class RadSearch(gym.Env):
             self.MIN_STARTING_DISTANCE = 500  # cm
 
         # Test 7: 15x15 grid, 3 obstructions
-        elif self.TEST == 7:
+        elif self.TEST == "7":
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 7 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
             self.observation_area = Interval((100.0, 100.0))
@@ -1145,14 +1145,14 @@ class RadSearch(gym.Env):
         # Generate initial point values
         source: Point = rand_point()
 
-        if self.DEBUG and self.TEST in [1, 2]:
+        if self.DEBUG and self.TEST in ["1", "2"]:
             source = self.DEBUG_SOURCE_LOCATION
 
         src_point = to_vis_p(source)
 
         detector = rand_point()
 
-        if self.DEBUG and self.TEST in [1, 3]:
+        if self.DEBUG and self.TEST in ["1", "3"]:
             detector = self.DEBUG_DETECTOR_LOCATION
 
         det_point = to_vis_p(detector)
@@ -1186,7 +1186,7 @@ class RadSearch(gym.Env):
         obstacle_index = 0
         num_retry = 0
 
-        if self.TEST in [1, 2]:
+        if self.TEST in ["1", "2"]:
             pass
         else:
             test_count = 0
