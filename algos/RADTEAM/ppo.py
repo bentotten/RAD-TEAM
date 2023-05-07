@@ -669,16 +669,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # TODO do with built-in
-    if args.test == '1':
-        args.test = 1
-    elif args.test == '2':
-        args.test = 2
-    elif args.test == '3':
-        args.test = 3
-    elif args.test == '4':
-        args.test = 4
-
     if args.mode == 'competative':
         raise NotImplementedError("Competative mode not implemented yet")
 

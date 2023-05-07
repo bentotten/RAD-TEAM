@@ -134,7 +134,7 @@
       "program": "${workspaceFolder}/algos/RADTEAM/evaluate.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "args": ["--agents", "1", "--test", "ZERO", "--episodes", "2", "--runs", "2"],
+      "args": ["--agents", "1", "--test", "1", "--episodes", "2", "--runs", "2"],
 
       "cwd": "${workspaceFolder}/algos/RADTEAM"
     }         

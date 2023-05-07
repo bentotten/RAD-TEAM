@@ -417,7 +417,7 @@ class RadSearch(gym.Env):
             print(f"Reward Mode - Global: {GLOBAL_REWARD}. Proportional: {PROPORTIONAL_REWARD}. Basic {BASIC_REWARD}. Original: {ORIGINAL_REWARD}")
             if BASIC_REWARD:
                 print(f"Basic Reward upon success: {BASIC_SUC_AMOUNT}")    
-        if self.TEST == 1:
+        if self.TEST == '1':
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 1 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0,1500.0)), Point((0.0,1500.0))))
             self.observation_area = Interval((100.0,100.0))
@@ -427,7 +427,7 @@ class RadSearch(gym.Env):
             self.DEBUG_DETECTOR_LOCATION = Point((1499.0, 1499.0))
 
         # Test 2: 15x15 grid, no obstructions, fixed stop point
-        elif self.TEST == 2:
+        elif self.TEST == '2':
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 2 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0,0.0)),Point((1500.0,0.0)),Point((1500.0,1500.0)), Point((0.0,1500.0))))
             self.observation_area = Interval((100.0,100.0))
@@ -436,7 +436,7 @@ class RadSearch(gym.Env):
             self.DEBUG_SOURCE_LOCATION = Point((1, 1))
 
         # Test 3: 7x7 grid, no obstructions, fixed start point
-        elif self.TEST == 3:
+        elif self.TEST == '3':
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 3 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0,0.0)),Point((700.0,0.0)),Point((700.0, 700.0)), Point((0.0, 700.0))))
             self.observation_area = Interval((100.0, 100.0))
@@ -446,7 +446,7 @@ class RadSearch(gym.Env):
             self.MIN_STARTING_DISTANCE = 350 # cm
 
         # Test 4: 7x7 grid, no obstructions
-        elif self.TEST == 4:
+        elif self.TEST == '4':
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 4 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0,0.0)),Point((700.0,0.0)),Point((700.0, 700.0)), Point((0.0, 700.0))))
             self.observation_area = Interval((100.0,100.0))
