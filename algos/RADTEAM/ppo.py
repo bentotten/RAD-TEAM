@@ -54,7 +54,7 @@ def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pf
             * logp: (tensor) batch of action logprobabilities.
             * loc_pred: (tensor) batch of predicted location by PFGRU.
             * ep_len: (tensor[int]) single dimension int of length of episode.
-            * ep_form: (List) # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. 
+            * ep_form: (List) # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation.
         :param index: (int) If doing a single observation at a time, index for data[]
         """
         # NOTE: Not using observation tensor, using internal map buffer
@@ -252,7 +252,7 @@ def ppo(
     epochs=3000,
     gamma=0.99,
     alpha=0,
-    mp_mm=[5, 5],    
+    mp_mm=[5, 5],
     clip_ratio=0.2,
     pi_lr=3e-4,
     vf_lr=3e-4,
@@ -289,7 +289,7 @@ def ppo(
 
     # Setup A2C args
     ac_kwargs["action_space"] = env.detectable_directions  # Usually 8
-    # Also known as state dimensions: The dimensions of the observation returned from the environment. Usually 11    
+    # Also known as state dimensions: The dimensions of the observation returned from the environment. Usually 11
     ac_kwargs["observation_space"] = env.observation_space.shape[0]
     ac_kwargs["detector_step_size"] = env.step_size  # Usually 100 cm
     ac_kwargs["environment_scale"] = env.scale
@@ -396,7 +396,7 @@ def ppo(
 
     # Main loop: collect experience in env and update/log each epoch
     logger.log(f"Proc id: {proc_id()} -> Starting main training loop in {mode} mode with {number_of_agents} agents!")
-    
+
     for epoch in range(epochs):
         # For rendering labeling
         episode_count = 0
@@ -515,7 +515,7 @@ def ppo(
                     # Reset detector position and episode tracking
                     for id in range(number_of_agents):
                         hidden[id] = agents[id].reset_hidden()
-                    
+
                     o, _, _, _ = env.reset()
                     ep_ret, ep_len = 0, 0
                 else:
@@ -668,6 +668,16 @@ if __name__ == "__main__":
     parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
 
     args = parser.parse_args()
+
+    # TODO do with built-in
+    if args.test == '1':
+        args.test = 1
+    elif args.test == '2':
+        args.test = 2
+    elif args.test == '3':
+        args.test = 3
+    elif args.test == '4':
+        args.test = 4
 
     if args.mode == 'competative':
         raise NotImplementedError("Competative mode not implemented yet")

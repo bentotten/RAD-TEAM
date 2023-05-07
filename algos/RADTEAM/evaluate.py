@@ -167,6 +167,8 @@ class EpisodeRunner:
         # Create own instatiation of environment
         self.env = self.create_environment()
 
+        print(f"Evaluating: {self.number_of_agents} agents with obstruction count: {self.obstruction_count}")
+
         # Get agent model paths and saved agent configurations
         agent_models = {}
         for child in os.scandir(self.model_path):
@@ -654,10 +656,11 @@ if __name__ == "__main__":
     number_of_agents = args.agents
     mode = "collaborative"  # No critic, ok to leave as collaborative for all tests
     render = False
-    obstruction_count = 0
+    obstruction_count = args.obstruct
 
     PFGRU = False
     seed = 2
+
     # Generate a large random seed and random generator object for reproducibility
     rng = np.random.default_rng(seed)
     env_kwargs = {
