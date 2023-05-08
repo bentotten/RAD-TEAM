@@ -3,6 +3,7 @@ import pytest
 
 import algos.RADTEAM.ppo_tools as PPO
 import algos.RADTEAM.RADTEAM_core as RADTEAM_core
+import algos.RADA2C.core as core
 
 import numpy as np
 import torch

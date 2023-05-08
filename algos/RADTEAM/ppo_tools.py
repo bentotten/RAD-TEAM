@@ -1,39 +1,35 @@
 # type: ignore
-"""
-    NOTE: This is a duplicate PPO for testing purposes only! 
-"""
 
 import torch
-from torch.optim import Adam
-import torch.nn.functional as F
 
 import numpy as np
 import numpy.typing as npt
 
 from dataclasses import dataclass, field
 from typing_extensions import TypeAlias  # type: ignore
-from typing import Union, cast, Optional, Any, NamedTuple, Tuple, Dict, List, Dict
+from typing import Union, cast, Optional, Any, NamedTuple, Tuple, Dict, List
 import scipy.signal  # type: ignore
 
-import core as RADA2C_core  # type: ignore
-from rl_tools.logx import EpochLogger # type: ignore
-from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads  # type: ignore
-from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs  # type: ignore
+from rl_tools.mpi_tools import mpi_statistics_scalar  # type: ignore
 
 
-# If prioritizing memory, only keep observations and reinflate heatmaps when update happens. Reduces memory requirements, but greatly slows down training.
+# If prioritizing memory, only keep observations and reinflate heatmaps when update happens. Reduces memory requirements,
+# but greatly slows down training.
 PRIO_MEMORY = False
 
 Shape: TypeAlias = Union[int, Tuple[int], Tuple[int, Any], Tuple[int, int, Any]]
 
+
 def count_vars(module):
     return sum([np.prod(p.shape) for p in module.parameters()])
+
 
 # Ok via unit testing
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     """
-    This method combines dimensions. It combines length and existing shape dimension into a new tuple representing dimensions (useful for numpy.zeros() or tensor creation).
-    Length is in x position. If shape is a tuple, flatten it and add it to remaining tuple positions. Returns dimensions of new shape.
+    This method combines dimensions. It combines length and existing shape dimension into a new tuple representing dimensions (useful for 
+    numpy.zeros() or tensor creation). Length is in x position. If shape is a tuple, flatten it and add it to remaining tuple positions.
+    Returns dimensions of new shape.
 
     Example 1 : Size (steps_per_epoch) - Make a buffer to store advantages for an epoch. Returns (x, )
     Example 2: Size (steps_per_epoch, 2) - Make a buffer for source locations (x, y) for an epoch. Returns Returns (x, 2)
@@ -56,10 +52,9 @@ def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
         shape = cast(Tuple[int, Any], shape)
         return (length, *shape)
 
+
 # Ok via unit testing
-def discount_cumsum(
-    x: npt.NDArray[np.float64], discount: float
-) -> npt.NDArray[np.float64]:
+def discount_cumsum(x: npt.NDArray[np.float64], discount: float) -> npt.NDArray[np.float64]:
     """
     Function from rllab for computing discounted cumulative sums of vectors.
     See: https://docs.scipy.org/doc/scipy/tutorial/signal.html#difference-equation-filtering
@@ -117,15 +112,16 @@ class OptimizationStorage:
     :param {*}_optimizer: (torch.optim) Pytorch Optimizer with learning rate decay [Torch]
     :param clip_ratio: (float) Hyperparameter for clipping in the policy objective. Roughly: how far can the new policy go from the old policy
         while still profiting (improving the objective function)? The new policy can still go farther than the clip_ratio says, but it doesn't
-        help on the objective anymore. This is usually small, often 0.1 to 0.3, and is typically denoted by :math:`\epsilon`. Basically if the
+        help on the objective anymore. This is usually small, often 0.1 to 0.3, and is typically denoted by epsilon. Basically if the
         policy wants to perform too large an update, it goes with a clipped value instead.
     :param alpha: (float) Entropy reward term scaling used during calculating loss.
     :param target_kl: (float) Roughly what KL divergence we think is appropriate between new and old policies after an update. This will get used
         for early stopping. It's usually small, 0.01 or 0.05.
     """
+
     pi_optimizer: torch.optim.Optimizer
-    model_optimizer: Union[torch.optim.Optimizer, None] = field(default=None)    
-    critic_optimizer: Union[torch.optim.Optimizer, None] = field(default=None)    
+    model_optimizer: Union[torch.optim.Optimizer, None] = field(default=None)
+    critic_optimizer: Union[torch.optim.Optimizer, None] = field(default=None)
 
     # Initialized elsewhere
     #: Schedules gradient steps for actor
@@ -135,44 +131,37 @@ class OptimizationStorage:
     #: Schedules gradient steps for PFGRU location predictor module
     model_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)
     #: Loss calculator utility for Critic
-    MSELoss: torch.nn.modules.loss.MSELoss = field(
-        default_factory=(lambda: torch.nn.MSELoss(reduction="mean"))
-    )
+    MSELoss: torch.nn.modules.loss.MSELoss = field(default_factory=(lambda: torch.nn.MSELoss(reduction="mean")))
 
     def __post_init__(self):
-        self.pi_scheduler = torch.optim.lr_scheduler.StepLR(
-            self.pi_optimizer, step_size=100, gamma=0.99
-        )
+        self.pi_scheduler = torch.optim.lr_scheduler.StepLR(self.pi_optimizer, step_size=100, gamma=0.99)
         if self.model_optimizer:
-            self.model_scheduler = torch.optim.lr_scheduler.StepLR(
-                self.model_optimizer, step_size=100, gamma=0.99
-            )
+            self.model_scheduler = torch.optim.lr_scheduler.StepLR(self.model_optimizer, step_size=100, gamma=0.99)
         else:
             self.model_optimizer = None
 
         if self.critic_optimizer:
-            self.critic_scheduler = torch.optim.lr_scheduler.StepLR(
-                self.critic_optimizer, step_size=100, gamma=0.99
-            )
+            self.critic_scheduler = torch.optim.lr_scheduler.StepLR(self.critic_optimizer, step_size=100, gamma=0.99)
         else:
             self.critic_scheduler = None  # RAD-A2C has critic embeded in pi
-        
 
-# Ok now
+
 @dataclass
 class PPOBuffer:
     """
-    A buffer for storing histories/trajectories experienced by a PPO agent interacting with the environment, and using Generalized Advantage Estimation (GAE-Lambda) for calculating the
-    advantages of state-action pairs. This is left outside of the PPO agent so that A2C architectures can be swapped out as desired.
+    A buffer for storing histories/trajectories experienced by a PPO agent interacting with the environment, and using Generalized Advantage
+    Estimation (GAE-Lambda) for calculating the advantages of state-action pairs. This is left outside of the PPO agent so that A2C architectures
+    can be swapped out as desired.
 
-    :param observation_dimension: (int) Dimensions of observation. For RAD-TEAM and RAD-A2C the observation will be a one dimensional array/tuple where the first element is the
-        detected radiation intensity, the second and third elements are the x,y coordinates, and the remaining 8 elements are a reading of how close an agent is to an obstacle.
-        Obstacle sensor readings and x,y coordinates are normalized.
+    :param observation_dimension: (int) Dimensions of observation. For RAD-TEAM and RAD-A2C the observation will be a one dimensional array/tuple
+        where the first element is the detected radiation intensity, the second and third elements are the x,y coordinates, and the remaining 8
+        elements are a reading of how close an agent is to an obstacle. Obstacle sensor readings and x,y coordinates are normalized.
     :param max_size: Max steps per epoch.
     :param max_episode_length: (int) Maximum steps per episode
     :param number_agents: Number of agents.
     :param gamma: (float) Discount rate for expected return and Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1.)
-    :param lam: (float) Exponential weight decay/discount; controls the bias variance trade-off for Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1, close to 1)
+    :param lam: (float) Exponential weight decay/discount; controls the bias variance trade-off for Generalize Advantage Estimate (GAE) calculations
+        (Always between 0 and 1, close to 1)
     """
 
     observation_dimension: int
@@ -187,21 +176,28 @@ class PPOBuffer:
     path_start_idx: int = field(init=False)  # For keeping track of starting location in buffer during update
 
     episode_lengths_buffer: List = field(init=False)  # Stores episode lengths
-    full_observation_buffer: List[Dict[Union[int, str], Union[npt.NDArray[np.float32], bool, None]]] = field(init=False)  # In memory-priority mode, for each timestep, stores every agents observation
-    heatmap_buffer: Dict[str, List[torch.Tensor]] = field(init=False)  # When memory is not a concern, for each timestep, stores every steps heatmap stack for both actor and critic
+    full_observation_buffer: List[Dict[Union[int, str], Union[npt.NDArray[np.float32], bool, None]]] = field(
+        init=False
+    )  # In memory-priority mode, for each timestep, stores every agents observation
+    heatmap_buffer: Dict[str, List[torch.Tensor]] = field(
+        init=False
+    )  # When memory is not a concern, for each timestep, stores every steps heatmap stack for both actor and critic
 
     obs_buf: npt.NDArray[np.float32] = field(init=False)  # Observation buffer for each agent
-    act_buf: npt.NDArray[np.float32] = field(init=False)  # Action buffer for each step. Note: each agent carries their own PPO buffer, no need to track all agent actions.
+    act_buf: npt.NDArray[np.float32] = field(
+        init=False
+    )  # Action buffer for each step. Note: each agent carries their own PPO buffer, no need to track all agent actions.
     adv_buf: npt.NDArray[np.float32] = field(init=False)  # Advantages buffer for each step
     rew_buf: npt.NDArray[np.float32] = field(init=False)  # Rewards buffer for each step
-    ret_buf: npt.NDArray[np.float32] = field(init=False)  # Rewards-to-go buffer (Rewards gained from timestep t until terminal state (similar to expected return, but actual))
+    ret_buf: npt.NDArray[np.float32] = field(
+        init=False
+    )  # Rewards-to-go buffer (Rewards gained from timestep t until terminal state (similar to expected return, but actual))
     val_buf: npt.NDArray[np.float32] = field(init=False)  # State-value buffer for each step
     source_tar: npt.NDArray[np.float32] = field(init=False)  # Source location buffer (for moving targets)
     logp_buf: npt.NDArray[np.float32] = field(init=False)  # action log probabilities buffer
 
     obs_win: npt.NDArray[np.float32] = field(init=False)  # For location prediction TODO find out what its doing
     obs_win_std: npt.NDArray[np.float32] = field(init=False)  # For location prediction TODO find out what its doing
-
 
     def __post_init__(self):
         self.ptr = 0
@@ -214,9 +210,7 @@ class PPOBuffer:
             for i in range(self.max_size):
                 self.full_observation_buffer.append({})
                 for id in range(self.number_agents):
-                    self.full_observation_buffer[i][id] = np.zeros(
-                        (self.observation_dimension,)
-                    )
+                    self.full_observation_buffer[i][id] = np.zeros((self.observation_dimension,))
                     self.full_observation_buffer[i]["terminal"] = None
 
             self.heatmap_buffer = None
@@ -230,9 +224,7 @@ class PPOBuffer:
             self.full_observation_buffer = None
 
         # TODO delete once full_observation_buffer is done
-        self.obs_buf = np.zeros(
-            combined_shape(self.max_size, self.observation_dimension), dtype=np.float32
-        )
+        self.obs_buf = np.zeros(combined_shape(self.max_size, self.observation_dimension), dtype=np.float32)
         self.act_buf = np.zeros(combined_shape(self.max_size), dtype=np.float32)
         self.adv_buf = np.zeros(self.max_size, dtype=np.float32)
         self.rew_buf = np.zeros(self.max_size, dtype=np.float32)
@@ -305,16 +297,16 @@ class PPOBuffer:
 
     def GAE_advantage_and_rewardsToGO(self, last_state_value: float = 0.0) -> None:
         """
-        Call this at the end of a trajectory when an episode has ended or the max steps per epoch has been reached. This looks back in the buffer to where the history/trajectory started,
-        and uses rewards and value estimates from the whole trajectory to compute advantage estimates with GAE-Lambda, as well as compute the rewards-to-go for each state,
-        to use as the targets for the value function. The last state value allows us to estimate the next reward and include it.
-        Updates the advantage buffer and the return buffer.
+        Call this at the end of a trajectory when an episode has ended or the max steps per epoch has been reached. This looks back in the buffer to
+        where the history/trajectory started, and uses rewards and value estimates from the whole trajectory to compute advantage estimates with
+        GAE-Lambda, as well as compute the rewards-to-go for each state, to use as the targets for the value function. The last state value allows us
+        to estimate the next reward and include it. Updates the advantage buffer and the return buffer.
 
         Advantage: roughly how advantageous it is to be in a particular state (see: https://arxiv.org/abs/1506.02438)
         Rewards to go: Instead of the expected return, the sum of the discounted rewards from the time t to the end of the episode.
 
-        :param last_state_value: (float) last state value encountered. Should be 0 if the trajectory ended because the agent reached a terminal state (found source), and otherwise should
-            be V(s_T), the value function estimated state-value for the last state.
+        :param last_state_value: (float) last state value encountered. Should be 0 if the trajectory ended because the agent reached a terminal state
+            (found source), and otherwise should be V(s_T), the value function estimated state-value for the last state.
 
         Note: Nice description of GAE choices: https://github.com/openai/spinningup/issues/349
         """
@@ -325,8 +317,8 @@ class PPOBuffer:
         rews: npt.NDArray[np.float64] = np.append(self.rew_buf[path_slice], last_state_value)
         vals: npt.NDArray[np.float64] = np.append(self.val_buf[path_slice], last_state_value)
 
-        # GAE-Lambda advantage calculation. Gamma determines scale of value function, introduces bias regardless of VF accuracy (similar to discount) and
-        # lambda introduces bias when VF is inaccurate
+        # GAE-Lambda advantage calculation. Gamma determines scale of value function, introduces bias regardless of VF accuracy (similar to discount)
+        # and lambda introduces bias when VF is inaccurate
         deltas: npt.NDArray[np.float64] = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
         GAE = discount_cumsum(deltas, self.gamma * self.lam)
         self.adv_buf[path_slice] = GAE
@@ -334,13 +326,14 @@ class PPOBuffer:
         # the next line computes rewards-to-go, to be targets for the value function
         r2g = discount_cumsum(rews, self.gamma)
         self.ret_buf[path_slice] = r2g[:-1]  # Remove last non-step element
-        
-        self.path_start_idx = self.ptr # Update start index
+
+        self.path_start_idx = self.ptr  # Update start index
 
     def get(self) -> Dict[str, object]:
         """
         Call this at the end of an epoch to get all of the data from buffers. Advantages are normalized/shifted to have mean zero and std one).
-        Buffer pointers and episode_lengths are reset to start over. NOTE: full observations are not stored here, they need to be converted to mapstacks.
+        Buffer pointers and episode_lengths are reset to start over. NOTE: full observations are not stored here, they need to be converted to
+        mapstacks.
         """
         # Make sure buffers are full
         assert self.ptr == self.max_size
@@ -350,9 +343,7 @@ class PPOBuffer:
         number_episodes = len(episode_lengths)
         total_episode_length = sum(episode_lengths)
 
-        assert (
-            number_episodes > 0
-        ), "0 completed episodes. Usually caused by having epochs shorter than an episode"
+        assert number_episodes > 0, "0 completed episodes. Usually caused by having epochs shorter than an episode"
 
         # the next two lines implement the advantage normalization trick
         # adv_mean = self.adv_buf.mean()
@@ -365,9 +356,7 @@ class PPOBuffer:
 
         # If they're equal then we don't need to do anything. Otherwise we need to add one to make sure that number_episodes is the correct size.
         # This can happen when an episode is cutoff by an epoch stop, thus meaning the number of complete episodes is short by 1.
-        episode_len_Size = number_episodes + int(
-            total_episode_length != len(self.obs_buf)
-        )
+        episode_len_Size = number_episodes + int(total_episode_length != len(self.obs_buf))
 
         # Stack all tensors into one tensor
         obs_buf = np.hstack(
@@ -391,15 +380,11 @@ class PPOBuffer:
         jj: int = 0
         for ep_i in episode_lengths:
             slice_f += ep_i
-            episode_form[jj].append(
-                torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)
-            )
+            episode_form[jj].append(torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32))
             slice_b += ep_i
             jj += 1
         if slice_f != len(self.obs_buf):
-            episode_form[jj].append(
-                torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32)
-            )
+            episode_form[jj].append(torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32))
 
         # Convert to tensors
         data = dict(
@@ -415,4 +400,4 @@ class PPOBuffer:
             ep_form=episode_form,
         )
 
-        return data, self.heatmap_buffer['actor'], self.heatmap_buffer['critic']
+        return data, self.heatmap_buffer["actor"], self.heatmap_buffer["critic"]
