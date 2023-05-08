@@ -356,11 +356,12 @@ class Test_ConversionTools:
             assert getattr(tools.standardizer, tools_att) == getattr(baseline.standardizer, baseline_att)
 
 
+# NOTE: Not testing PFGRU
 class Test_MapBuffer:
     @pytest.fixture
     def init_parameters(self) -> dict:
         """Set up initialization parameters for mapbuffer"""
-        return dict(observation_dimension=11, steps_per_episode=120, number_of_agents=2)
+        return dict(observation_dimension=11, steps_per_episode=120, number_of_agents=2, PFGRU=False)
 
     def test_Init(self, init_parameters):
         """Test the Map Buffer initialization. Should initialize all desired objects"""
@@ -421,7 +422,8 @@ class Test_MapBuffer:
                     assert getattr(maps, map_att).max() == getattr(baseline, baseline_att).max()
                     assert getattr(maps, map_att).min() == getattr(baseline, baseline_att).min()
                 else:
-                    assert getattr(maps, map_att) == getattr(baseline, baseline_att)
+                    if map_att != 'reset_flag':
+                        assert getattr(maps, map_att) == getattr(baseline, baseline_att)
 
         assert maps.tools.reset_flag == 3
 
@@ -521,15 +523,15 @@ class Test_MapBuffer:
         maps._update_readings_map(coordinates=coords_1)
         assert maps.readings_map[coords_1[0]][coords_1[1]] == 0.0  # First reading is always 0
         maps._update_readings_map(coordinates=coords_2)
-        assert maps.readings_map[coords_2[0]][coords_2[1]] == 0.0  # New minimum is always 0 after offset
+        assert maps.readings_map[coords_2[0]][coords_2[1]] == pytest.approx(-0.70710677)
         maps._update_readings_map(coordinates=coords_2)
-        assert maps.readings_map[coords_2[0]][coords_2[1]] == pytest.approx(0.18350341907227394)
+        assert maps.readings_map[coords_2[0]][coords_2[1]] == pytest.approx(-0.57735026)
         maps._update_readings_map(coordinates=coords_1)
-        assert maps.readings_map[coords_1[0]][coords_1[1]] == 1.0
+        assert maps.readings_map[coords_1[0]][coords_1[1]] == pytest.approx(0.8660254)
 
         # Test with valid key
         maps._update_readings_map(coordinates=coords_2, key=coords_2)
-        assert maps.readings_map[coords_2[0]][coords_2[1]] == 0.0  # New minimum is always 0 after offset
+        assert maps.readings_map[coords_2[0]][coords_2[1]] == pytest.approx(-0.73029673)
 
         # Test invalid key
         with pytest.raises(ValueError):

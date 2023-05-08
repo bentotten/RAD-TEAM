@@ -533,6 +533,7 @@ class MapsBuffer:
             # Fetch scaled coordinates
             inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[agent_id])
             if self.PFGRU:
+                assert loc_prediciton is not None, "No location prediction passed though PFGRU module is enabled "
                 inflated_prediction: Tuple[int, int] = self._inflate_coordinates(single_observation=loc_prediciton)
 
             last_coordinates: Union[Tuple[int, int], None] = self.tools.last_coords[agent_id] if agent_id in self.tools.last_coords.keys() else None

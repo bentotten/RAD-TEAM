@@ -5,13 +5,20 @@ import gym  # type: ignore
 import time
 import os
 import ppo_tools  # type: ignore
-
-from RADTEAM_core import CNNBase, Critic
-
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
-from rl_tools.logx import EpochLogger  # type: ignore
-from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, mpi_avg_grads  # type: ignore
-from rl_tools.mpi_tools import mpi_fork, proc_id, num_procs  # type: ignore
+
+try:
+    from RADTEAM_core import CNNBase, Critic
+    from rl_tools.logx import EpochLogger  # type: ignore
+    from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, mpi_avg_grads  # type: ignore
+    from rl_tools.mpi_tools import mpi_fork, proc_id, num_procs  # type: ignore
+except ModuleNotFoundError:
+    from algos.RADTEAM.RADTEAM_core import CNNBase, Critic
+    from algos.RADTEAM.rl_tools.logx import EpochLogger  # type: ignore
+    from algos.RADTEAM.rl_tools.mpi_pytorch import setup_pytorch_for_mpi, mpi_avg_grads  # type: ignore
+    from algos.RADTEAM.rl_tools.mpi_tools import mpi_fork, proc_id, num_procs  # type: ignore
+except: # noqa
+    raise Exception
 
 BATCHED_UPDATE = True
 MAX_SAVES = 3

@@ -10,7 +10,10 @@ from typing_extensions import TypeAlias  # type: ignore
 from typing import Union, cast, Optional, Any, NamedTuple, Tuple, Dict, List
 import scipy.signal  # type: ignore
 
-from rl_tools.mpi_tools import mpi_statistics_scalar  # type: ignore
+try:
+    from rl_tools.mpi_tools import mpi_statistics_scalar  # type: ignore
+except ModuleNotFoundError:
+    from algos.RADTEAM.rl_tools.mpi_tools import mpi_statistics_scalar  # type: ignore
 
 
 # If prioritizing memory, only keep observations and reinflate heatmaps when update happens. Reduces memory requirements,
@@ -27,7 +30,7 @@ def count_vars(module):
 # Ok via unit testing
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     """
-    This method combines dimensions. It combines length and existing shape dimension into a new tuple representing dimensions (useful for 
+    This method combines dimensions. It combines length and existing shape dimension into a new tuple representing dimensions (useful for
     numpy.zeros() or tensor creation). Length is in x position. If shape is a tuple, flatten it and add it to remaining tuple positions.
     Returns dimensions of new shape.
 
