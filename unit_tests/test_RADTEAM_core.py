@@ -601,21 +601,29 @@ class Test_MapBuffer:
             2: np.array([1000.0, step2[0], step2[1], 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
         }
 
-        mapstack = maps.observation_to_map(observation=observations, id=0)
+        (
+            prediction_map,
+            location_map,
+            others_locations_map,
+            readings_map,
+            visit_counts_map,
+            obstacles_map,
+            combo_location_map,
+        ) = maps.observation_to_map(observation=observations, id=0)
 
         # Test Locations map
         assert maps.location_map[0][1] == 1.0
-        assert mapstack[0][0][1] == 1.0
+        assert location_map[0][1] == 1.0
         flat = np.delete(maps.location_map.ravel(), 1)
         assert flat.max() == 0.0
-        flat2 = np.delete(mapstack[0].ravel(), 1)
+        flat2 = np.delete(location_map.ravel(), 1)
         assert flat2.max() == 0.0
 
         # Test Other locations map
         assert maps.others_locations_map[0][1] == 1.0
-        assert mapstack[1][0][1] == 1.0
+        assert others_locations_map[0][1] == 1.0
         assert maps.others_locations_map[0][2] == 1.0
-        assert mapstack[1][0][2] == 1.0
+        assert others_locations_map[0][2] == 1.0
         flat = maps.others_locations_map.ravel()
         flat_t1 = np.delete(flat, 1)
         flat_t2 = np.delete(flat_t1, 1)
@@ -623,28 +631,28 @@ class Test_MapBuffer:
 
         # Test Readings map registered - First reading is always 0
         assert maps.readings_map.max() == 0.0
-        assert mapstack[2].max() == 0.0
+        assert readings_map.max() == 0.0
 
         # Test Visits count
         assert maps.visit_counts_map[0][1] > 0.0
-        assert mapstack[3][0][1] > 0.0
-        assert mapstack[3][0][1] == maps.visit_counts_map[0][1]
+        assert visit_counts_map[0][1] > 0.0
+        assert visit_counts_map[0][1] == maps.visit_counts_map[0][1]
         assert maps.visit_counts_map[0][2] > 0.0
-        assert mapstack[3][0][2] > 0.0
-        assert mapstack[3][0][2] == maps.visit_counts_map[0][2]
+        assert visit_counts_map[0][2] > 0.0
+        assert visit_counts_map[0][2] == maps.visit_counts_map[0][2]
         assert maps.visit_counts_map[0][1] > maps.visit_counts_map[0][2]
 
         # Test Obstacle Map
         assert maps.obstacles_map[0][1] > 0.0
-        assert mapstack[4][0][1] > 0.0
+        assert obstacles_map[0][1] > 0.0
         assert maps.obstacles_map[0][2] > 0.0
-        assert mapstack[4][0][2] > 0.0
+        assert obstacles_map[0][2] > 0.0
 
         # Test combo locations map
         assert maps.combined_location_map[0][1] == 2.0
-        assert mapstack[5][0][1] == 2.0
+        assert combo_location_map[0][1] == 2.0
         assert maps.combined_location_map[0][2] == 1.0
-        assert mapstack[5][0][2] == 1.0
+        assert combo_location_map[0][2] == 1.0
         flat = maps.combined_location_map.ravel()
         flat_t1 = np.delete(flat, 1)
         flat_t2 = np.delete(flat_t1, 1)
@@ -660,59 +668,67 @@ class Test_MapBuffer:
             2: np.array([5000.0, step2[0], step2[1], 0.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
         }
 
-        mapstack = maps.observation_to_map(observation=observations, id=0)
+        (
+            prediction_map,
+            location_map,
+            others_locations_map,
+            readings_map,
+            visit_counts_map,
+            obstacles_map,
+            combo_location_map,
+        ) = maps.observation_to_map(observation=observations, id=0)
 
         # Test Locations map
         assert maps.location_map[0][1] == 0.0
-        assert mapstack[0][0][1] == 0.0
+        assert location_map[0][1] == 0.0
         assert maps.location_map[0][3] == 1.0
-        assert mapstack[0][0][3] == 1.0
+        assert location_map[0][3] == 1.0
 
         # Test Other locations map
         assert maps.others_locations_map[0][1] == 0.0
-        assert mapstack[1][0][1] == 0.0
+        assert others_locations_map[0][1] == 0.0
         assert maps.others_locations_map[0][2] == 0.0
-        assert mapstack[1][0][2] == 0.0
+        assert others_locations_map[0][2] == 0.0
         assert maps.others_locations_map[0][3] == 1.0
-        assert mapstack[1][0][3] == 1.0
+        assert others_locations_map[0][3] == 1.0
         assert maps.others_locations_map[0][4] == 1.0
-        assert mapstack[1][0][4] == 1.0
+        assert others_locations_map[0][4] == 1.0
 
         # Test Readings map registered - Actual math tested in individual unit test
         assert maps.readings_map[0][3] > 0.0
-        assert mapstack[2][0][3] > 0.0
+        assert readings_map[0][3] > 0.0
         assert maps.readings_map[0][4] > 0.0
-        assert mapstack[2][0][4] > 0.0
+        assert readings_map[0][4] > 0.0
 
         # Test Visits count
         assert maps.visit_counts_map[0][1] > 0.0
-        assert mapstack[3][0][1] > 0.0
+        assert visit_counts_map[0][1] > 0.0
         assert maps.visit_counts_map[0][2] > 0.0
-        assert mapstack[3][0][2] > 0.0
+        assert visit_counts_map[0][2] > 0.0
         assert maps.visit_counts_map[0][3] > 0.0
-        assert mapstack[3][0][3] > 0.0
+        assert visit_counts_map[0][3] > 0.0
         assert maps.visit_counts_map[0][4] > 0.0
-        assert mapstack[3][0][4] > 0.0
+        assert visit_counts_map[0][4] > 0.0
 
         # Test Obstacle Map
         assert maps.obstacles_map[0][1] > 0.0
-        assert mapstack[4][0][1] > 0.0
+        assert obstacles_map[0][1] > 0.0
         assert maps.obstacles_map[0][2] > 0.0
-        assert mapstack[4][0][2] > 0.0
+        assert obstacles_map[0][2] > 0.0
         assert maps.obstacles_map[0][3] > 0.0
-        assert mapstack[4][0][3] > 0.0
+        assert obstacles_map[0][3] > 0.0
         assert maps.obstacles_map[0][4] > 0.0
-        assert mapstack[4][0][4] > 0.0
+        assert obstacles_map[0][4] > 0.0
 
         # Test combo locations map
         assert maps.combined_location_map[0][1] == 0.0
-        assert mapstack[5][0][1] == 0.0
+        assert combo_location_map[0][1] == 0.0
         assert maps.combined_location_map[0][2] == 0.0
-        assert mapstack[5][0][2] == 0.0
+        assert combo_location_map[0][2] == 0.0
         assert maps.combined_location_map[0][3] == 2.0
-        assert mapstack[5][0][3] == 2.0
+        assert combo_location_map[0][3] == 2.0
         assert maps.combined_location_map[0][4] == 1.0
-        assert mapstack[5][0][4] == 1.0
+        assert combo_location_map[0][4] == 1.0
 
 
 class Test_Actor:
