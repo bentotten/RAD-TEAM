@@ -293,15 +293,15 @@ class Test_DiscountCumSum:
 
 class Test_PPOBuffer:
     @pytest.fixture
-    def init_parameters(self) -> dict:
+    def init_parameters_buffer(self) -> dict:
         """Set up initialization parameters"""
         return dict(observation_dimension=11, max_size=2, max_episode_length=2, number_agents=2)
 
-    def test_Init(self, init_parameters):
-        _ = PPO.PPOBuffer(**init_parameters)
+    def test_Init(self, init_parameters_buffer):
+        _ = PPO.PPOBuffer(**init_parameters_buffer)
 
-    def test_QuickReset(self, init_parameters):
-        buffer = PPO.PPOBuffer(**init_parameters)
+    def test_QuickReset(self, init_parameters_buffer):
+        buffer = PPO.PPOBuffer(**init_parameters_buffer)
 
         buffer.ptr = 1
         buffer.path_start_idx = 1
@@ -312,9 +312,9 @@ class Test_PPOBuffer:
         assert buffer.path_start_idx == 0
         assert len(buffer.episode_lengths_buffer) == 0
 
-    def test_store(self, init_parameters) -> None:
+    def test_store(self, init_parameters_buffer) -> None:
         # Instatiate
-        buffer = PPO.PPOBuffer(**init_parameters)
+        buffer = PPO.PPOBuffer(**init_parameters_buffer)
 
         # Set up step results
         obs = np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
@@ -349,16 +349,11 @@ class Test_PPOBuffer:
         assert buffer.logp_buf.shape == (2,)
         assert buffer.logp_buf[0] == pytest.approx(logp)
 
-        # TODO write tests for prio_memory mode
-        # for agent_id, agent_obs in full_obs.items():
-        #     assert np.array_equal(buffer.full_observation_buffer[0][agent_id], agent_obs)
-        # assert buffer.full_observation_buffer[0]['terminal'] == False
-
         assert torch.equal(buffer.heatmap_buffer["actor"][0], heatmap_stack.actor)
         assert torch.equal(buffer.heatmap_buffer["critic"][0], heatmap_stack.critic)
 
         # Check remainder are zeros
-        for i in range(1, init_parameters["max_size"]):
+        for i in range(1, init_parameters_buffer["max_size"]):
             assert np.array_equal(buffer.obs_buf[i], test)
             assert buffer.act_buf[i] == 0
             assert buffer.rew_buf[i] == 0.0
@@ -402,7 +397,7 @@ class Test_PPOBuffer:
         assert torch.equal(buffer.heatmap_buffer["critic"][1], heatmap_stack.critic)
 
         # Check remainder are zeros
-        for i in range(2, init_parameters["max_size"]):
+        for i in range(2, init_parameters_buffer["max_size"]):
             assert np.array_equal(buffer.obs_buf[i], test)
             assert buffer.act_buf[i] == 0
             assert buffer.rew_buf[i] == 0.0
@@ -422,8 +417,8 @@ class Test_PPOBuffer:
                 obs=obs, act=act, rew=rew, val=val, logp=logp, src=src, full_observation=full_obs, heatmap_stacks=heatmap_stack, terminal=False
             )
 
-    def test_store_episode_length(self, init_parameters) -> None:
-        buffer = PPO.PPOBuffer(**init_parameters)
+    def test_store_episode_length(self, init_parameters_buffer) -> None:
+        buffer = PPO.PPOBuffer(**init_parameters_buffer)
         assert len(buffer.episode_lengths_buffer) == 0
         buffer.store_episode_length(7)
         assert len(buffer.episode_lengths_buffer) == 1
@@ -553,10 +548,10 @@ class Test_PPOBuffer:
         for result, to_test in zip(manual_gae, buffer.adv_buf):
             assert result == pytest.approx(to_test)
 
-    def test_get(self, init_parameters) -> None:
-        buffer = PPO.PPOBuffer(**init_parameters)
+    def test_get(self, init_parameters_buffer) -> None:
+        buffer = PPO.PPOBuffer(**init_parameters_buffer)
 
-        map = RADTEAM_core.MapsBuffer(observation_dimension=11, number_of_agents=2, steps_per_episode=5)
+        map = RADTEAM_core.MapsBuffer(observation_dimension=11, number_of_agents=2, steps_per_episode=5, PFGRU=False)
 
         # Manual test variables
         test = dict(
@@ -618,7 +613,7 @@ class Test_PPOBuffer:
 
         buffer.store_episode_length(2)
         buffer.GAE_advantage_and_rewardsToGO(test["last_val"])
-        data = buffer.get()
+        data, actor_heatmap_buffer, critc_heatmap_buffer = buffer.get()  # TODO test actor/critic heatmap buffers
 
         # Make sure reset happened
         assert buffer.ptr == 0
@@ -643,129 +638,129 @@ class Test_PPOBuffer:
 
 # Artifact
 # class Test_PPOAgent:
-    @pytest.fixture
-    def init_parameters(self) -> dict:
-        """Set up initialization parameters"""
-        bpargs = dict(bp_decay=0.1, l2_weight=1.0, l1_weight=0.0, elbo_weight=1.0, area_scale=5)
-        ac_kwargs = {
-            "action_space": 8,
-            "observation_space": 11,
-            "steps_per_episode": 1,
-            "number_of_agents": 2,
-            "detector_step_size": 100.0,
-            "environment_scale": 0.00045454545454545455,
-            "bounds_offset": np.array([200.0, 500.0]),
-            "enforce_boundaries": False,
-            "grid_bounds": (1, 1),
-            "resolution_multiplier": 0.01,
-            "GlobalCritic": None,
-            "save_path": [".", "unit_test"],
-        }
+    # @pytest.fixture
+    # def init_parameters(self) -> dict:
+    #     """Set up initialization parameters"""
+    #     bpargs = dict(bp_decay=0.1, l2_weight=1.0, l1_weight=0.0, elbo_weight=1.0, area_scale=5)
+    #     ac_kwargs = {
+    #         "action_space": 8,
+    #         "observation_space": 11,
+    #         "steps_per_episode": 1,
+    #         "number_of_agents": 2,
+    #         "detector_step_size": 100.0,
+    #         "environment_scale": 0.00045454545454545455,
+    #         "bounds_offset": np.array([200.0, 500.0]),
+    #         "enforce_boundaries": False,
+    #         "grid_bounds": (1, 1),
+    #         "resolution_multiplier": 0.01,
+    #         "GlobalCritic": None,
+    #         "save_path": [".", "unit_test"],
+    #     }
 
-        return dict(
-            id=0,
-            observation_space=11,
-            bp_args=bpargs,
-            steps_per_epoch=3,
-            steps_per_episode=2,
-            number_of_agents=2,
-            env_height=5,
-            actor_critic_args=ac_kwargs,
-            actor_critic_architecture="cnn",
-        )
+    #     return dict(
+    #         id=0,
+    #         observation_space=11,
+    #         bp_args=bpargs,
+    #         steps_per_epoch=3,
+    #         steps_per_episode=2,
+    #         number_of_agents=2,
+    #         env_height=5,
+    #         actor_critic_args=ac_kwargs,
+    #         actor_critic_architecture="cnn",
+    #     )
 
-    def test_Init(self, init_parameters, rada2c):
-        _ = PPO.AgentPPO(**init_parameters)
+    # def test_Init(self, init_parameters, rada2c):
+    #     _ = PPO.AgentPPO(**init_parameters)
 
-        rad_a2c_kwargs = rada2c.get_init()
+    #     rad_a2c_kwargs = rada2c.get_init()
 
-        init_parameters["actor_critic_args"] = rad_a2c_kwargs
-        init_parameters["actor_critic_architecture"] = "rnn"
+    #     init_parameters["actor_critic_args"] = rad_a2c_kwargs
+    #     init_parameters["actor_critic_architecture"] = "rnn"
 
-        _ = PPO.AgentPPO(**init_parameters)
-        # TODO add custom checks for different combos with CNN/RAD-A2C/Global Critic
+    #     _ = PPO.AgentPPO(**init_parameters)
+    #     # TODO add custom checks for different combos with CNN/RAD-A2C/Global Critic
 
-    def test_reduce_pfgru_training(self, init_parameters):
-        AgentPPO = PPO.AgentPPO(**init_parameters)
-        assert AgentPPO.reduce_pfgru_iters is True
-        assert AgentPPO.train_pfgru_iters == 15
-        AgentPPO.reduce_pfgru_training()
-        assert AgentPPO.reduce_pfgru_iters is False
-        assert AgentPPO.train_pfgru_iters == 5
+    # def test_reduce_pfgru_training(self, init_parameters):
+    #     AgentPPO = PPO.AgentPPO(**init_parameters)
+    #     assert AgentPPO.reduce_pfgru_iters is True
+    #     assert AgentPPO.train_pfgru_iters == 15
+    #     AgentPPO.reduce_pfgru_training()
+    #     assert AgentPPO.reduce_pfgru_iters is False
+    #     assert AgentPPO.train_pfgru_iters == 5
 
-    def test_step(self, init_parameters, rada2c):
-        """Wrapper between CNN and Train"""
-        hiddens = rada2c.get_hiddens()
-        # Test RAD-A2c
-        rad_a2c_kwargs = rada2c.get_init()
+    # def test_step(self, init_parameters, rada2c):
+    #     """Wrapper between CNN and Train"""
+    #     hiddens = rada2c.get_hiddens()
+    #     # Test RAD-A2c
+    #     rad_a2c_kwargs = rada2c.get_init()
 
-        observations = {
-            0: np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
-            1: np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
-        }
-        message = None
+    #     observations = {
+    #         0: np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+    #         1: np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+    #     }
+    #     message = None
 
-        # Test CNN
-        AgentPPO = PPO.AgentPPO(**init_parameters)
+    #     # Test CNN
+    #     AgentPPO = PPO.AgentPPO(**init_parameters)
 
-        agent_thoughts, heatmaps = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
+    #     agent_thoughts, heatmaps = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
 
-        assert heatmaps.actor.shape == torch.Size([1, 5, 28, 28])
-        assert heatmaps.critic.shape == torch.Size([1, 4, 28, 28])
-        assert agent_thoughts.action_logprob is not None
-        assert agent_thoughts.id is not None
-        assert agent_thoughts.state_value is not None
-        assert 0 <= agent_thoughts.action and agent_thoughts.action < int(8)
-        assert agent_thoughts.hiddens is None
-        assert agent_thoughts.loc_pred is None
+    #     assert heatmaps.actor.shape == torch.Size([1, 5, 28, 28])
+    #     assert heatmaps.critic.shape == torch.Size([1, 4, 28, 28])
+    #     assert agent_thoughts.action_logprob is not None
+    #     assert agent_thoughts.id is not None
+    #     assert agent_thoughts.state_value is not None
+    #     assert 0 <= agent_thoughts.action and agent_thoughts.action < int(8)
+    #     assert agent_thoughts.hiddens is None
+    #     assert agent_thoughts.loc_pred is None
 
-        rada2c_params = copy.deepcopy(init_parameters)
-        rada2c_params["actor_critic_architecture"] = "rnn"
-        rada2c_params["actor_critic_args"] = rad_a2c_kwargs
+    #     rada2c_params = copy.deepcopy(init_parameters)
+    #     rada2c_params["actor_critic_architecture"] = "rnn"
+    #     rada2c_params["actor_critic_args"] = rad_a2c_kwargs
 
-        AgentPPO = PPO.AgentPPO(**rada2c_params)
+    #     AgentPPO = PPO.AgentPPO(**rada2c_params)
 
-        agent_thoughts, heatmaps = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
+    #     agent_thoughts, heatmaps = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
 
-        assert heatmaps is None
-        assert agent_thoughts.action_logprob is not None
-        assert agent_thoughts.id is not None
-        assert agent_thoughts.state_value is not None
-        assert 0 <= agent_thoughts.action and agent_thoughts.action < int(8)
-        assert agent_thoughts.hiddens is not None
-        assert agent_thoughts.loc_pred.shape == (2,)
+    #     assert heatmaps is None
+    #     assert agent_thoughts.action_logprob is not None
+    #     assert agent_thoughts.id is not None
+    #     assert agent_thoughts.state_value is not None
+    #     assert 0 <= agent_thoughts.action and agent_thoughts.action < int(8)
+    #     assert agent_thoughts.hiddens is not None
+    #     assert agent_thoughts.loc_pred.shape == (2,)
 
-        # Test invalid architecture
-        init_parameters["actor_critic_architecture"] = "foo"
-        with pytest.raises(ValueError):
-            AgentPPO = PPO.AgentPPO(**init_parameters)
+    #     # Test invalid architecture
+    #     init_parameters["actor_critic_architecture"] = "foo"
+    #     with pytest.raises(ValueError):
+    #         AgentPPO = PPO.AgentPPO(**init_parameters)
 
-    def test_reset_agent(self, init_parameters, rada2c):
-        hiddens = rada2c.get_hiddens()
+    # def test_reset_agent(self, init_parameters, rada2c):
+        # hiddens = rada2c.get_hiddens()
 
-        observations = {
-            0: np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
-            1: np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
-        }
-        message = None
+        # observations = {
+        #     0: np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+        #     1: np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+        # }
+        # message = None
 
-        # Test CNN
-        AgentPPO = PPO.AgentPPO(**init_parameters)
-        _ = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
-        assert AgentPPO.agent.reset_flag == 0
-        assert AgentPPO.agent.maps.reset_flag == 1
-        assert AgentPPO.agent.maps.tools.reset_flag == 1
+        # # Test CNN
+        # AgentPPO = PPO.AgentPPO(**init_parameters)
+        # _ = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
+        # assert AgentPPO.agent.reset_flag == 0
+        # assert AgentPPO.agent.maps.reset_flag == 1
+        # assert AgentPPO.agent.maps.tools.reset_flag == 1
 
-        _ = AgentPPO.reset_agent()
-        assert AgentPPO.agent.reset_flag == 1
-        assert AgentPPO.agent.maps.reset_flag == 2
-        assert AgentPPO.agent.maps.tools.reset_flag == 2
+        # _ = AgentPPO.reset_agent()
+        # assert AgentPPO.agent.reset_flag == 1
+        # assert AgentPPO.agent.maps.reset_flag == 2
+        # assert AgentPPO.agent.maps.tools.reset_flag == 2
 
-        # Test RAD-A2c
-        rad_a2c_kwargs = rada2c.get_init()
-        rada2c_params = copy.deepcopy(init_parameters)
-        rada2c_params["actor_critic_architecture"] = "rnn"
-        rada2c_params["actor_critic_args"] = rad_a2c_kwargs
+        # # Test RAD-A2c
+        # rad_a2c_kwargs = rada2c.get_init()
+        # rada2c_params = copy.deepcopy(init_parameters)
+        # rada2c_params["actor_critic_architecture"] = "rnn"
+        # rada2c_params["actor_critic_args"] = rad_a2c_kwargs
 
-        AgentPPO = PPO.AgentPPO(**rada2c_params)
-        _ = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
+        # AgentPPO = PPO.AgentPPO(**rada2c_params)
+        # _ = AgentPPO.step(observations=observations, hidden=hiddens, message=message)

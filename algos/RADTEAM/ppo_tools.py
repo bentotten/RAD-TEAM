@@ -175,6 +175,7 @@ class PPOBuffer:
     gamma: float = 0.99  # trajectory discount for Generalize Advantage Estimate (GAE)
     lam: float = 0.90  # exponential mean discount Generalize Advantage Estimate (GAE). Can be thought of like a smoothing parameter.
 
+    # Initialized elsewhere
     ptr: int = field(init=False)  # For keeping track of location in buffer during update
     path_start_idx: int = field(init=False)  # For keeping track of starting location in buffer during update
 
@@ -199,8 +200,8 @@ class PPOBuffer:
     source_tar: npt.NDArray[np.float32] = field(init=False)  # Source location buffer (for moving targets)
     logp_buf: npt.NDArray[np.float32] = field(init=False)  # action log probabilities buffer
 
-    obs_win: npt.NDArray[np.float32] = field(init=False)  # For location prediction TODO find out what its doing
-    obs_win_std: npt.NDArray[np.float32] = field(init=False)  # For location prediction TODO find out what its doing
+    obs_win: npt.NDArray[np.float32] = field(init=False)
+    obs_win_std: npt.NDArray[np.float32] = field(init=False)
 
     def __post_init__(self):
         self.ptr = 0
