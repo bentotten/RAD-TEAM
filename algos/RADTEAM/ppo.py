@@ -399,7 +399,7 @@ def ppo(
     hidden = [None for _ in range(number_of_agents)]
 
     # Main loop: collect experience in env and update/log each epoch
-    logger.log(f"Proc id: {proc_id()} -> Starting main training loop in {mode} mode with {number_of_agents} agents!")
+    logger.log(f"Proc id: {proc_id()} -> Starting main training loop in {mode} mode with {number_of_agents} agents for {epochs} epochs!")
 
     for epoch in range(epochs):
         # For rendering labeling
