@@ -665,7 +665,7 @@ if __name__ == "__main__":
     rng = np.random.default_rng(seed)
     env_kwargs = {
         "bbox": [[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]],
-        "observation_area": [100.0, 100.0],
+        "observation_area": [100.0, 200.0],
         "obstruction_count": obstruction_count,
         "MIN_STARTING_DISTANCE": 500,
         "number_agents": number_of_agents,

@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from typing_extensions import TypeAlias  # type: ignore
 from typing import Union, cast, Optional, Any, NamedTuple, Tuple, Dict, List, Dict
 import scipy.signal  # type: ignore
-import ray
 
 import core as RADA2C_core  # type: ignore
 from rl_tools.logx import EpochLogger # type: ignore

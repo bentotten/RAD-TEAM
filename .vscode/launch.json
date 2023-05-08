@@ -128,17 +128,38 @@
       "cwd": "${workspaceFolder}/integration_tests/RADTEAM/test6"
     },
     {
+      "name": "Test RADA2C",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/RADA2C/ppo.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": [
+        // "--agents", "1", 
+        "--epochs", "1",
+        "--steps_per_epoch", "120",
+        // "--test", "0", 
+        // "--episodes", "2", 
+        // "--runs", "2"
+      ],
+
+      "cwd": "${workspaceFolder}/algos/RADA2C"
+    },    
+    {
       "name": "Test RADTEAM",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/algos/RADTEAM/evaluate.py",
+      "program": "${workspaceFolder}/algos/RADTEAM/ppo.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": [
         "--agents", "1", 
-        "--test", "0", 
-        "--episodes", "2", 
-        "--runs", "2"],
+        "--epochs", "1",
+        "--steps_per_epoch", "120",
+        // "--test", "0", 
+        // "--episodes", "2", 
+        // "--runs", "2"
+      ],
 
       "cwd": "${workspaceFolder}/algos/RADTEAM"
     }         

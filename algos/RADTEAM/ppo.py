@@ -539,7 +539,7 @@ def ppo(
                 fpath = f"{id}agent"
                 fpath = os.path.join(logger.output_dir, fpath)
                 os.makedirs(fpath, exist_ok=True)
-                agents[id].save(checkpoint_path=fpath, iteration=(save_counter % MAX_SAVES))
+                agents[id].save(checkpoint_path=fpath)
                 save_counter += 1
 
         # Reduce localization module training iterations after 100 epochs to speed up training
@@ -707,7 +707,7 @@ if __name__ == "__main__":
         "enforce_grid_boundaries": True,
         "TEST": args.test
     }
-    max_ep_step = 120
+
     if args.cpu > 1:
         # max cpus, steps in batch must be greater than the max eps steps times num. of cpu
         tot_epoch_steps = args.cpu * args.steps_per_epoch
