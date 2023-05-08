@@ -3,55 +3,33 @@ Evaluate agents and update neural networks using simulation environment.
 """
 
 import os
-import sys
 import time
-import random
-from datetime import datetime
-import math
-from statsmodels.stats.weightstats import DescrStatsW  # type: ignore
 
 import torch
-from torch.optim import Adam
-import torch.nn.functional as F
-import torch.nn as nn
 
 import numpy as np
-import numpy.random as npr
-import numpy.typing as npt
 
 from typing import (
-    Any,
     List,
-    Literal,
-    NewType,
-    Optional,
-    TypedDict,
-    cast,
-    get_args,
     Dict,
-    NamedTuple,
-    Type,
     Union,
     Tuple,
 )
-from typing_extensions import TypeAlias
 from dataclasses import dataclass, field
 
 import json
-import joblib  # type: ignore
 import ray
 
 # Simulation Environment
 import gym  # type: ignore
 from gym_rad_search.envs import rad_search_env  # type: ignore
-from gym_rad_search.envs.rad_search_env import RadSearch, StepResult  # type: ignore
-from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
+from gym_rad_search.envs.rad_search_env import RadSearch  # type: ignore
 
 # Neural Networks
 import core as RADA2C_core  # type: ignore
 
 # NOTE: Do not use Ray with env generator for random position generation; will create duplicates of identical episode configurations. Ok for TEST1
-USE_RAY = True
+USE_RAY = False
 
 
 class NpEncoder(json.JSONEncoder):
@@ -98,7 +76,7 @@ class Distribution:
 
 
 # Uncomment when ready to run with Ray
-@ray.remote
+# @ray.remote
 @dataclass
 class EpisodeRunner:
     id: int
@@ -215,7 +193,7 @@ class EpisodeRunner:
         actor_critic_args["pad_dim"] = 2
 
         self.agents[0] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
-        self.agents[0].load_state_dict(torch.load("model.pt"))
+        self.agents[0].load_state_dict(torch.load("pyt_save/model.pt"))
 
     def run(self) -> MonteCarloResults:
         # Prepare tracking buffers and counters

@@ -1198,9 +1198,9 @@ class Actor(nn.Module):
             if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear):
                 layer.reset_parameters()
 
-    def save_model(self, checkpoint_path: str) -> None:
+    def save_model(self, checkpoint_path: str, iter='') -> None:
         """Save model to a file"""
-        torch.save(self.state_dict(), f"{checkpoint_path}/actor.pt")
+        torch.save(self.state_dict(), f"{checkpoint_path}/actor.pt{iter}")
 
     def load_model(self, checkpoint_path: str) -> None:
         assert path.isfile(f"{checkpoint_path}/actor.pt"), "Model does not exist"
@@ -1362,9 +1362,9 @@ class Critic(nn.Module):
             if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear):
                 layer.reset_parameters()
 
-    def save_model(self, checkpoint_path: str) -> None:
+    def save_model(self, checkpoint_path: str, iter="") -> None:
         """Save model to a file"""
-        torch.save(self.state_dict(), f"{checkpoint_path}/critic.pt")
+        torch.save(self.state_dict(), f"{checkpoint_path}/critic.pt{iter}")
 
     def load_model(self, checkpoint_path: str) -> None:
         assert path.isfile(f"{checkpoint_path}/critic.pt"), "Model does not exist"
@@ -1672,8 +1672,8 @@ class PFGRUCell(PFRNNBaseCell):
         hidden = (h0, p0)
         return hidden
 
-    def save_model(self, checkpoint_path: str) -> None:
-        torch.save(self.state_dict(), f"{checkpoint_path}/predictor.pt")
+    def save_model(self, checkpoint_path: str, iter='') -> None:
+        torch.save(self.state_dict(), f"{checkpoint_path}/predictor.pt{iter}")
 
     def load_model(self, checkpoint_path: str) -> None:
         assert path.isfile(f"{checkpoint_path}/predictor.pt"), "Model does not exist"
@@ -2031,7 +2031,7 @@ class CNNBase:
     def get_batch_size(self) -> int:
         return self.pi.batches
 
-    def save(self, checkpoint_path: str) -> None:
+    def save(self, checkpoint_path: str, iteration='') -> None:
         """
         Save the actor, critic, and predictor neural network models.
 
@@ -2044,9 +2044,9 @@ class CNNBase:
         predictor_train_mode: bool = self.model.training
         self.set_mode(mode="eval")
 
-        self.pi.save_model(checkpoint_path=checkpoint_path)
-        self.critic.save_model(checkpoint_path=checkpoint_path)
-        self.model.save_model(checkpoint_path=checkpoint_path)
+        self.pi.save_model(checkpoint_path=checkpoint_path, iter=iteration)
+        self.critic.save_model(checkpoint_path=checkpoint_path, iter=iteration)
+        self.model.save_model(checkpoint_path=checkpoint_path, iter=iteration)
 
         # Restore original modes
         if pi_train_mode:

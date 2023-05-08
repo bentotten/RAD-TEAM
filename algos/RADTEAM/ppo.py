@@ -14,7 +14,7 @@ from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, mpi_avg_grads  # type: i
 from rl_tools.mpi_tools import mpi_fork, proc_id, num_procs  # type: ignore
 
 BATCHED_UPDATE = True
-
+MAX_SAVES = 3
 
 def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pfgru_iters, target_kl, clip_ratio, number_of_agents, id, mode):
     """Update for the localization and A2C modules"""
@@ -281,6 +281,9 @@ def ppo(
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals(), quiet=True)
 
+    # For labeling saved models
+    save_counter = 0
+
     # Set Pytorch random seed
     torch.manual_seed(seed)
 
@@ -535,7 +538,8 @@ def ppo(
                 fpath = f"{id}agent"
                 fpath = os.path.join(logger.output_dir, fpath)
                 os.makedirs(fpath, exist_ok=True)
-                agents[id].save(checkpoint_path=fpath)
+                agents[id].save(checkpoint_path=fpath, iteration=(save_counter % MAX_SAVES))
+                save_counter += 1
 
         # Reduce localization module training iterations after 100 epochs to speed up training
         if PFGRU and reduce_pfgru_iters and epoch > 99:

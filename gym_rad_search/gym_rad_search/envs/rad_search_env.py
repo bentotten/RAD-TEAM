@@ -325,7 +325,7 @@ class RadSearch(gym.Env):
     observation_area: Interval = field(default_factory=lambda: Interval((200.0, 500.0)))
     np_random: npr.Generator = field(default_factory=lambda: npr.default_rng(0))
     obstruction_count: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
-    obstruction_max: int = field(default=6)
+    obstruction_max: int = field(default=7)
     enforce_grid_boundaries: bool = field(default=False)
     save_gif: bool = field(default=False)
     env_ls: List[Polygon] = field(init=False)
@@ -466,10 +466,11 @@ class RadSearch(gym.Env):
         elif self.TEST == "FULL":
             print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   FULL RUN MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0, 0.0)), Point((1000.0, 0.0)), Point((1000.0, 1000.0)), Point((0.0, 1000.0))))
-            self.observation_area = Interval((100.0, 100.0))
+            self.observation_area = Interval((100.0, 200.0))
             self.obstruction_count = -1
             self.DEBUG = False
-            self.MIN_STARTING_DISTANCE = 400  # cm
+            self.MIN_STARTING_DISTANCE = 500  # cm
+            self.obstruction_max = 3
 
         # FULL RUN: 15x15 grid, [1-5] obstructions
         elif self.TEST == "ZERO":
@@ -478,7 +479,7 @@ class RadSearch(gym.Env):
             self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 0
             self.DEBUG = False
-            self.MIN_STARTING_DISTANCE = 400  # cm
+            self.MIN_STARTING_DISTANCE = 500  # cm
 
         self.search_area: BBox = BBox(
             (

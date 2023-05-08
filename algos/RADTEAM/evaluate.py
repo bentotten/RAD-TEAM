@@ -667,6 +667,7 @@ if __name__ == "__main__":
         "bbox": [[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]],
         "observation_area": [100.0, 100.0],
         "obstruction_count": obstruction_count,
+        "MIN_STARTING_DISTANCE": 500,
         "number_agents": number_of_agents,
         "enforce_grid_boundaries": True,
         "np_random": rng,
