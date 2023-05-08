@@ -1,17 +1,19 @@
 # type: ignore
 import pytest
 
-import algos.multiagent.ppo as PPO
-import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADTEAM_core
+import algos.RADTEAM.ppo_tools as PPO
+import algos.RADTEAM.RADTEAM_core as RADTEAM_core
 
 import numpy as np
 import torch
 import copy
 
+
 # Helper functions
 @pytest.fixture
 def helpers():
     return Helpers
+
 
 @pytest.fixture
 def rada2c():
@@ -151,6 +153,7 @@ class RADA2C:
             'hidden': [[24]], 'net_type': 'rnn', 'batch_s': 1, 'seed': 0, 'pad_dim': 2
             }                   
 
+
 class Helpers:
     @staticmethod
     def generalized_advantage_estimate(gamma, lamb, done, rewards, values, last_val):
@@ -160,221 +163,207 @@ class Helpers:
         values: value function results for each step
         rewards: rewards for each step
         done: flag for end of episode (ensures advantage only calculated for single epsiode, when multiple episodes are present)
-        
+
         Thank you to https://nn.labml.ai/rl/ppo/gae.html
         """
         batch_size = done.shape[0]
 
         advantages = np.zeros(batch_size + 1)
-        
+
         last_advantage = 0
         last_value = values[-1]
 
         for t in reversed(range(batch_size)):
             # Make mask to filter out values by episode
-            mask = 1.0 - done[t] # convert bools into variable to multiply by
-            
-            # Apply terminal mask to values and advantages 
+            mask = 1.0 - done[t]  # convert bools into variable to multiply by
+
+            # Apply terminal mask to values and advantages
             last_value = last_value * mask
             last_advantage = last_advantage * mask
-            
+
             # Calculate deltas
             delta = rewards[t] + gamma * last_value - values[t]
 
             # Get last advantage and add to proper element in advantages array
-            last_advantage = delta + gamma * lamb * last_advantage                
+            last_advantage = delta + gamma * lamb * last_advantage
             advantages[t] = last_advantage
-            
+
             # Get new last value
             last_value = values[t]
-            
+
         return advantages
 
     @staticmethod
     def rewards_to_go(batch_rews, gamma):
-        ''' 
+        """
         Calculate the rewards to go. Gamma is the discount factor.
         Thank you to https://medium.com/swlh/coding-ppo-from-scratch-with-pytorch-part-2-4-f9d8b8aa938a
-        '''
+        """
         # The rewards-to-go (rtg) per episode per batch to return and the shape will be (num timesteps per episode).
-        batch_rtgs = [] 
-        
+        batch_rtgs = []
+
         # Iterate through each episode backwards to maintain same order in batch_rtgs
-        discounted_reward = 0 # The discounted reward so far
-        
+        discounted_reward = 0  # The discounted reward so far
+
         for rew in reversed(batch_rews):
             discounted_reward = rew + discounted_reward * gamma
             batch_rtgs.insert(0, discounted_reward)
-                
-        return batch_rtgs     
+
+        return batch_rtgs
 
     @staticmethod
     def normalization_trick(adv_buffer: np.array):
         adv_mean = adv_buffer.mean()
         adv_std = adv_buffer.std()
-        return (adv_buffer - adv_mean) / adv_std        
+        return (adv_buffer - adv_mean) / adv_std
 
 
-class Test_CombinedShape:    
-    def test_CreateBufferofScalars(self)-> None:
-        ''' Make a list of single values. Example: Make a buffer for advantages for an epoch. Size (x)'''
+class Test_CombinedShape:
+    def test_CreateBufferofScalars(self) -> None:
+        """Make a list of single values. Example: Make a buffer for advantages for an epoch. Size (x)"""
         max = 10
         buffer_dims = PPO.combined_shape(max)
-        
+
         assert buffer_dims == (10,)
         adv_buff = np.zeros(buffer_dims, dtype=np.float32)
-        
+
         assert len(adv_buff) == 10
-        
-    def test_CreateListofArrays(self)-> None:
-        ''' Make a list of lists. Example: Make a buffer for source locations for an epoch (x, y). Size (x, y)'''
+
+    def test_CreateListofArrays(self) -> None:
+        """Make a list of lists. Example: Make a buffer for source locations for an epoch (x, y). Size (x, y)"""
         max = 10
-        coordinate_dimensions = (2)
-        
+        coordinate_dimensions = 2
+
         buffer_dims = PPO.combined_shape(max, coordinate_dimensions)
-        assert buffer_dims == (10,2)
-        
+        assert buffer_dims == (10, 2)
+
         source_buff = np.zeros(buffer_dims, dtype=np.float32)
-        
+
         for step in source_buff:
             assert len(step) == 2
-        
-    def test_CreateListofTuples(self)-> None:
-        ''' Make a list of multi-dimensional tuples. Example: Make a buffer for agent observations for an epoch. Size (x, y, z, ...)'''             
-        
+
+    def test_CreateListofTuples(self) -> None:
+        """Make a list of multi-dimensional tuples. Example: Make a buffer for agent observations for an epoch. Size (x, y, z, ...)"""
+
         max = 10
         agents = 2
         observation_dimensions = 11
-        
+
         buffer_dims = PPO.combined_shape(max, (agents, observation_dimensions))
         assert buffer_dims == (10, 2, 11)
-        
+
         source_buff = np.zeros(buffer_dims, dtype=np.float32)
-        
+
         for step in source_buff:
             for agent_observation in step:
-                assert len(agent_observation) == 11       
-                
+                assert len(agent_observation) == 11
 
-class Test_DiscountCumSum:    
+
+class Test_DiscountCumSum:
     @pytest.fixture
-    def init_parameters(self)-> dict:
-        ''' Set up initialization parameters needed to test discount_cumsum '''
+    def init_parameters(self) -> dict:
+        """Set up initialization parameters needed to test discount_cumsum"""
         return dict(
-            gamma = 0.99,
-            lamb = 0.90,
-            done = np.array([False, False, False, False, False, False, False, False, False, False]),
-            rewards = np.array([-0.46, -0.48, -0.46, -0.45, -0.45, -0.47, -0.48, -0.48, -0.48, -0.49]),
-            values = np.array([-0.26629043, -0.26634163, -0.26718464, -0.26631153, -0.26637784, -0.26601458, -0.26657045, -0.2666973, -0.26680088, -0.26717135]),
-            last_val  = -0.26717135
+            gamma=0.99,
+            lamb=0.90,
+            done=np.array([False, False, False, False, False, False, False, False, False, False]),
+            rewards=np.array([-0.46, -0.48, -0.46, -0.45, -0.45, -0.47, -0.48, -0.48, -0.48, -0.49]),
+            values=np.array(
+                [-0.26629043, -0.26634163, -0.26718464, -0.26631153, -0.26637784, -0.26601458, -0.26657045, -0.2666973, -0.26680088, -0.26717135]
+            ),
+            last_val=-0.26717135,
         )
-               
-    def test_DiscountCumSum(self, init_parameters, helpers)-> None:
-        ''' test discount cumsum by testing GAE '''
-       
-        manual_gae = helpers.generalized_advantage_estimate(**init_parameters)[:-1] # Remove last non-step element        
-        
+
+    def test_DiscountCumSum(self, init_parameters, helpers) -> None:
+        """test discount cumsum by testing GAE"""
+
+        manual_gae = helpers.generalized_advantage_estimate(**init_parameters)[:-1]  # Remove last non-step element
+
         # Setup for RAD-TEAM GAE from spinningup
-        rews = np.append(init_parameters['rewards'], init_parameters['last_val'])
-        vals = np.append(init_parameters['values'], init_parameters['last_val'])      
-        
+        rews = np.append(init_parameters["rewards"], init_parameters["last_val"])
+        vals = np.append(init_parameters["values"], init_parameters["last_val"])
+
         # GAE
-        deltas = rews[:-1] + init_parameters['gamma'] * vals[1:] - vals[:-1]        
-        advantages = PPO.discount_cumsum(deltas, init_parameters['gamma'] * init_parameters['lamb'])
+        deltas = rews[:-1] + init_parameters["gamma"] * vals[1:] - vals[:-1]
+        advantages = PPO.discount_cumsum(deltas, init_parameters["gamma"] * init_parameters["lamb"])
 
         for result, to_test in zip(manual_gae, advantages):
             assert result == to_test
-            
+
 
 class Test_PPOBuffer:
     @pytest.fixture
-    def init_parameters(self)-> dict:
-        ''' Set up initialization parameters '''
-        return dict(
-            observation_dimension = 11,
-            max_size = 2,
-            max_episode_length = 2,
-            number_agents = 2
-        )
-            
+    def init_parameters(self) -> dict:
+        """Set up initialization parameters"""
+        return dict(observation_dimension=11, max_size=2, max_episode_length=2, number_agents=2)
+
     def test_Init(self, init_parameters):
-        _ = PPO.PPOBuffer(**init_parameters)    
-        
+        _ = PPO.PPOBuffer(**init_parameters)
+
     def test_QuickReset(self, init_parameters):
-        buffer = PPO.PPOBuffer(**init_parameters)    
-        
+        buffer = PPO.PPOBuffer(**init_parameters)
+
         buffer.ptr = 1
         buffer.path_start_idx = 1
         buffer.episode_lengths_buffer.append(1)
         buffer.quick_reset()
-        
-        assert buffer.ptr == 0     
-        assert buffer.path_start_idx == 0                   
+
+        assert buffer.ptr == 0
+        assert buffer.path_start_idx == 0
         assert len(buffer.episode_lengths_buffer) == 0
-        
-    def test_store(self, init_parameters)-> None:
+
+    def test_store(self, init_parameters) -> None:
         # Instatiate
-        buffer = PPO.PPOBuffer(**init_parameters)    
-        
+        buffer = PPO.PPOBuffer(**init_parameters)
+
         # Set up step results
-        obs = np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32)
+        obs = np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
         act = 1
         rew = -0.46
         val = -0.26629042625427246
-        logp = -1.777620792388916 
+        logp = -1.777620792388916
         src = np.array([788.0, 306.0])
-        full_obs = {0: obs, 1: np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32)}
+        full_obs = {0: obs, 1: np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)}
         heatmap_stack = RADTEAM_core.HeatMaps(torch.tensor([0]), torch.tensor([1]))
-        test = np.zeros((11,), dtype=np.float32) # For comparison with empty
-        
+        test = np.zeros((11,), dtype=np.float32)  # For comparison with empty
+
         # Store 1st set
-        buffer.store(
-            obs=obs,
-            act=act,
-            rew=rew,
-            val=val,
-            logp=logp,
-            src=src,
-            full_observation=full_obs,
-            heatmap_stacks=heatmap_stack,
-            terminal=False
-        )
-        
+        buffer.store(obs=obs, act=act, rew=rew, val=val, logp=logp, src=src, full_observation=full_obs, heatmap_stacks=heatmap_stack, terminal=False)
+
         # Check stored correctly
-        assert buffer.obs_buf.shape == (2,11)
+        assert buffer.obs_buf.shape == (2, 11)
         assert np.array_equal(buffer.obs_buf[0], obs)
-        
+
         assert buffer.act_buf.shape == (2,)
         assert buffer.act_buf[0] == act
-        
+
         assert buffer.rew_buf.shape == (2,)
         assert buffer.rew_buf[0] == pytest.approx(rew)
-        
+
         assert buffer.val_buf.shape == (2,)
         assert buffer.val_buf[0] == pytest.approx(val)
-        
-        assert buffer.source_tar.shape == (2,2)
-        assert np.array_equal(buffer.source_tar[0], src)      
-        
+
+        assert buffer.source_tar.shape == (2, 2)
+        assert np.array_equal(buffer.source_tar[0], src)
+
         assert buffer.logp_buf.shape == (2,)
         assert buffer.logp_buf[0] == pytest.approx(logp)
-        
+
         # TODO write tests for prio_memory mode
         # for agent_id, agent_obs in full_obs.items():
-        #     assert np.array_equal(buffer.full_observation_buffer[0][agent_id], agent_obs)     
+        #     assert np.array_equal(buffer.full_observation_buffer[0][agent_id], agent_obs)
         # assert buffer.full_observation_buffer[0]['terminal'] == False
-            
-        assert torch.equal(buffer.heatmap_buffer['actor'][0], heatmap_stack.actor)
-        assert torch.equal(buffer.heatmap_buffer['critic'][0], heatmap_stack.critic)
-        
-            
-        # Check remainder are zeros        
-        for i in range(1, init_parameters['max_size']):
+
+        assert torch.equal(buffer.heatmap_buffer["actor"][0], heatmap_stack.actor)
+        assert torch.equal(buffer.heatmap_buffer["critic"][0], heatmap_stack.critic)
+
+        # Check remainder are zeros
+        for i in range(1, init_parameters["max_size"]):
             assert np.array_equal(buffer.obs_buf[i], test)
             assert buffer.act_buf[i] == 0
             assert buffer.rew_buf[i] == 0.0
             assert buffer.val_buf[i] == 0.0
-            assert np.array_equal(buffer.source_tar[i], np.zeros((2,), dtype=np.float32))   
+            assert np.array_equal(buffer.source_tar[i], np.zeros((2,), dtype=np.float32))
             assert buffer.logp_buf[i] == 0.0
 
             # for id in range(1, init_parameters['number_agents']):
@@ -382,422 +371,401 @@ class Test_PPOBuffer:
 
         # Check pointer updated
         assert buffer.ptr == 1
-                                       
+
         # Store 2nd set
-        buffer.store(
-            obs=obs,
-            act=act,
-            rew=rew,
-            val=val,
-            logp=logp,
-            src=src,
-            full_observation=full_obs,
-            heatmap_stacks=heatmap_stack,
-            terminal=False            
-        )
-        
+        buffer.store(obs=obs, act=act, rew=rew, val=val, logp=logp, src=src, full_observation=full_obs, heatmap_stacks=heatmap_stack, terminal=False)
+
         # Check stored correctly
-        assert buffer.obs_buf.shape == (2,11)
+        assert buffer.obs_buf.shape == (2, 11)
         assert np.array_equal(buffer.obs_buf[1], obs)
-        
+
         assert buffer.act_buf.shape == (2,)
         assert buffer.act_buf[1] == act
-        
+
         assert buffer.rew_buf.shape == (2,)
         assert buffer.rew_buf[1] == pytest.approx(rew)
-        
+
         assert buffer.val_buf.shape == (2,)
         assert buffer.val_buf[1] == pytest.approx(val)
-        
-        assert buffer.source_tar.shape == (2,2)
-        assert np.array_equal(buffer.source_tar[1], src)      
-        
+
+        assert buffer.source_tar.shape == (2, 2)
+        assert np.array_equal(buffer.source_tar[1], src)
+
         assert buffer.logp_buf.shape == (2,)
         assert buffer.logp_buf[1] == pytest.approx(logp)
-        
+
         # for agent_id, agent_obs in full_obs.items():
-        #     assert np.array_equal(buffer.full_observation_buffer[1][agent_id], agent_obs)     
-        # assert buffer.full_observation_buffer[1]['terminal'] == False            
-            
-        assert torch.equal(buffer.heatmap_buffer['actor'][1], heatmap_stack.actor)
-        assert torch.equal(buffer.heatmap_buffer['critic'][1], heatmap_stack.critic)
-        
-            
-        # Check remainder are zeros        
-        for i in range(2, init_parameters['max_size']):
+        #     assert np.array_equal(buffer.full_observation_buffer[1][agent_id], agent_obs)
+        # assert buffer.full_observation_buffer[1]['terminal'] == False
+
+        assert torch.equal(buffer.heatmap_buffer["actor"][1], heatmap_stack.actor)
+        assert torch.equal(buffer.heatmap_buffer["critic"][1], heatmap_stack.critic)
+
+        # Check remainder are zeros
+        for i in range(2, init_parameters["max_size"]):
             assert np.array_equal(buffer.obs_buf[i], test)
             assert buffer.act_buf[i] == 0
             assert buffer.rew_buf[i] == 0.0
             assert buffer.val_buf[i] == 0.0
-            assert np.array_equal(buffer.source_tar[i], np.zeros((2,), dtype=np.float32))   
+            assert np.array_equal(buffer.source_tar[i], np.zeros((2,), dtype=np.float32))
             assert buffer.logp_buf[i] == 0.0
 
             # for id in range(1, init_parameters['number_agents']):
-            #     assert np.array_equal(buffer.full_observation_buffer[i][id], test)        
+            #     assert np.array_equal(buffer.full_observation_buffer[i][id], test)
 
         # Check pointer updated
         assert buffer.ptr == 2
-        
+
         # Check failure when ptr exceeds max_size
         with pytest.raises(AssertionError):
             buffer.store(
-                obs=obs,
-                act=act,
-                rew=rew,
-                val=val,
-                logp=logp,
-                src=src,
-                full_observation=full_obs,
-                heatmap_stacks=heatmap_stack,
-                terminal=False                      
-            )           
+                obs=obs, act=act, rew=rew, val=val, logp=logp, src=src, full_observation=full_obs, heatmap_stacks=heatmap_stack, terminal=False
+            )
 
-    def test_store_episode_length(self, init_parameters)-> None:
-        buffer = PPO.PPOBuffer(**init_parameters)    
+    def test_store_episode_length(self, init_parameters) -> None:
+        buffer = PPO.PPOBuffer(**init_parameters)
         assert len(buffer.episode_lengths_buffer) == 0
         buffer.store_episode_length(7)
         assert len(buffer.episode_lengths_buffer) == 1
         assert buffer.episode_lengths_buffer[0] == 7
-        
-    def test_GAE_advantage_and_rewardsToGO_hardcoded(self, helpers)-> None:        
-        # Manual test variables                
-        test = dict(
-            gamma = 0.99,
-            lamb = 0.90,
-            done = np.array([False, False, False, False, False, False, False, False, False, False]),
-            rewards = np.array([-0.46, -0.48, -0.46, -0.45, -0.45, -0.47, -0.48, -0.48, -0.48, -0.49]),
-            values = np.array([-0.26629043, -0.26634163, -0.26718464, -0.26631153, -0.26637784, -0.26601458, -0.26657045, -0.2666973, -0.26680088, -0.26717135]),
-            last_val  = -0.26717135
-        )     
-        
-        manual_gae = helpers.generalized_advantage_estimate(**test)[:-1] # Remove last non-step element                
-        rewards = np.append(test['rewards'], test['last_val']).tolist()
-        manual_rewardsToGo = helpers.rewards_to_go(batch_rews=rewards, gamma=test['gamma'])[:-1] # Remove last non-step element   
-                        
-        # setup PPO buffer
-        init_parameters = dict(
-            observation_dimension = 11,
-            max_size = 10,
-            max_episode_length = 2,
-            number_agents = 2
-        )
-        
-        buffer = PPO.PPOBuffer(**init_parameters)
-                       
-        buffer.rew_buf = test['rewards']
-        buffer.val_buf = test['values']
-        buffer.ptr = 10
-             
-        buffer.GAE_advantage_and_rewardsToGO(last_state_value=test['last_val'])
-        
-        for result, to_test in zip(manual_rewardsToGo, buffer.ret_buf):
-            assert result == pytest.approx(to_test)         
-            
-        for result, to_test in zip(manual_gae, buffer.adv_buf):
-            assert result == pytest.approx(to_test)    
 
-    def test_GAE_advantage_and_rewardsToGO_with_storage(self, helpers)-> None:        
-        # Manual test variables                
+    def test_GAE_advantage_and_rewardsToGO_hardcoded(self, helpers) -> None:
+        # Manual test variables
         test = dict(
-            gamma = 0.99,
-            lamb = 0.90,
-            done = np.array([False, False, False]),
-            rewards = np.array([-0.46, -0.48, -0.46]),
-            values = np.array([-0.26629043, -0.26634163, -0.26718464]),
-            last_val  = -0.26718464
-        )     
-        
-        manual_gae = helpers.generalized_advantage_estimate(**test)[:-1] # Remove last non-step element                
-        rewards = np.append(test['rewards'], test['last_val']).tolist()
-        manual_rewardsToGo = helpers.rewards_to_go(batch_rews=rewards, gamma=test['gamma'])[:-1] # Remove last non-step element   
-                        
-        obs = np.zeros((11,), dtype=np.float32)
-        
-        # setup PPO buffer
-        init_parameters = dict(
-            observation_dimension = 11,
-            max_size = 10,
-            max_episode_length = 2,
-            number_agents = 2
+            gamma=0.99,
+            lamb=0.90,
+            done=np.array([False, False, False, False, False, False, False, False, False, False]),
+            rewards=np.array([-0.46, -0.48, -0.46, -0.45, -0.45, -0.47, -0.48, -0.48, -0.48, -0.49]),
+            values=np.array(
+                [-0.26629043, -0.26634163, -0.26718464, -0.26631153, -0.26637784, -0.26601458, -0.26657045, -0.2666973, -0.26680088, -0.26717135]
+            ),
+            last_val=-0.26717135,
         )
-        
+
+        manual_gae = helpers.generalized_advantage_estimate(**test)[:-1]  # Remove last non-step element
+        rewards = np.append(test["rewards"], test["last_val"]).tolist()
+        manual_rewardsToGo = helpers.rewards_to_go(batch_rews=rewards, gamma=test["gamma"])[:-1]  # Remove last non-step element
+
+        # setup PPO buffer
+        init_parameters = dict(observation_dimension=11, max_size=10, max_episode_length=2, number_agents=2)
+
         buffer = PPO.PPOBuffer(**init_parameters)
-            
+
+        buffer.rew_buf = test["rewards"]
+        buffer.val_buf = test["values"]
+        buffer.ptr = 10
+
+        buffer.GAE_advantage_and_rewardsToGO(last_state_value=test["last_val"])
+
+        for result, to_test in zip(manual_rewardsToGo, buffer.ret_buf):
+            assert result == pytest.approx(to_test)
+
+        for result, to_test in zip(manual_gae, buffer.adv_buf):
+            assert result == pytest.approx(to_test)
+
+    def test_GAE_advantage_and_rewardsToGO_with_storage(self, helpers) -> None:
+        # Manual test variables
+        test = dict(
+            gamma=0.99,
+            lamb=0.90,
+            done=np.array([False, False, False]),
+            rewards=np.array([-0.46, -0.48, -0.46]),
+            values=np.array([-0.26629043, -0.26634163, -0.26718464]),
+            last_val=-0.26718464,
+        )
+
+        manual_gae = helpers.generalized_advantage_estimate(**test)[:-1]  # Remove last non-step element
+        rewards = np.append(test["rewards"], test["last_val"]).tolist()
+        manual_rewardsToGo = helpers.rewards_to_go(batch_rews=rewards, gamma=test["gamma"])[:-1]  # Remove last non-step element
+
+        obs = np.zeros((11,), dtype=np.float32)
+
+        # setup PPO buffer
+        init_parameters = dict(observation_dimension=11, max_size=10, max_episode_length=2, number_agents=2)
+
+        buffer = PPO.PPOBuffer(**init_parameters)
+
         # Prime buffer
-        # 1st step: 
+        # 1st step:
         buffer.store(
             obs=np.zeros((11,), dtype=np.float32),
             act=0,
-            rew=test['rewards'][0],
-            val=test['values'][0],
+            rew=test["rewards"][0],
+            val=test["values"][0],
             logp=0,
-            src=np.zeros((1,2), dtype=np.float32),
-            full_observation={0: np.zeros(11,), 1: np.zeros(11,)},
+            src=np.zeros((1, 2), dtype=np.float32),
+            full_observation={
+                0: np.zeros(
+                    11,
+                ),
+                1: np.zeros(
+                    11,
+                ),
+            },
             terminal=False,
-            heatmap_stacks= RADTEAM_core.HeatMaps(torch.tensor(obs), torch.tensor(obs))            
+            heatmap_stacks=RADTEAM_core.HeatMaps(torch.tensor(obs), torch.tensor(obs)),
         )
-        
+
         # 2nd step:
         buffer.store(
             obs=np.zeros((11,), dtype=np.float32),
             act=0,
-            rew=test['rewards'][1],
-            val=test['values'][1],
+            rew=test["rewards"][1],
+            val=test["values"][1],
             logp=0,
-            src=np.zeros((1,2), dtype=np.float32),
-            full_observation={0: np.zeros(11,), 1: np.zeros(11,)},
+            src=np.zeros((1, 2), dtype=np.float32),
+            full_observation={
+                0: np.zeros(
+                    11,
+                ),
+                1: np.zeros(
+                    11,
+                ),
+            },
             terminal=False,
-            heatmap_stacks= RADTEAM_core.HeatMaps(torch.tensor(obs), torch.tensor(obs))            
-        )  
+            heatmap_stacks=RADTEAM_core.HeatMaps(torch.tensor(obs), torch.tensor(obs)),
+        )
         # 3rd step:
         buffer.store(
             obs=np.zeros((11,), dtype=np.float32),
             act=0,
-            rew=test['rewards'][2],
-            val=test['values'][2],
+            rew=test["rewards"][2],
+            val=test["values"][2],
             logp=0,
-            src=np.zeros((1,2), dtype=np.float32),
-            full_observation={0: np.zeros(11,), 1: np.zeros(11,)},
+            src=np.zeros((1, 2), dtype=np.float32),
+            full_observation={
+                0: np.zeros(
+                    11,
+                ),
+                1: np.zeros(
+                    11,
+                ),
+            },
             terminal=False,
-            heatmap_stacks= RADTEAM_core.HeatMaps(torch.tensor(obs), torch.tensor(obs))                 
-        )               
-              
-        buffer.GAE_advantage_and_rewardsToGO(last_state_value=test['last_val'])
-        
-        for result, to_test in zip(manual_rewardsToGo, buffer.ret_buf):
-            assert result == pytest.approx(to_test)         
-            
-        for result, to_test in zip(manual_gae, buffer.adv_buf):
-            assert result == pytest.approx(to_test)                                                             
-        
-    def test_get(self, init_parameters)-> None:
-        buffer = PPO.PPOBuffer(**init_parameters)    
-        
-        map = RADTEAM_core.MapsBuffer(observation_dimension=11, number_of_agents=2,steps_per_episode=5)
-                
-        # Manual test variables                
-        test = dict(
-            gamma = 0.99,
-            lamb = 0.90,
-            obs = np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32),
-            full_obs = {
-                0: np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32), 
-                1: np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32)
-                },                    
-            done = np.array([False, False]),
-            rewards = np.array([-0.46, -0.48]),
-            values = np.array([-0.26629043, -0.26634163]),
-            src = np.array([788.0, 306.0]),
-            act = np.array([1, 2]),
-            logp = np.array([-1.777620792388916, -1.777620792388916]),
-            last_val = -0.26634163,
-            terminal=False               
-        )     
-        
-        # Get mapstack
-        stack = map.observation_to_map(test['full_obs'], id=0)
-        actor_map_stack: torch.Tensor = torch.stack(
-            [torch.tensor(stack[0]), torch.tensor(stack[1]), torch.tensor(stack[2]), torch.tensor(stack[3]),  torch.tensor(stack[4])]
+            heatmap_stacks=RADTEAM_core.HeatMaps(torch.tensor(obs), torch.tensor(obs)),
         )
-        critic_map_stack: torch.Tensor = torch.stack(
-            [torch.tensor(stack[2]), torch.tensor(stack[3]),  torch.tensor(stack[4]), torch.tensor(stack[5])]
-        )            
-        
+
+        buffer.GAE_advantage_and_rewardsToGO(last_state_value=test["last_val"])
+
+        for result, to_test in zip(manual_rewardsToGo, buffer.ret_buf):
+            assert result == pytest.approx(to_test)
+
+        for result, to_test in zip(manual_gae, buffer.adv_buf):
+            assert result == pytest.approx(to_test)
+
+    def test_get(self, init_parameters) -> None:
+        buffer = PPO.PPOBuffer(**init_parameters)
+
+        map = RADTEAM_core.MapsBuffer(observation_dimension=11, number_of_agents=2, steps_per_episode=5)
+
+        # Manual test variables
+        test = dict(
+            gamma=0.99,
+            lamb=0.90,
+            obs=np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+            full_obs={
+                0: np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+                1: np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+            },
+            done=np.array([False, False]),
+            rewards=np.array([-0.46, -0.48]),
+            values=np.array([-0.26629043, -0.26634163]),
+            src=np.array([788.0, 306.0]),
+            act=np.array([1, 2]),
+            logp=np.array([-1.777620792388916, -1.777620792388916]),
+            last_val=-0.26634163,
+            terminal=False,
+        )
+
+        # Get mapstack
+        stack = map.observation_to_map(test["full_obs"], id=0)
+        actor_map_stack: torch.Tensor = torch.stack(
+            [torch.tensor(stack[0]), torch.tensor(stack[1]), torch.tensor(stack[2]), torch.tensor(stack[3]), torch.tensor(stack[4])]
+        )
+        critic_map_stack: torch.Tensor = torch.stack([torch.tensor(stack[2]), torch.tensor(stack[3]), torch.tensor(stack[4]), torch.tensor(stack[5])])
+
         # Add single batch tensor dimension for action selection
-        batched_actor_mapstack: torch.Tensor = torch.unsqueeze(actor_map_stack, dim=0)      
-        batched_critic_mapstack: torch.Tensor = torch.unsqueeze(critic_map_stack, dim=0)           
-        
-        test['heat'] = RADTEAM_core.HeatMaps(batched_actor_mapstack, batched_critic_mapstack)
-            
+        batched_actor_mapstack: torch.Tensor = torch.unsqueeze(actor_map_stack, dim=0)
+        batched_critic_mapstack: torch.Tensor = torch.unsqueeze(critic_map_stack, dim=0)
+
+        test["heat"] = RADTEAM_core.HeatMaps(batched_actor_mapstack, batched_critic_mapstack)
+
         # Prime buffer
-        # 1st step: 
+        # 1st step:
         buffer.store(
-            obs=test['obs'],
-            act=test['act'][0],
-            rew=test['rewards'][0],
-            val=test['values'][0],
-            logp=test['logp'][0],
-            src=test['src'],
-            full_observation=test['full_obs'],
-            terminal=test['terminal'],
-            heatmap_stacks=test['heat']            
+            obs=test["obs"],
+            act=test["act"][0],
+            rew=test["rewards"][0],
+            val=test["values"][0],
+            logp=test["logp"][0],
+            src=test["src"],
+            full_observation=test["full_obs"],
+            terminal=test["terminal"],
+            heatmap_stacks=test["heat"],
         )
         # 2nd step:
         buffer.store(
-            obs=test['obs'],
-            act=test['act'][1],
-            rew=test['rewards'][1],
-            val=test['values'][1],
-            logp=test['logp'][1],
-            src=test['src'],
-            full_observation=test['full_obs'],
-            terminal=test['terminal'],
-            heatmap_stacks=test['heat']                     
+            obs=test["obs"],
+            act=test["act"][1],
+            rew=test["rewards"][1],
+            val=test["values"][1],
+            logp=test["logp"][1],
+            src=test["src"],
+            full_observation=test["full_obs"],
+            terminal=test["terminal"],
+            heatmap_stacks=test["heat"],
         )
-        
+
         buffer.store_episode_length(2)
-        buffer.GAE_advantage_and_rewardsToGO(test['last_val'])
+        buffer.GAE_advantage_and_rewardsToGO(test["last_val"])
         data = buffer.get()
 
         # Make sure reset happened
-        assert buffer.ptr == 0     
-        assert buffer.path_start_idx == 0                   
+        assert buffer.ptr == 0
+        assert buffer.path_start_idx == 0
         assert len(buffer.episode_lengths_buffer) == 0
-        
-        # Check observations        
+
+        # Check observations
         i = 0
-        obs_buffer_tensor =  data['obs'].tolist()        
+        obs_buffer_tensor = data["obs"].tolist()
         for x, y in zip(*obs_buffer_tensor):
-            assert x == test['obs'][i]
-            assert y == test['obs'][i]
+            assert x == test["obs"][i]
+            assert y == test["obs"][i]
             i += 1
 
         # Check actions
         i = 0
-        act_buffer_tensor =  data['act'].tolist()        
+        act_buffer_tensor = data["act"].tolist()
         for x in act_buffer_tensor:
-            assert x == test['act'][i]
-            i += 1    
-
-        # TODO Finish remaining checks when time. For now skipping to move on to more important checks            
+            assert x == test["act"][i]
+            i += 1
 
 
-class Test_PPOAgent:
+# Artifact
+# class Test_PPOAgent:
     @pytest.fixture
-    def init_parameters(self)-> dict:
-        ''' Set up initialization parameters '''
-        bpargs = dict(
-            bp_decay=0.1,
-            l2_weight=1.0,
-            l1_weight=0.0,
-            elbo_weight=1.0,
-            area_scale=5
-        )          
-        ac_kwargs={
-            'action_space': 8, 
-            'observation_space': 11, 
-            'steps_per_episode': 1, 
-            'number_of_agents': 2, 
-            'detector_step_size': 100.0, 
-            'environment_scale': 0.00045454545454545455, 
-            'bounds_offset': np.array([200., 500.]), 
-            'enforce_boundaries': False, 
-            'grid_bounds': (1, 1), 
-            'resolution_multiplier': 0.01, 
-            'GlobalCritic': None, 
-            'save_path': ['.', 'unit_test']
-            }
-                      
+    def init_parameters(self) -> dict:
+        """Set up initialization parameters"""
+        bpargs = dict(bp_decay=0.1, l2_weight=1.0, l1_weight=0.0, elbo_weight=1.0, area_scale=5)
+        ac_kwargs = {
+            "action_space": 8,
+            "observation_space": 11,
+            "steps_per_episode": 1,
+            "number_of_agents": 2,
+            "detector_step_size": 100.0,
+            "environment_scale": 0.00045454545454545455,
+            "bounds_offset": np.array([200.0, 500.0]),
+            "enforce_boundaries": False,
+            "grid_bounds": (1, 1),
+            "resolution_multiplier": 0.01,
+            "GlobalCritic": None,
+            "save_path": [".", "unit_test"],
+        }
+
         return dict(
-            id = 0,
-            observation_space = 11,
-            bp_args = bpargs,
-            steps_per_epoch = 3,
-            steps_per_episode = 2,
-            number_of_agents = 2,
-            env_height = 5,
-            actor_critic_args = ac_kwargs,
-            actor_critic_architecture = 'cnn'
+            id=0,
+            observation_space=11,
+            bp_args=bpargs,
+            steps_per_epoch=3,
+            steps_per_episode=2,
+            number_of_agents=2,
+            env_height=5,
+            actor_critic_args=ac_kwargs,
+            actor_critic_architecture="cnn",
         )
-            
+
     def test_Init(self, init_parameters, rada2c):
         _ = PPO.AgentPPO(**init_parameters)
-        
+
         rad_a2c_kwargs = rada2c.get_init()
-        
-        init_parameters['actor_critic_args'] = rad_a2c_kwargs
-        init_parameters['actor_critic_architecture'] = 'rnn'
-        
-        
-        _ = PPO.AgentPPO(**init_parameters)            
-        # TODO add custom checks for different combos with CNN/RAD-A2C/Global Critic       
-        
+
+        init_parameters["actor_critic_args"] = rad_a2c_kwargs
+        init_parameters["actor_critic_architecture"] = "rnn"
+
+        _ = PPO.AgentPPO(**init_parameters)
+        # TODO add custom checks for different combos with CNN/RAD-A2C/Global Critic
+
     def test_reduce_pfgru_training(self, init_parameters):
-        AgentPPO = PPO.AgentPPO(**init_parameters)        
-        assert AgentPPO.reduce_pfgru_iters == True
+        AgentPPO = PPO.AgentPPO(**init_parameters)
+        assert AgentPPO.reduce_pfgru_iters is True
         assert AgentPPO.train_pfgru_iters == 15
         AgentPPO.reduce_pfgru_training()
-        assert AgentPPO.reduce_pfgru_iters == False
+        assert AgentPPO.reduce_pfgru_iters is False
         assert AgentPPO.train_pfgru_iters == 5
-        
+
     def test_step(self, init_parameters, rada2c):
-        ''' Wrapper between CNN and Train '''        
-        hiddens = rada2c.get_hiddens() 
+        """Wrapper between CNN and Train"""
+        hiddens = rada2c.get_hiddens()
         # Test RAD-A2c
-        rad_a2c_kwargs= rada2c.get_init()
-        
-        observations = {
-            0: np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32), 
-            1: np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32)
-            }
-        message = None
-        
-        # Test CNN
-        AgentPPO = PPO.AgentPPO(**init_parameters)    
-        
-        agent_thoughts, heatmaps = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
-        
-        assert heatmaps.actor.shape == torch.Size([1, 5, 28, 28])
-        assert heatmaps.critic.shape == torch.Size([1, 4, 28, 28])
-        assert agent_thoughts.action_logprob != None
-        assert agent_thoughts.id != None
-        assert agent_thoughts.state_value != None
-        assert 0 <= agent_thoughts.action and agent_thoughts.action < int(8)        
-        assert agent_thoughts.hiddens == None
-        assert agent_thoughts.loc_pred == None
-     
-                
-        rada2c_params = copy.deepcopy(init_parameters)
-        rada2c_params['actor_critic_architecture'] = 'rnn'
-        rada2c_params['actor_critic_args'] = rad_a2c_kwargs
-        
-        AgentPPO = PPO.AgentPPO(**rada2c_params)    
-        
-        agent_thoughts, heatmaps = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
-        
-        assert heatmaps == None
-        assert agent_thoughts.action_logprob != None
-        assert agent_thoughts.id != None
-        assert agent_thoughts.state_value != None
-        assert 0 <= agent_thoughts.action and agent_thoughts.action < int(8)        
-        assert agent_thoughts.hiddens != None
-        assert agent_thoughts.loc_pred.shape == (2,)
-        
-        # Test invalid architecture 
-        init_parameters['actor_critic_architecture'] = 'foo'
-        with pytest.raises(ValueError):    
-            AgentPPO = PPO.AgentPPO(**init_parameters)    
-        
-    def test_reset_agent(self, init_parameters, rada2c):
-        hiddens = rada2c.get_hiddens()         
+        rad_a2c_kwargs = rada2c.get_init()
 
         observations = {
-            0: np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32), 
-            1: np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32)
-            }
+            0: np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+            1: np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+        }
         message = None
-        
+
         # Test CNN
-        AgentPPO = PPO.AgentPPO(**init_parameters)    
-        _  = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
+        AgentPPO = PPO.AgentPPO(**init_parameters)
+
+        agent_thoughts, heatmaps = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
+
+        assert heatmaps.actor.shape == torch.Size([1, 5, 28, 28])
+        assert heatmaps.critic.shape == torch.Size([1, 4, 28, 28])
+        assert agent_thoughts.action_logprob is not None
+        assert agent_thoughts.id is not None
+        assert agent_thoughts.state_value is not None
+        assert 0 <= agent_thoughts.action and agent_thoughts.action < int(8)
+        assert agent_thoughts.hiddens is None
+        assert agent_thoughts.loc_pred is None
+
+        rada2c_params = copy.deepcopy(init_parameters)
+        rada2c_params["actor_critic_architecture"] = "rnn"
+        rada2c_params["actor_critic_args"] = rad_a2c_kwargs
+
+        AgentPPO = PPO.AgentPPO(**rada2c_params)
+
+        agent_thoughts, heatmaps = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
+
+        assert heatmaps is None
+        assert agent_thoughts.action_logprob is not None
+        assert agent_thoughts.id is not None
+        assert agent_thoughts.state_value is not None
+        assert 0 <= agent_thoughts.action and agent_thoughts.action < int(8)
+        assert agent_thoughts.hiddens is not None
+        assert agent_thoughts.loc_pred.shape == (2,)
+
+        # Test invalid architecture
+        init_parameters["actor_critic_architecture"] = "foo"
+        with pytest.raises(ValueError):
+            AgentPPO = PPO.AgentPPO(**init_parameters)
+
+    def test_reset_agent(self, init_parameters, rada2c):
+        hiddens = rada2c.get_hiddens()
+
+        observations = {
+            0: np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+            1: np.array([41.0, 0.42181818, 0.92181818, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
+        }
+        message = None
+
+        # Test CNN
+        AgentPPO = PPO.AgentPPO(**init_parameters)
+        _ = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
         assert AgentPPO.agent.reset_flag == 0
         assert AgentPPO.agent.maps.reset_flag == 1
         assert AgentPPO.agent.maps.tools.reset_flag == 1
-                
+
         _ = AgentPPO.reset_agent()
         assert AgentPPO.agent.reset_flag == 1
         assert AgentPPO.agent.maps.reset_flag == 2
         assert AgentPPO.agent.maps.tools.reset_flag == 2
 
         # Test RAD-A2c
-        rad_a2c_kwargs= rada2c.get_init()
+        rad_a2c_kwargs = rada2c.get_init()
         rada2c_params = copy.deepcopy(init_parameters)
-        rada2c_params['actor_critic_architecture'] = 'rnn'
-        rada2c_params['actor_critic_args'] = rad_a2c_kwargs        
-        
-        AgentPPO = PPO.AgentPPO(**rada2c_params)    
+        rada2c_params["actor_critic_architecture"] = "rnn"
+        rada2c_params["actor_critic_args"] = rad_a2c_kwargs
+
+        AgentPPO = PPO.AgentPPO(**rada2c_params)
         _ = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
-        # TODO add check for RAD-A2C
-
-
-        
