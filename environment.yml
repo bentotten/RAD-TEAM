@@ -7,7 +7,7 @@ dependencies:
   - python
   - pytorch
   - scipy
-  - gym
+  - gym=0.21.0
   - numba
   - black
   - swig

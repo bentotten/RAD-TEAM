@@ -16,6 +16,7 @@ from rl_tools.mpi_tools import mpi_fork, proc_id, num_procs  # type: ignore
 BATCHED_UPDATE = True
 MAX_SAVES = 3
 
+
 def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pfgru_iters, target_kl, clip_ratio, number_of_agents, id, mode):
     """Update for the localization and A2C modules"""
 
