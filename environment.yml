@@ -20,6 +20,7 @@ dependencies:
   - ray
   - joblib
   - mpi4py
+  - psutil
   - pip:
       - -e ./gym_rad_search
       - sphinx-rtd-theme
