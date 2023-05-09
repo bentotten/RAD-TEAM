@@ -198,6 +198,7 @@ class EpisodeRunner:
 
         # Create own instatiation of environment
         self.env = self.create_environment()
+        self.test_number = self.env.TEST
 
         # Get agent model paths and saved agent configurations
         agent_models = {}

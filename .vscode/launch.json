@@ -120,9 +120,9 @@
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": [
-        "--render",
-        "--agents", "4", 
-        "--test", "ZERO"
+        // "--render",
+        "--agents", "1", 
+        "--test", "1"
         // "--epochs", "1",
         // "--steps_per_epoch", "120",
         // "--test", "0", 

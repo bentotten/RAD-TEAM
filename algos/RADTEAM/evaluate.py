@@ -171,6 +171,7 @@ class EpisodeRunner:
 
         # Create own instatiation of environment
         self.env = self.create_environment()
+        self.test_number = self.env.TEST
 
         if not USE_RAY:
             print(f"Evaluating: {self.number_of_agents} agents with obstruction count: {self.obstruction_count}")
@@ -236,7 +237,6 @@ class EpisodeRunner:
         # Initialize agents and load agent models
         for i in range(self.number_of_agents):
             self.agents[i] = RADCNN_core.CNNBase(id=i, **actor_critic_args)  # NOTE: No updates, do not need PPO
-            self.agents[i].load(checkpoint_path=agent_models[i])
 
             # Sanity check
             assert self.agents[i].critic.is_mock_critic()
@@ -363,6 +363,10 @@ class EpisodeRunner:
         return self.id
 
     def process_render(self, run_counter: int, id: int) -> None:
+        if USE_RAY:
+            silent = True
+        else:
+            silent = False
         # Render
         save_time_triggered = (run_counter % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
         time_to_save = save_time_triggered or ((run_counter + 1) == self.montecarlo_runs)
@@ -382,7 +386,7 @@ class EpisodeRunner:
                 path=self.render_path,
                 epoch_count=run_counter,
                 episode_count=id,
-                silent=False,
+                silent=silent,
             )
             # Render environment image
             self.env.render(
@@ -390,7 +394,7 @@ class EpisodeRunner:
                 epoch_count=run_counter,
                 just_env=True,
                 episode_count=id,
-                silent=True,
+                silent=silent,
             )
         # Always render first episode
         if self.render and run_counter == 0 and self.render_first_episode:
@@ -408,7 +412,7 @@ class EpisodeRunner:
                 path=self.render_path,
                 epoch_count=run_counter,
                 episode_count=id,
-                silent=True,
+                silent=silent,
             )
             # Render environment image
             self.env.render(
@@ -416,7 +420,7 @@ class EpisodeRunner:
                 epoch_count=run_counter,
                 just_env=True,
                 episode_count=id,
-                silent=True,
+                silent=silent,
             )
             self.render_first_episode = False
 
@@ -436,7 +440,7 @@ class EpisodeRunner:
                 path=self.render_path,
                 epoch_count=run_counter,
                 episode_count=id,
-                silent=True,
+                silent=silent,
             )
             # Render environment image
             self.env.render(
@@ -444,7 +448,7 @@ class EpisodeRunner:
                 epoch_count=run_counter,
                 just_env=True,
                 episode_count=id,
-                silent=True,
+                silent=silent,
             )
 
 
@@ -613,7 +617,10 @@ if __name__ == "__main__":
     mode = "collaborative"  # No critic, ok to leave as collaborative for all tests
     render = args.render
     obstruction_count = args.obstruct
-    env_path = os.getcwd() + f"/saved_env/test_environments_{args.max_dim[0]}x{args.max_dim[1]}"
+    if args.test in ["1", "2", "3", "4"]:
+        env_path = os.getcwd() + f"/saved_env/test_environments_TEST{args.test}"
+    else:
+        env_path = os.getcwd() + f"/saved_env/test_environments_{args.max_dim[0]}x{args.max_dim[1]}"
     assert os.path.isdir(env_path)
 
     PFGRU = False
