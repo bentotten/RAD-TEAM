@@ -21,9 +21,7 @@ import joblib
 
 # Simulation Environment
 import gym  # type: ignore
-from gym_rad_search.envs import rad_search_env  # type: ignore
 from gym_rad_search.envs.rad_search_env import RadSearch  # type: ignore
-from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
 # Neural Networks
 import RADTEAM_core as RADCNN_core  # type: ignore
@@ -182,11 +180,7 @@ class EpisodeRunner:
             if child.is_dir() and "agent" in child.name:
                 agent_models[
                     int(child.name[0])
-                ] = (
-                    child.path
-                )  # Read in model path by id number. NOTE: Important that ID number is the first element of file name
-            if child.is_dir() and "general" in child.name:
-                general_config_path = child.path
+                ] = child.path  # Read in model path by id number. NOTE: Important that ID number is the first element of file name
 
         obj = json.load(open(f"{self.model_path}/config_agent0.json"))
         if "self" in obj.keys():
@@ -197,7 +191,7 @@ class EpisodeRunner:
         # Set up static A2C actor-critic args
         actor_critic_args = dict(
             action_space=self.env.detectable_directions,
-            # Also known as state dimensions: The dimensions of the observation returned from the environment                
+            # Also known as state dimensions: The dimensions of the observation returned from the environment
             observation_space=self.env.observation_space.shape[0],
             steps_per_episode=self.steps_per_episode,
             number_of_agents=self.number_of_agents,
@@ -210,18 +204,14 @@ class EpisodeRunner:
             GlobalCritic=None,
             no_critic=True,
             save_path=self.save_path_for_ac,
-            PFGRU=self.PFGRU
+            PFGRU=self.PFGRU,
         )
 
         # Check current important parameters match parameters read in
         if ALL_ACKWARGS_SAVED:
             for arg in actor_critic_args:
                 if arg != "no_critic" and arg != "GlobalCritic" and arg != "save_path":
-                    if (
-                        type(original_configs[arg]) == int
-                        or type(original_configs[arg]) == float
-                        or type(original_configs[arg]) == bool
-                    ):
+                    if type(original_configs[arg]) == int or type(original_configs[arg]) == float or type(original_configs[arg]) == bool:
                         assert (
                             actor_critic_args[arg] == original_configs[arg]
                         ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
@@ -230,17 +220,13 @@ class EpisodeRunner:
                             assert actor_critic_args[arg] == original_configs[arg]
                         else:
                             to_list = original_configs[arg].strip("][").split(" ")
-                            config = np.array(
-                                [float(x) for x in to_list], dtype=np.float32
-                            )
+                            config = np.array([float(x) for x in to_list], dtype=np.float32)
                             assert np.array_equal(
                                 config, actor_critic_args[arg]
                             ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                     elif type(original_configs[arg]) is list:
                         for a, b in zip(original_configs[arg], actor_critic_args[arg]):
-                            assert (
-                                a == b
-                            ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                            assert a == b, f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                     else:
                         assert (
                             actor_critic_args[arg] == original_configs[arg]
@@ -248,9 +234,7 @@ class EpisodeRunner:
 
         # Initialize agents and load agent models
         for i in range(self.number_of_agents):
-            self.agents[i] = RADCNN_core.CNNBase(
-                id=i, **actor_critic_args
-            )  # NOTE: No updates, do not need PPO
+            self.agents[i] = RADCNN_core.CNNBase(id=i, **actor_critic_args)  # NOTE: No updates, do not need PPO
             self.agents[i].load(checkpoint_path=agent_models[i])
 
             # Sanity check
@@ -260,9 +244,7 @@ class EpisodeRunner:
         # Prepare tracking buffers and counters
         episode_return = 0
         steps_in_episode: int = 0
-        terminal_counter: Dict[int, int] = {
-            id: 0 for id in self.agents
-        }  # Terminal counter for the epoch (not the episode)
+        terminal_counter: Dict[int, int] = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
         run_counter = 0
 
         # Prepare results buffers
@@ -270,7 +252,7 @@ class EpisodeRunner:
 
         if self.load_env:
             # Refresh environment with test env parameters
-            observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id, num_obs=self.obstruction_count)
+            observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
         else:
             # Reset environment and save test env parameters
             observations, _, _, _ = self.env.reset()
@@ -288,9 +270,7 @@ class EpisodeRunner:
 
         # Prepare episode variables
         agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
-        hiddens: Dict[
-            int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]
-        ] = {
+        hiddens: Dict[int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]] = {
             id: self.agents[id].reset_hidden() for id in self.agents
         }  # For RAD-A2C compatibility
 
@@ -304,23 +284,20 @@ class EpisodeRunner:
                 hiddens[id] = agent_thoughts[id].hidden
 
             # Create action list to send to environment
-            agent_action_decisions = {
-                id: int(agent_thoughts[id].action) for id in agent_thoughts
-            }
+            agent_action_decisions = {id: int(agent_thoughts[id].action) for id in agent_thoughts}
             for action in agent_action_decisions.values():
                 assert 0 <= action and action < int(self.env.number_actions)
 
             # Take step in environment - Note: will be missing last reward, rewards link to previous observation in env
-            observations, rewards, terminals, _ = self.env.step(
-                action=agent_action_decisions
-            )
+            observations, rewards, terminals, _ = self.env.step(action=agent_action_decisions)
 
             # Incremement Counters
             episode_return += rewards["team_reward"]
             steps_in_episode += 1
 
             # Tally up ending conditions
-            # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not all, this will need to be changed.
+            # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not all, 
+            # this will need to be changed.
             terminal_reached_flag = False
             for id in terminal_counter:
                 if terminals[id] is True:
@@ -328,12 +305,8 @@ class EpisodeRunner:
                     terminal_reached_flag = True
 
             # Stopping conditions for episode
-            timeout: bool = (
-                steps_in_episode == self.steps_per_episode
-            )  # Max steps per episode reached
-            episode_over: bool = (
-                terminal_reached_flag or timeout
-            )  # Either timeout or terminal found
+            timeout: bool = steps_in_episode == self.steps_per_episode  # Max steps per episode reached
+            episode_over: bool = terminal_reached_flag or timeout  # Either timeout or terminal found
 
             if episode_over:
                 self.process_render(run_counter=run_counter, id=self.id)
@@ -342,31 +315,21 @@ class EpisodeRunner:
                 if run_counter < 1:
                     if terminal_reached_flag:
                         results.successful.intensity.append(self.env.intensity)
-                        results.successful.background_intensity.append(
-                            self.env.bkg_intensity
-                        )
+                        results.successful.background_intensity.append(self.env.bkg_intensity)
                     else:
                         results.unsuccessful.intensity.append(self.env.intensity)
-                        results.unsuccessful.background_intensity.append(
-                            self.env.bkg_intensity
-                        )
+                        results.unsuccessful.background_intensity.append(self.env.bkg_intensity)
                 results.total_episode_length.append(steps_in_episode)
 
                 if terminal_reached_flag:
                     results.success_counter += 1
                     results.successful.episode_length.append(steps_in_episode)
-                    results.successful.episode_return.append(
-                        episode_return
-                    )  
+                    results.successful.episode_return.append(episode_return)
                 else:
                     results.unsuccessful.episode_length.append(steps_in_episode)
-                    results.unsuccessful.episode_return.append(
-                        episode_return
-                    )  
+                    results.unsuccessful.episode_return.append(episode_return)
 
-                results.total_episode_return.append(
-                    episode_return
-                ) 
+                results.total_episode_return.append(episode_return)
 
                 # Incremenet run counter
                 run_counter += 1
@@ -374,13 +337,9 @@ class EpisodeRunner:
                 # Reset environment without performing an env.reset()
                 episode_return = 0
                 steps_in_episode = 0
-                terminal_counter = {
-                    id: 0 for id in self.agents
-                }  # Terminal counter for the epoch (not the episode)
+                terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
 
-                observations = self.env.refresh_environment(
-                    env_dict=self.env_sets, id=self.id, num_obs=self.obstruction_count
-                )
+                observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
 
                 # Reset agents
                 for agent in self.agents.values():
@@ -388,9 +347,7 @@ class EpisodeRunner:
 
         results.completed_runs = run_counter
 
-        print(
-            f"Finished episode {self.id}! Success count: {results.success_counter} out of {self.montecarlo_runs}"
-        )
+        print(f"Finished episode {self.id}! Success count: {results.success_counter} out of {self.montecarlo_runs}")
         return results
 
     def create_environment(self) -> RadSearch:
@@ -406,14 +363,8 @@ class EpisodeRunner:
 
     def process_render(self, run_counter: int, id: int) -> None:
         # Render
-        save_time_triggered = (
-            (run_counter % self.save_gif_freq == 0)
-            if self.save_gif_freq != 0
-            else False
-        )
-        time_to_save = save_time_triggered or (
-            (run_counter + 1) == self.montecarlo_runs
-        )
+        save_time_triggered = (run_counter % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
+        time_to_save = save_time_triggered or ((run_counter + 1) == self.montecarlo_runs)
         if self.render and time_to_save:
             # Render Agent heatmaps
             if self.actor_critic_architecture == "cnn":
@@ -525,21 +476,16 @@ class evaluate_PPO:
             self.save_path = eval_kwargs["model_path"]  # type: ignore
 
         if self.eval_kwargs["obstruction_count"] == -1:
-            raise ValueError(
-                "Random sample of obstruction counts indicated. Please indicate a specific count between 1 and 5"
-            )
+            raise ValueError("Random sample of obstruction counts indicated. Please indicate a specific count between 1 and 5")
         self.test_env_dir = self.eval_kwargs["test_env_path"]
-        self.test_env_path = (
-            self.test_env_dir
-            + f"/test_env_dict_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}_v4"
-        )
+        self.test_env_path = self.test_env_dir + f"/test_env_dict_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}_v4"
         self.eval_kwargs["test_env_path"] = self.test_env_path
 
         # Initialize ray
         if USE_RAY:
             try:
                 ray.init(address="auto")
-            except:
+            except:  # noqa
                 print("Ray failed to initialize. Running on single server.")
 
     def evaluate(self):
@@ -547,20 +493,12 @@ class evaluate_PPO:
         start_time = time.time()
         if USE_RAY:
             # Uncomment when ready to run with Ray
-            runners = {
-                i: EpisodeRunner.remote(
-                    id=i, current_dir=os.getcwd(), **self.eval_kwargs
-                )
-                for i in range(self.eval_kwargs["episodes"])
-            }
+            runners = {i: EpisodeRunner.remote(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}
 
             full_results = ray.get([runner.run.remote() for runner in runners.values()])
         else:
             # Uncomment when to run without Ray
-            self.runners = {
-                i: EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs)
-                for i in range(self.eval_kwargs["episodes"])
-            }
+            self.runners = {i: EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}
 
             full_results = [runner.run() for runner in self.runners.values()]
 
@@ -580,41 +518,25 @@ class evaluate_PPO:
             raw_results[index]["total_episode_return"] = result.total_episode_length
             raw_results[index]["successful"] = dict()
 
-            raw_results[index]["successful"][
-                "episode_length"
-            ] = result.successful.episode_length
-            raw_results[index]["successful"][
-                "episode_return"
-            ] = result.successful.episode_return
+            raw_results[index]["successful"]["episode_length"] = result.successful.episode_length
+            raw_results[index]["successful"]["episode_return"] = result.successful.episode_return
             raw_results[index]["successful"]["intensity"] = result.successful.intensity
 
             raw_results[index]["unsuccessful"] = dict()
-            raw_results[index]["unsuccessful"][
-                "episode_length"
-            ] = result.unsuccessful.episode_length
-            raw_results[index]["unsuccessful"][
-                "episode_return"
-            ] = result.unsuccessful.episode_return
-            raw_results[index]["unsuccessful"][
-                "intensity"
-            ] = result.unsuccessful.intensity
+            raw_results[index]["unsuccessful"]["episode_length"] = result.unsuccessful.episode_length
+            raw_results[index]["unsuccessful"]["episode_return"] = result.unsuccessful.episode_return
+            raw_results[index]["unsuccessful"]["intensity"] = result.unsuccessful.intensity
 
             counter += result.completed_runs
 
         print(f"Total Runs: {counter}")
-        print(
-            f"Accuracy - Median Success Counts: {score['accuracy']['median']} with std {score['accuracy']['std']}"
-        )
-        print(
-            f"Speed - Median Successful Episode Length: {score['speed']['median']} with std {score['speed']['std']}"
-        )
-        print(
-            f"Learning - Median Episode Return: {score['score']['median']} with std {score['score']['std']}"
-        )
-        
+        print(f"Accuracy - Median Success Counts: {score['accuracy']['median']} with std {score['accuracy']['std']}")
+        print(f"Speed - Median Successful Episode Length: {score['speed']['median']} with std {score['speed']['std']}")
+        print(f"Learning - Median Episode Return: {score['score']['median']} with std {score['score']['std']}")
+
         with open(f"{self.save_path}/results.json", "w+") as f:
             f.write(json.dumps(score, indent=4, cls=NpEncoder))
-            
+
         with open(f"{self.save_path}/results_raw.json", "w+") as f:
             f.write(json.dumps(raw_results, indent=4, cls=NpEncoder))
 
@@ -639,14 +561,11 @@ class evaluate_PPO:
 
         for ep_index, episode in enumerate(results):
             success_counts[ep_index] = episode.success_counter
-            episode_returns[
-                ep_ret_start_ptr : ep_ret_start_ptr + mc
-            ] = episode.total_episode_return
+            episode_returns[ep_ret_start_ptr:ep_ret_start_ptr + mc] = episode.total_episode_return
             ep_ret_start_ptr = ep_ret_start_ptr + mc
 
             successful_episode_lengths[
-                ep_len_start_ptr : ep_len_start_ptr
-                + len(episode.successful.episode_length)
+                ep_len_start_ptr:ep_len_start_ptr + len(episode.successful.episode_length)
             ] = episode.successful.episode_length[:]
             ep_len_start_ptr = ep_len_start_ptr + len(episode.successful.episode_length)
 
@@ -667,24 +586,31 @@ class evaluate_PPO:
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--obstruct', type=int, default=0, help="Number of obstructions")
+    parser.add_argument("--obstruct", type=int, default=0, help="Number of obstructions")
     parser.add_argument("--agents", type=int, default=1, help="Number of agents")
     parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--runs", type=int, default=100)
-    parser.add_argument("--max_dim", type=int, default=1500)    
+    parser.add_argument("--max_dim", type=int, default=1500)
     parser.add_argument(
         "--load_env",
         action=argparse.BooleanOptionalAction,
         default=True,
         help="Load from standardized saved environment. False will generate a new environment from seed (do not run with Ray!).",
-    )    
+    )
+    parser.add_argument(
+        "--render",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Render Gif",
+    )
     args = parser.parse_args()
 
     number_of_agents = args.agents
     mode = "collaborative"  # No critic, ok to leave as collaborative for all tests
-    render = False
+    render = args.render
     obstruction_count = args.obstruct
 
     PFGRU = False
@@ -700,7 +626,7 @@ if __name__ == "__main__":
         "number_agents": number_of_agents,
         "enforce_grid_boundaries": True,
         "np_random": rng,
-        "TEST": args.test
+        "TEST": args.test,
     }
 
     eval_kwargs = dict(
@@ -724,7 +650,7 @@ if __name__ == "__main__":
         seed=seed,
         PFGRU=PFGRU,
         load_env=args.load_env,
-        test_env_path=f'./test_environments_{args.max_dim}'
+        test_env_path=f"./test_environments_{args.max_dim}",
     )
 
     test = evaluate_PPO(eval_kwargs=eval_kwargs)
