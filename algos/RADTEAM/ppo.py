@@ -592,7 +592,7 @@ def ppo(
 
         # Get averages
         loss_pi = actor_loss.mean().item()
-        loss_v = critic_loss.mean().item()
+        loss_v = np.nanmean(critic_loss).item()
         loss_mod = model_loss.mean().item()
         loc_loss = loc_loss.mean().item()
         kl = kl.mean().item()
