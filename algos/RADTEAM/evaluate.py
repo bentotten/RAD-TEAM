@@ -172,7 +172,8 @@ class EpisodeRunner:
         # Create own instatiation of environment
         self.env = self.create_environment()
 
-        print(f"Evaluating: {self.number_of_agents} agents with obstruction count: {self.obstruction_count}")
+        if not USE_RAY:
+            print(f"Evaluating: {self.number_of_agents} agents with obstruction count: {self.obstruction_count}")
 
         # Get agent model paths and saved agent configurations
         agent_models = {}
