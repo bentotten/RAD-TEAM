@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 
 import json
 import ray
+import joblib
 
 # Simulation Environment
 import gym  # type: ignore
@@ -125,7 +126,6 @@ class EpisodeRunner:
     """
 
     id: int
-    # env_sets: Dict
     current_dir: str
 
     env_name: str
@@ -140,7 +140,7 @@ class EpisodeRunner:
 
     model_path: str
     save_path_for_ac: str
-    test_env_path: str = field(default="./evaluation/test_environments")
+    test_env_path: str = field(default="./test_environments")
     save_path: str = field(default=".")
     seed: Union[int, None] = field(default=0)
 
@@ -151,10 +151,11 @@ class EpisodeRunner:
     episodes: int = field(default=100)
     montecarlo_runs: int = field(default=100)
     snr: str = field(default="high")
-    env_dict: Dict = field(default_factory=lambda: dict())
+    env_sets: Dict = field(default_factory=lambda: dict())
 
     render_first_episode: bool = field(default=True)
     PFGRU: bool = field(default=True)
+    load_env: bool = field(default=True)
 
     # Initialized elsewhere
     #: Object that holds agents
@@ -163,6 +164,12 @@ class EpisodeRunner:
     def __post_init__(self) -> None:
         # Change to correct directory
         os.chdir(self.current_dir)
+
+        # Load or create test environments
+        if self.load_env:
+            self.env_sets = joblib.load(self.test_env_path)
+        else:
+            self.env_sets = None
 
         # Create own instatiation of environment
         self.env = self.create_environment()
@@ -261,16 +268,20 @@ class EpisodeRunner:
         # Prepare results buffers
         results = MonteCarloResults(id=self.id)
 
-        # Reset environment and save test env parameters
-        observations, _, _, _ = self.env.reset()
+        if self.load_env:
+            # Refresh environment with test env parameters
+            observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id, num_obs=self.obstruction_count)
+        else:
+            # Reset environment and save test env parameters
+            observations, _, _, _ = self.env.reset()
 
-        # Save env for refresh
-        self.env_dict["env_0"] = [_ for _ in range(5)]
-        self.env_dict["env_0"][0] = self.env.src_coords
-        self.env_dict["env_0"][1] = self.env.agents[0].det_coords
-        self.env_dict["env_0"][2] = self.env.intensity
-        self.env_dict["env_0"][3] = self.env.bkg_intensity
-        self.env_dict["env_0"][4] = []  # obstructions
+            # Save env for refresh
+            self.env_sets[f"env_{self.id}"] = [_ for _ in range(5)]
+            self.env_sets[f"env_{self.id}"][0] = self.env.src_coords
+            self.env_sets[f"env_{self.id}"][1] = self.env.agents[0].det_coords
+            self.env_sets[f"env_{self.id}"][2] = self.env.intensity
+            self.env_sets[f"env_{self.id}"][3] = self.env.bkg_intensity
+            self.env_sets[f"env_{self.id}"][4] = []  # obstructions
 
         for agent in self.agents.values():
             agent.set_mode("eval")
@@ -368,7 +379,7 @@ class EpisodeRunner:
                 }  # Terminal counter for the epoch (not the episode)
 
                 observations = self.env.refresh_environment(
-                    env_dict=self.env_dict, id=self.id, num_obs=self.obstruction_count
+                    env_dict=self.env_sets, id=self.id, num_obs=self.obstruction_count
                 )
 
                 # Reset agents
@@ -506,11 +517,24 @@ class evaluate_PPO:
     montecarlo_runs: int = field(init=False)
     #: Path to save results to
     save_path: Union[str, None] = field(default=None)
+    #: Load from saved env not
 
     def __post_init__(self) -> None:
         self.montecarlo_runs = self.eval_kwargs["montecarlo_runs"]
         if not self.save_path:
             self.save_path = eval_kwargs["model_path"]  # type: ignore
+
+        if self.eval_kwargs["obstruction_count"] == -1:
+            raise ValueError(
+                "Random sample of obstruction counts indicated. Please indicate a specific count between 1 and 5"
+            )
+        self.test_env_dir = self.eval_kwargs["test_env_path"]
+        self.test_env_path = (
+            self.test_env_dir
+            + f"/test_env_dict_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}_v4"
+        )
+        self.eval_kwargs["test_env_path"] = self.test_env_path
+
         # Initialize ray
         if USE_RAY:
             try:
@@ -543,7 +567,6 @@ class evaluate_PPO:
         print("Runtime: {}", time.time() - start_time)
 
         score = self.calc_stats(results=full_results)
-
 
         # Convert to raw results
         counter = 0
@@ -650,6 +673,12 @@ if __name__ == "__main__":
     parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--runs", type=int, default=100)
+    parser.add_argument(
+        "--load_env",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Load from standardized saved environment. False will generate a new environment from seed (do not run with Ray!).",
+    )    
     args = parser.parse_args()
 
     number_of_agents = args.agents
@@ -692,7 +721,8 @@ if __name__ == "__main__":
         render_path=".",
         save_path_for_ac=".",
         seed=seed,
-        PFGRU=PFGRU
+        PFGRU=PFGRU,
+        load_env=args.load_env
     )
 
     test = evaluate_PPO(eval_kwargs=eval_kwargs)

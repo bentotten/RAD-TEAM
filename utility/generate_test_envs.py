@@ -1,6 +1,7 @@
 import gym
 import numpy as np
 import joblib
+import os
 import os.path as osp
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
@@ -40,10 +41,10 @@ def create_envs_snr(num_envs, init_dims, env_name, save_path, split=4, snr="low"
         meas = env.intensity / (det**2) + env.bkg_intensity
         if snr == "none":
             if init_dims["obstruction_count"] > 0 or init_dims["obstruction_count"] == -1:
-                env_dict["env_" + str(ii)] = (env.src_coords, env.agents[0].det_coords, env.intensity, env.bkg_intensity, env.obs_coord)
+                env_dict["env_" + str(ii)] = (env.src_coords, env.agents[0].det_coords, env.intensity, snr_range["none"][0], env.obs_coord)
                 ii += 1
             else:
-                env_dict["env_" + str(ii)] = (env.src_coords, env.agents[0].det_coords, env.intensity, env.bkg_intensity)
+                env_dict["env_" + str(ii)] = (env.src_coords, env.agents[0].det_coords, env.intensity, snr_range["none"][0])
                 ii += 1
         else:
             snr_exp = meas / env.bkg_intensity
@@ -64,23 +65,21 @@ def create_envs_snr(num_envs, init_dims, env_name, save_path, split=4, snr="low"
                                 print(f"SNR: {np.round(snr_exp,3)} -> {counts}")
                 else:
                     env_dict["env_" + str(ii)] = (env.src_coords, env.agents[0].det_coords, env.intensity, env.bkg_intensity)
-                    # print(f'Source coord: {env.src_coords}, Det coord: {env.agents[0].det_coords}, Intensity: {env.intensity},{env.bkg_intensity}')
                     ii += 1
                     print(f"SNR: {np.round(snr_exp,3)}")
 
-    joblib.dump(env_dict, osp.join(save_path, 'test_env_obs'+str(init_dims['obstruct'])+'_'+snr+'_v4'))
+    if not os.path.isdir(save_path):
+        os.mkdir(save_path)
+
+    joblib.dump(env_dict, osp.join(
+        save_path,
+        f"test_env_obs{init_dims['obstruction_count']}_{snr}_{init_dims['bbox'][2][0]}x{init_dims['bbox'][2][1]}"
+        ))
 
 
-def load_env(random_ng, num_obs):
+def load_env(random_ng, num_obs, env_name, init_dims):
     import gym
 
-    init_dims = {
-        "bbox": [[0.0, 0.0], [2700.0, 0.0], [2700.0, 2700.0], [0.0, 2700.0]],
-        "area_obs": [200.0, 500.0],
-        "obstruct": num_obs,
-        "seed": random_ng,
-    }
-    env_name = "gym_radloc:RadLoc-v0"
     env = gym.make(env_name, **init_dims)
 
     return env
@@ -109,11 +108,11 @@ def set_vis_coord(point, coords):
     return point
 
 
-def view_envs(path, max_obs, num_envs, render=True):
-    for jj in range(1, max_obs):
+def view_envs(path, max_obs, num_envs, env_name, init_dims, render=True):
+    for jj in range(max_obs+1):
         print(f"----------------Num_obs {jj} ------------------")
         rng = np.random.default_rng(robust_seed)
-        env = load_env(rng, jj)
+        env = load_env(rng, jj, env_name=env_name, init_dims=init_dims)
         _ = env.reset()
         env_set = joblib.load(path + str(jj))
         inter_count = 0
@@ -141,6 +140,8 @@ def view_envs(path, max_obs, num_envs, render=True):
                     ax1.add_patch(p_disp)
                 plt.show()
                 repl += 1
+        if jj == max_obs:
+            jj += 1
         print(f"Out of {num_envs} {inter_count/num_envs:2.2%} have an obstruction between source and detector starting position.")
 
 
@@ -163,22 +164,22 @@ if __name__ == "__main__":
     rng = np.random.default_rng(robust_seed)
 
     print("Saving...")
-    for num_obs in obs_list:
-        init_dims = {
-            "bbox": [[0.0, 0.0], [args.dimension_max[0], 0.0], [args.dimension_max[0], args.dimension_max[1]], [0.0, args.dimension_max[1]]],
-            "observation_area": [100.0, 200.0],
-            "MIN_STARTING_DISTANCE": 500,
-            "obstruction_count": num_obs,
-            "np_random": rng,
-        }
+    # for num_obs in obs_list:
+    #     init_dims = {
+    #         "bbox": [[0.0, 0.0], [args.dimension_max[0], 0.0], [args.dimension_max[0], args.dimension_max[1]], [0.0, args.dimension_max[1]]],
+    #         "observation_area": [100.0, 200.0],
+    #         "MIN_STARTING_DISTANCE": 500,
+    #         "obstruction_count": num_obs,
+    #         "np_random": rng,
+    #     }
 
-        env_name = "gym_rad_search:RadSearchMulti-v1"
-        save_p = "./test_evironments/"
-        load_p = "./test_evironments/"
+    #     env_name = "gym_rad_search:RadSearchMulti-v1"
+    #     save_p = "./test_evironments/"
+    #     load_p = "./test_evironments/"
 
-        for snr in snr_list:
-            create_envs_snr(num_envs, init_dims, env_name, save_p, snr=snr)
+    #     for snr in snr_list:
+    #         create_envs_snr(num_envs, init_dims, env_name, save_p, snr=snr)
 
-        view_envs(load_p, num_obs, num_envs)
+    view_envs(load_p, num_obs, num_envs, env_name=env_name, init_dims=init_dims)
 
     print("Done")

@@ -281,7 +281,7 @@ class EpisodeRunner:
                     or type(original_configs[arg]) == float
                     or type(original_configs[arg]) == bool
                 ):
-                    assert ( actor_critic_args[arg] == original_configs[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                    assert (actor_critic_args[arg] == original_configs[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                 elif type(original_configs[arg]) is str:
                     if arg == "net_type":
                         assert actor_critic_args[arg] == original_configs[arg]
@@ -446,7 +446,7 @@ class EpisodeRunner:
                 steps_in_episode = 0
                 terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
 
-                observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id, num_obs=self.obstruction_count) # TODO should this be id ir 0
+                observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id, num_obs=self.obstruction_count)
 
                 # Reset stat buffer for RAD-A2C
                 if (
