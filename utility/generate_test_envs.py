@@ -169,20 +169,18 @@ if __name__ == "__main__":
     env_name = "gym_rad_search:RadSearchMulti-v1"
 
     if args.test in ['1', '2', '3', '4', 'ZERO']:
-        for num_obs in obs_list:
-            init_dims = {
-                "bbox": [[0.0, 0.0], [args.dimension_max[0], 0.0], [args.dimension_max[0], args.dimension_max[1]], [0.0, args.dimension_max[1]]],
-                "observation_area": [100.0, 200.0],
-                "MIN_STARTING_DISTANCE": 500,
-                "obstruction_count": num_obs,
-                "np_random": rng,
-                "TEST": args.test,
-                "silent": True
-            }
+        init_dims = {
+            "bbox": [[0.0, 0.0], [args.dimension_max[0], 0.0], [args.dimension_max[0], args.dimension_max[1]], [0.0, args.dimension_max[1]]],
+            "observation_area": [100.0, 200.0],
+            "MIN_STARTING_DISTANCE": 500,
+            "obstruction_count": 0,
+            "np_random": rng,
+            "TEST": args.test,
+            "silent": True
+        }
         # Obstructions are hard coded for test 1-4 and ZERO
         save_p = f"./test_evironments_TEST{args.test}/"
-        for snr in snr_list:
-            create_envs_snr(num_envs, init_dims, env_name, save_p, snr=snr)
+        create_envs_snr(num_envs, init_dims, env_name, save_p, snr='none')
     else:
         save_p = f"./test_evironments_{args.dimension_max[0]}/"
         for num_obs in obs_list:
