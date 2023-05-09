@@ -118,15 +118,15 @@ def view_envs(path, max_obs, num_envs, env_name, init_dims, name, render=True):
         inter_count = 0
         repl = 0
         for kk in range(num_envs):
-            env.refresh_environment(env_dict=env_set, id=kk, num_obs=jj)
+            env.refresh_environment(env_dict=env_set, id=kk)
             L = vis.Line_Segment(env.agents[0].detector, env.source)
             inter = False
             zz = 0
-            while not inter and zz < jj:
-                if vis.boundary_distance(L, env.poly[zz]) < 0.001:
-                    inter = True
-                    inter_count += 1
-                zz += 1
+            # while not inter and zz < jj:
+            #     if vis.boundary_distance(L, env.poly[zz]) < 0.001:
+            #         inter = True
+            #         inter_count += 1
+            #     zz += 1
 
             if render and repl < 5:
                 fig, ax1 = plt.subplots(1, figsize=(5, 5), tight_layout=True)
@@ -142,7 +142,7 @@ def view_envs(path, max_obs, num_envs, env_name, init_dims, name, render=True):
                 repl += 1
         if jj == max_obs:
             jj += 1
-        print(f"Out of {num_envs} environments, {inter_count/num_envs:2.2%} have an obstruction between source and detector starting position.")
+        # print(f"Out of {num_envs} environments, {inter_count/num_envs:2.2%} have an obstruction between source and detector starting position.")
 
 
 if __name__ == "__main__":
@@ -198,8 +198,5 @@ if __name__ == "__main__":
 
             for snr in snr_list:
                 create_envs_snr(num_envs, init_dims, env_name, save_p, snr=snr)
-    load_p = './test_evironments_1500/'
-    name = 'test_env_obs1_none_1500x1500'
-    view_envs(load_p, num_obs, num_envs, env_name=env_name, init_dims=init_dims, name=name)
 
     print("Done")
