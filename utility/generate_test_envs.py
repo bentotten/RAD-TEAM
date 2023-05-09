@@ -73,7 +73,7 @@ def create_envs_snr(num_envs, init_dims, env_name, save_path, split=4, snr="low"
 
     joblib.dump(env_dict, osp.join(
         save_path,
-        f"test_env_obs{init_dims['obstruction_count']}_{snr}_{init_dims['bbox'][2][0]}x{init_dims['bbox'][2][1]}"
+        f"test_env_obs{init_dims['obstruction_count']}_{snr}"
         ))
 
 
@@ -180,12 +180,11 @@ if __name__ == "__main__":
             "silent": True
         }
         # Obstructions are hard coded for test 1-4 and ZERO
-        save_p = f"./test_evironments_TEST{args.test}/"
-        load_p = f"./test_evironments_TEST{args.test}/"
+        save_p = f"./test_environments_TEST{args.test}/"
+        load_p = f"./test_environments_TEST{args.test}/"
         create_envs_snr(num_envs, init_dims, env_name, save_p, snr='none')
     else:
-        save_p = f"./test_evironments_{args.dimension_max[0]}/"
-        load_p = f"./test_evironments_{args.dimension_max[0]}/"
+        save_p = f"./test_environments_{args.dimension_max[0]}x{args.dimension_max[1]}/"
         for num_obs in obs_list:
             init_dims = {
                 "bbox": [[0.0, 0.0], [args.dimension_max[0], 0.0], [args.dimension_max[0], args.dimension_max[1]], [0.0, args.dimension_max[1]]],

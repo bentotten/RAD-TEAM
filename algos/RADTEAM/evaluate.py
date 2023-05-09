@@ -478,7 +478,7 @@ class evaluate_PPO:
         if self.eval_kwargs["obstruction_count"] == -1:
             raise ValueError("Random sample of obstruction counts indicated. Please indicate a specific count between 1 and 5")
         self.test_env_dir = self.eval_kwargs["test_env_path"]
-        self.test_env_path = self.test_env_dir + f"/test_env_dict_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}_v4"
+        self.test_env_path = self.test_env_dir + f"/test_env_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}"
         self.eval_kwargs["test_env_path"] = self.test_env_path
 
         # Initialize ray
@@ -593,7 +593,7 @@ if __name__ == "__main__":
     parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--runs", type=int, default=100)
-    parser.add_argument("--max_dim", type=int, default=1500)
+    parser.add_argument("--max_dim", type=list, default=[1500, 1500])
     parser.add_argument(
         "--load_env",
         action=argparse.BooleanOptionalAction,
@@ -612,14 +612,16 @@ if __name__ == "__main__":
     mode = "collaborative"  # No critic, ok to leave as collaborative for all tests
     render = args.render
     obstruction_count = args.obstruct
-
+    env_path = os.getcwd() + f"/saved_env/test_environments_{args.max_dim[0]}x{args.max_dim[1]}"
+    assert os.path.isdir(env_path)
+    
     PFGRU = False
     seed = 2
 
     # Generate a large random seed and random generator object for reproducibility
     rng = np.random.default_rng(seed)
     env_kwargs = {
-        "bbox": [[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]],
+        "bbox": [[0.0, 0.0], [args.max_dim[0], 0.0], [args.max_dim[0], args.max_dim[1]], [0.0, args.max_dim[1]]],
         "observation_area": [100.0, 200.0],
         "obstruction_count": obstruction_count,
         "MIN_STARTING_DISTANCE": 500,
@@ -650,7 +652,7 @@ if __name__ == "__main__":
         seed=seed,
         PFGRU=PFGRU,
         load_env=args.load_env,
-        test_env_path=f"./test_environments_{args.max_dim}",
+        test_env_path=env_path
     )
 
     test = evaluate_PPO(eval_kwargs=eval_kwargs)
