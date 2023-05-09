@@ -908,14 +908,17 @@ class RadSearch(gym.Env):
 
         return step
 
-    def refresh_environment(self, env_dict: Dict, id: int, num_obs: int = 0) -> Dict:
+    def refresh_environment(self, env_dict: Dict, id: int, num_obs: int = -1) -> Dict:
         """
         Load saved test environment parameters from dictionary into the current instantiation of environment
 
         :param env_dict: (Dict) Parameters to refresh environment with
         :param id: (int) ID number of environment for dictionary
-        :param num_obs: (int) Number of obstructions
+        :param num_obs: (int) Number of obstructions (deprecated)
         """
+
+        if num_obs != -1:
+            print("WARNING: Obstacle parameter is deprecated. Reading from env_dict set.")
 
         # Reset counts and flags
         self.epoch_end = False
@@ -923,7 +926,9 @@ class RadSearch(gym.Env):
         self.iter_count = 0
 
         key = "env_" + str(id)
-        self.src_coords = env_dict[key][0]  # TODO save these in JSON format with labels instead
+
+        self.num_obs = len(env_dict[key][4])
+        self.src_coords = env_dict[key][0]
         self.intensity = env_dict[key][2]
         self.bkg_intensity = env_dict[key][3]
         self.source = to_vis_p(self.src_coords)
@@ -937,8 +942,7 @@ class RadSearch(gym.Env):
             agent.detector = to_vis_p(agent.det_coords)
 
         # Get obstacles from parameters
-        if num_obs > 0:
-            self.num_obs = len(env_dict[key][4])
+        if self.num_obs > 0:
             self.poly = []
             self.line_segs = []
             obs_coord = env_dict[key][4]
@@ -946,7 +950,10 @@ class RadSearch(gym.Env):
             # Make compatible with latest Rad-Search env
             self.obs_coord: List[List[Point]] = [[] for _ in range(self.num_obs)]
             for i, obstruction in enumerate(obs_coord):
-                self.obs_coord[i].extend(list(map(tuple, obstruction[0])))  # type: ignore
+                try:
+                    self.obs_coord[i].extend(list(map(tuple, obstruction[0])))  # type: ignore
+                except:
+                    self.obs_coord[i].extend(list(map(tuple, obstruction)))  # type: ignore
 
             # Create Visilibity environment
             for obs in self.obs_coord:

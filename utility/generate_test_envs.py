@@ -108,18 +108,18 @@ def set_vis_coord(point, coords):
     return point
 
 
-def view_envs(path, max_obs, num_envs, env_name, init_dims, render=True):
+def view_envs(path, max_obs, num_envs, env_name, init_dims, name, render=True):
     for jj in range(max_obs+1):
         print(f"----------------Num_obs {jj} ------------------")
         rng = np.random.default_rng(robust_seed)
         env = load_env(rng, jj, env_name=env_name, init_dims=init_dims)
         _ = env.reset()
-        env_set = joblib.load(path + str(jj))
+        env_set = joblib.load(path + name)
         inter_count = 0
         repl = 0
         for kk in range(num_envs):
             env.refresh_environment(env_dict=env_set, id=kk, num_obs=jj)
-            L = vis.Line_Segment(env.detector, env.source)
+            L = vis.Line_Segment(env.agents[0].detector, env.source)
             inter = False
             zz = 0
             while not inter and zz < jj:
@@ -135,14 +135,14 @@ def view_envs(path, max_obs, num_envs, env_name, init_dims, render=True):
                 ax1.grid()
                 ax1.set_xlim(0, env.search_area[1][0])
                 ax1.set_ylim(0, env.search_area[1][0])
-                for coord in env.obs_coord:
-                    p_disp = Polygon(coord[0])
+                for obs in env.obs_coord:
+                    p_disp = Polygon(obs)
                     ax1.add_patch(p_disp)
                 plt.show()
                 repl += 1
         if jj == max_obs:
             jj += 1
-        print(f"Out of {num_envs} {inter_count/num_envs:2.2%} have an obstruction between source and detector starting position.")
+        print(f"Out of {num_envs} environments, {inter_count/num_envs:2.2%} have an obstruction between source and detector starting position.")
 
 
 if __name__ == "__main__":
@@ -153,7 +153,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_obstacles", type=int, default=5, help="Generate environments with 0 to max_obstacles obstructions (inclusive)")
     parser.add_argument("--seed", type=int, default=500, help="Seed for randomization control")
     parser.add_argument("--dimension_max", type=list, default=[1500, 1500], help="Upper bound (cm) for x and y coordinates for environment")
-    parser.add_argument("--test", type=str, default=0, help="Test env to run in simulation environment. Overwrites init_dims.")
+    parser.add_argument("--test", type=str, default='0', help="Test env to run in simulation environment. Overwrites init_dims.")
     args = parser.parse_args()
 
     num_envs = args.env_count
@@ -169,20 +169,23 @@ if __name__ == "__main__":
     env_name = "gym_rad_search:RadSearchMulti-v1"
 
     if args.test in ['1', '2', '3', '4', 'ZERO']:
+        num_obs = 0
         init_dims = {
             "bbox": [[0.0, 0.0], [args.dimension_max[0], 0.0], [args.dimension_max[0], args.dimension_max[1]], [0.0, args.dimension_max[1]]],
             "observation_area": [100.0, 200.0],
             "MIN_STARTING_DISTANCE": 500,
-            "obstruction_count": 0,
+            "obstruction_count": num_obs,
             "np_random": rng,
             "TEST": args.test,
             "silent": True
         }
         # Obstructions are hard coded for test 1-4 and ZERO
         save_p = f"./test_evironments_TEST{args.test}/"
+        load_p = f"./test_evironments_TEST{args.test}/"
         create_envs_snr(num_envs, init_dims, env_name, save_p, snr='none')
     else:
         save_p = f"./test_evironments_{args.dimension_max[0]}/"
+        load_p = f"./test_evironments_{args.dimension_max[0]}/"
         for num_obs in obs_list:
             init_dims = {
                 "bbox": [[0.0, 0.0], [args.dimension_max[0], 0.0], [args.dimension_max[0], args.dimension_max[1]], [0.0, args.dimension_max[1]]],
@@ -194,8 +197,9 @@ if __name__ == "__main__":
             }
 
             for snr in snr_list:
-                create_envs_snr(num_envs, init_dims, env_name, save_p, snr=snr)            
-
-    # view_envs(load_p, num_obs, num_envs, env_name=env_name, init_dims=init_dims)
+                create_envs_snr(num_envs, init_dims, env_name, save_p, snr=snr)
+    load_p = './test_evironments_1500/'
+    name = 'test_env_obs1_none_1500x1500'
+    view_envs(load_p, num_obs, num_envs, env_name=env_name, init_dims=init_dims, name=name)
 
     print("Done")
