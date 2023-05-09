@@ -351,7 +351,7 @@ class EpisodeRunner:
         return results
 
     def create_environment(self) -> RadSearch:
-        env = gym.make(self.env_name, **self.env_kwargs)
+        env = gym.make(self.env_name, silent=True, **self.env_kwargs)
         env.reset()
         return env
 
@@ -614,7 +614,7 @@ if __name__ == "__main__":
     obstruction_count = args.obstruct
     env_path = os.getcwd() + f"/saved_env/test_environments_{args.max_dim[0]}x{args.max_dim[1]}"
     assert os.path.isdir(env_path)
-    
+
     PFGRU = False
     seed = 2
 

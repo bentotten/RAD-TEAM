@@ -44,7 +44,7 @@ def create_envs_snr(num_envs, init_dims, env_name, save_path, split=4, snr="low"
                 env_dict["env_" + str(ii)] = (env.src_coords, env.agents[0].det_coords, env.intensity, snr_range["none"][0], env.obs_coord)
                 ii += 1
             else:
-                env_dict["env_" + str(ii)] = (env.src_coords, env.agents[0].det_coords, env.intensity, snr_range["none"][0])
+                env_dict["env_" + str(ii)] = (env.src_coords, env.agents[0].det_coords, env.intensity, snr_range["none"][0], [])
                 ii += 1
         else:
             snr_exp = meas / env.bkg_intensity
