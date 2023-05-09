@@ -154,7 +154,6 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=500, help="Seed for randomization control")
     parser.add_argument("--dimension_max", type=list, default=[1500, 1500], help="Upper bound (cm) for x and y coordinates for environment")
     parser.add_argument("--test", type=str, default=0, help="Test env to run in simulation environment. Overwrites init_dims.")
-    
     args = parser.parse_args()
 
     num_envs = args.env_count
@@ -177,7 +176,8 @@ if __name__ == "__main__":
                 "MIN_STARTING_DISTANCE": 500,
                 "obstruction_count": num_obs,
                 "np_random": rng,
-                "TEST": args.test
+                "TEST": args.test,
+                "silent": True
             }
         # Obstructions are hard coded for test 1-4 and ZERO
         save_p = f"./test_evironments_TEST{args.test}/"

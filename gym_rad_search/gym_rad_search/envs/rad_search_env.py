@@ -375,11 +375,11 @@ class RadSearch(gym.Env):
     # Step return mode
     step_data_mode: str = field(default="dict")
 
-    # Rendering
+    # Rendering and print
     iter_count: int = field(default=0)  # For render function, believe it counts timesteps
     all_agent_max_count: float = field(init=False)  # Sets y limit for radiation count graph
     render_counter: int = field(default=0)
-    silent: bool = field(init=False)
+    silent: bool = field(default=False)
 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     # Stage 1
@@ -395,11 +395,13 @@ class RadSearch(gym.Env):
         # Debugging tests
         # Test 1: 15x15 grid, no obstructions, fixed start and stop points
         if self.DEBUG:
-            print(f"Reward Mode - Global: {GLOBAL_REWARD}. Proportional: {PROPORTIONAL_REWARD}. Basic {BASIC_REWARD}. Original: {ORIGINAL_REWARD}")
-            if BASIC_REWARD:
-                print(f"Basic Reward upon success: {BASIC_SUC_AMOUNT}")
+            if not self.silent:
+                print(f"Reward Mode - Global: {GLOBAL_REWARD}. Proportional: {PROPORTIONAL_REWARD}. Basic {BASIC_REWARD}. Original: {ORIGINAL_REWARD}")
+                if BASIC_REWARD:
+                    print(f"Basic Reward upon success: {BASIC_SUC_AMOUNT}")
         if self.TEST == "1":
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 1 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            if not self.silent:        
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 1 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
             self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 0
@@ -409,7 +411,8 @@ class RadSearch(gym.Env):
 
         # Test 2: 15x15 grid, no obstructions, fixed stop point
         elif self.TEST == "2":
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 2 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            if not self.silent:
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 2 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
             self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 0
@@ -418,7 +421,8 @@ class RadSearch(gym.Env):
 
         # Test 3: 7x7 grid, no obstructions, fixed start point
         elif self.TEST == "3":
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 3 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            if not self.silent:        
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 3 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0, 0.0)), Point((700.0, 0.0)), Point((700.0, 700.0)), Point((0.0, 700.0))))
             self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 0
@@ -428,7 +432,8 @@ class RadSearch(gym.Env):
 
         # Test 4: 7x7 grid, no obstructions
         elif self.TEST == "4":
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 4 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            if not self.silent:        
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 4 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0, 0.0)), Point((700.0, 0.0)), Point((700.0, 700.0)), Point((0.0, 700.0))))
             self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 0
@@ -437,7 +442,8 @@ class RadSearch(gym.Env):
 
         # Test 5: 15x15 grid, no obstructions
         elif self.TEST == "5":
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 5 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            if not self.silent: 
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 5 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
             self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 0
@@ -446,7 +452,8 @@ class RadSearch(gym.Env):
 
         # Test 6: 15x15 grid, 1 obstruction
         elif self.TEST == "6":
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 6 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            if not self.silent: 
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 6 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
             self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 1
@@ -455,7 +462,8 @@ class RadSearch(gym.Env):
 
         # Test 7: 15x15 grid, 3 obstructions
         elif self.TEST == "7":
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 7 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            if not self.silent: 
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 7 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
             self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 3
@@ -464,7 +472,8 @@ class RadSearch(gym.Env):
 
         # FULL RUN: 15x15 grid, [1-5] obstructions
         elif self.TEST == "FULL":
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   FULL RUN MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            if not self.silent: 
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   FULL RUN MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
             self.observation_area = Interval((100.0, 200.0))
             self.obstruction_count = -1
@@ -474,7 +483,8 @@ class RadSearch(gym.Env):
 
         # FULL RUN: 15x15 grid, [1-5] obstructions
         elif self.TEST == "ZERO":
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   ZERO RUN MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            if not self.silent:             
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   ZERO RUN MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
             self.observation_area = Interval((100.0, 200.0))
             self.obstruction_count = 0
@@ -1230,7 +1240,8 @@ class RadSearch(gym.Env):
                     )
         if self.DEBUG:
             dist = dist_p(detector, source)
-            print(f"Agent: {detector}. Source: {source}. Distance {dist}")
+            if not self.silent: 
+                print(f"Agent: {detector}. Source: {source}. Distance {dist}")
         return src_point, det_point, detector, source
 
     def is_intersect(self, agent: Agent, threshold: float = 0.001) -> bool:
