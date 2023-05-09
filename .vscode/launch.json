@@ -13,17 +13,6 @@
       "args": []
     },
     {
-      "name": "RAD-A2C",
-      "type": "python",
-      //"python": "${command:python.interpreterPath}/../multi_ppo_torch", # Specify which interpreter
-      "request": "launch",
-      "program": "${workspaceFolder}/algos/ppo/main.py",
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      "args": ["--debug", "True", "--epochs", "25", "--render", "True"],
-      "cwd": "${workspaceFolder}/algos/ppo"
-    },
-    {
       "name": "PLOT MULTI",
       "type": "python",
       "request": "launch",
@@ -106,28 +95,6 @@
       "cwd": "${workspaceFolder}/algos/multiagent"
     },
     {
-      "name": "Test RADTEAM Stage 3 - Test 5",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/integration_tests/RADTEAM/test5/ppo.py",
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      "args": ["--agents", "2", "--mode", "collaborative"],
-
-      "cwd": "${workspaceFolder}/integration_tests/RADTEAM/test5"
-    },
-    {
-      "name": "Test RADTEAM Stage 3 - Test 6",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/integration_tests/RADTEAM/test6/ppo.py",
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      "args": ["--agents", "2", "--mode", "collaborative"],
-
-      "cwd": "${workspaceFolder}/integration_tests/RADTEAM/test6"
-    },
-    {
       "name": "Test RADA2C",
       "type": "python",
       "request": "launch",
@@ -162,6 +129,18 @@
       ],
 
       "cwd": "${workspaceFolder}/algos/RADTEAM"
-    }         
+    },
+    {
+      "name": "Generate Test Envs",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/utility/generate_test_envs.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": [
+      ],
+
+      "cwd": "${workspaceFolder}/utility"
+    }      
   ]
 }

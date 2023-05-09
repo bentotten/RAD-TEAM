@@ -17,10 +17,10 @@ def create_envs(num_envs, init_dims, env_name, save_path):
         env = gym.make(env_name, **init_dims)
         env.reset()
         if init_dims["obstruct"] > 0 or init_dims["obstruct"] == -1:
-            env_dict["env_" + str(ii)] = (env.src_coords, env.det_coords, env.intensity, env.bkg_intensity, env.obs_coord)
+            env_dict["env_" + str(ii)] = (env.src_coords, env.agents[0].det_coords, env.intensity, env.bkg_intensity, env.obs_coord)
         else:
-            env_dict["env_" + str(ii)] = (env.src_coords, env.det_coords, env.intensity, env.bkg_intensity)
-            print(f"Source coord: {env.src_coords}, Det coord: {env.det_coords}, Intensity: {env.intensity},{env.bkg_intensity}")
+            env_dict["env_" + str(ii)] = (env.src_coords, env.agents[0].det_coords, env.intensity, env.bkg_intensity)
+            print(f"Source coord: {env.src_coords}, Det coord: {env.agents[0].det_coords}, Intensity: {env.intensity},{env.bkg_intensity}")
 
     joblib.dump(env_dict, osp.join(save_path, "test_env_dict_obs" + str(init_dims["obstruct"])))
 
@@ -36,35 +36,35 @@ def create_envs_snr(num_envs, init_dims, env_name, save_path, split=4, snr="low"
     while ii < num_envs:
         env = gym.make(env_name, **init_dims)
         env.reset()
-        det = np.linalg.norm(env.src_coords - env.det_coords)
+        det = np.linalg.norm(env.src_coords - np.array(env.agents[0].det_coords))  # NOTE: Agents begin in same location
         meas = env.intensity / (det**2) + env.bkg_intensity
         if snr == "none":
-            if init_dims["obstruct"] > 0 or init_dims["obstruct"] == -1:
-                env_dict["env_" + str(ii)] = (env.src_coords, env.det_coords, env.intensity, env.bkg_intensity, env.obs_coord)
+            if init_dims["obstruction_count"] > 0 or init_dims["obstruction_count"] == -1:
+                env_dict["env_" + str(ii)] = (env.src_coords, env.agents[0].det_coords, env.intensity, env.bkg_intensity, env.obs_coord)
                 ii += 1
             else:
-                env_dict["env_" + str(ii)] = (env.src_coords, env.det_coords, env.intensity, env.bkg_intensity)
+                env_dict["env_" + str(ii)] = (env.src_coords, env.agents[0].det_coords, env.intensity, env.bkg_intensity)
                 ii += 1
         else:
             snr_exp = meas / env.bkg_intensity
             if snr_range[snr][0] < snr_exp <= snr_range[snr][1]:
                 if snr == "med" or snr == "low" or snr == "high":
                     counts, inc_flag = classify_snr(np.round(snr_exp, 3), div, counts, num_envs_split, lb=snr_range[snr][0])
-                    if init_dims["obstruct"] > 0 or init_dims["obstruct"] == -1:
+                    if init_dims["obstruction_count"] > 0 or init_dims["obstruction_count"] == -1:
                         if inc_flag:
-                            env_dict["env_" + str(ii)] = (env.src_coords, env.det_coords, env.intensity, env.bkg_intensity, env.obs_coord)
+                            env_dict["env_" + str(ii)] = (env.src_coords, env.agents[0].det_coords, env.intensity, env.bkg_intensity, env.obs_coord)
                             ii += 1
                             if (ii % 100) == 0:
                                 print(f"Obs SNR: {np.round(snr_exp,3)} -> {counts}")
                     else:
                         if inc_flag:
-                            env_dict["env_" + str(ii)] = (env.src_coords, env.det_coords, env.intensity, env.bkg_intensity)
+                            env_dict["env_" + str(ii)] = (env.src_coords, env.agents[0].det_coords, env.intensity, env.bkg_intensity)
                             ii += 1
                             if (ii % 100) == 0:
                                 print(f"SNR: {np.round(snr_exp,3)} -> {counts}")
                 else:
-                    env_dict["env_" + str(ii)] = (env.src_coords, env.det_coords, env.intensity, env.bkg_intensity)
-                    # print(f'Source coord: {env.src_coords}, Det coord: {env.det_coords}, Intensity: {env.intensity},{env.bkg_intensity}')
+                    env_dict["env_" + str(ii)] = (env.src_coords, env.agents[0].det_coords, env.intensity, env.bkg_intensity)
+                    # print(f'Source coord: {env.src_coords}, Det coord: {env.agents[0].det_coords}, Intensity: {env.intensity},{env.bkg_intensity}')
                     ii += 1
                     print(f"SNR: {np.round(snr_exp,3)}")
 
@@ -132,7 +132,7 @@ def view_envs(path, max_obs, num_envs, render=True):
             if render and repl < 5:
                 fig, ax1 = plt.subplots(1, figsize=(5, 5), tight_layout=True)
                 ax1.scatter(env.src_coords[0], env.src_coords[1], c="red", marker="*")
-                ax1.scatter(env.det_coords[0], env.det_coords[1], c="black")
+                ax1.scatter(env.agents[0].det_coords[0], env.agents[0].det_coords[1], c="black")
                 ax1.grid()
                 ax1.set_xlim(0, env.search_area[1][0])
                 ax1.set_ylim(0, env.search_area[1][0])
@@ -149,12 +149,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--env_count", type=int, default=1000, help="Number of environments to generate")
-    parser.add_argument("--max_obstacles", type=int, default=5, help="Generate environments with 0 to max_obstacles obstructions")
+    parser.add_argument("--max_obstacles", type=int, default=5, help="Generate environments with 0 to max_obstacles obstructions (inclusive)")
     parser.add_argument("--seed", type=int, default=500, help="Seed for randomization control")
+    parser.add_argument("--dimension_max", type=list, default=[1500, 1500], help="Upper bound (cm) for x and y coordinates for environment")
     args = parser.parse_args()
 
     num_envs = args.env_count
-    obs_list = [i for i in range(args.max_obstacles)]
+    obs_list = [i for i in range(args.max_obstacles+1)]
     seed = args.seed
     snr_list = ["none", "low", "med", "high"]
 
@@ -164,10 +165,11 @@ if __name__ == "__main__":
     print("Saving...")
     for num_obs in obs_list:
         init_dims = {
-            "bbox": [[0.0, 0.0], [2700.0, 0.0], [2700.0, 2700.0], [0.0, 2700.0]],
-            "area_obs": [200.0, 500.0],
-            "obstruct": num_obs,
-            "seed": rng,
+            "bbox": [[0.0, 0.0], [args.dimension_max[0], 0.0], [args.dimension_max[0], args.dimension_max[1]], [0.0, args.dimension_max[1]]],
+            "observation_area": [100.0, 200.0],
+            "MIN_STARTING_DISTANCE": 500,
+            "obstruction_count": num_obs,
+            "np_random": rng,
         }
 
         env_name = "gym_rad_search:RadSearchMulti-v1"
