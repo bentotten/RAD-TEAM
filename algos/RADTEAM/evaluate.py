@@ -673,6 +673,7 @@ if __name__ == "__main__":
     parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--runs", type=int, default=100)
+    parser.add_argument("--max_dim", type=int, default=1500)    
     parser.add_argument(
         "--load_env",
         action=argparse.BooleanOptionalAction,
@@ -722,7 +723,8 @@ if __name__ == "__main__":
         save_path_for_ac=".",
         seed=seed,
         PFGRU=PFGRU,
-        load_env=args.load_env
+        load_env=args.load_env,
+        test_env_path=f'./test_environments_{args.max_dim}'
     )
 
     test = evaluate_PPO(eval_kwargs=eval_kwargs)

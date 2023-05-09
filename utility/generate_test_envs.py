@@ -153,6 +153,8 @@ if __name__ == "__main__":
     parser.add_argument("--max_obstacles", type=int, default=5, help="Generate environments with 0 to max_obstacles obstructions (inclusive)")
     parser.add_argument("--seed", type=int, default=500, help="Seed for randomization control")
     parser.add_argument("--dimension_max", type=list, default=[1500, 1500], help="Upper bound (cm) for x and y coordinates for environment")
+    parser.add_argument("--test", type=str, default=0, help="Test env to run in simulation environment. Overwrites init_dims.")
+    
     args = parser.parse_args()
 
     num_envs = args.env_count
@@ -164,22 +166,38 @@ if __name__ == "__main__":
     rng = np.random.default_rng(robust_seed)
 
     print("Saving...")
-    # for num_obs in obs_list:
-    #     init_dims = {
-    #         "bbox": [[0.0, 0.0], [args.dimension_max[0], 0.0], [args.dimension_max[0], args.dimension_max[1]], [0.0, args.dimension_max[1]]],
-    #         "observation_area": [100.0, 200.0],
-    #         "MIN_STARTING_DISTANCE": 500,
-    #         "obstruction_count": num_obs,
-    #         "np_random": rng,
-    #     }
 
-    #     env_name = "gym_rad_search:RadSearchMulti-v1"
-    #     save_p = "./test_evironments/"
-    #     load_p = "./test_evironments/"
+    env_name = "gym_rad_search:RadSearchMulti-v1"
 
-    #     for snr in snr_list:
-    #         create_envs_snr(num_envs, init_dims, env_name, save_p, snr=snr)
+    if args.test in ['1', '2', '3', '4', 'ZERO']:
+        for num_obs in obs_list:
+            init_dims = {
+                "bbox": [[0.0, 0.0], [args.dimension_max[0], 0.0], [args.dimension_max[0], args.dimension_max[1]], [0.0, args.dimension_max[1]]],
+                "observation_area": [100.0, 200.0],
+                "MIN_STARTING_DISTANCE": 500,
+                "obstruction_count": num_obs,
+                "np_random": rng,
+                "TEST": args.test
+            }
+        # Obstructions are hard coded for test 1-4 and ZERO
+        save_p = f"./test_evironments_TEST{args.test}/"
+        for snr in snr_list:
+            create_envs_snr(num_envs, init_dims, env_name, save_p, snr=snr)
+    else:
+        save_p = f"./test_evironments_{args.dimension_max[0]}/"
+        for num_obs in obs_list:
+            init_dims = {
+                "bbox": [[0.0, 0.0], [args.dimension_max[0], 0.0], [args.dimension_max[0], args.dimension_max[1]], [0.0, args.dimension_max[1]]],
+                "observation_area": [100.0, 200.0],
+                "MIN_STARTING_DISTANCE": 500,
+                "obstruction_count": num_obs,
+                "np_random": rng,
+                "TEST": 0
+            }
 
-    view_envs(load_p, num_obs, num_envs, env_name=env_name, init_dims=init_dims)
+            for snr in snr_list:
+                create_envs_snr(num_envs, init_dims, env_name, save_p, snr=snr)            
+
+    # view_envs(load_p, num_obs, num_envs, env_name=env_name, init_dims=init_dims)
 
     print("Done")
