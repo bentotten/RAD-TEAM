@@ -138,6 +138,8 @@
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": [
+        "--test",
+        "1"
       ],
 
       "cwd": "${workspaceFolder}/utility"
