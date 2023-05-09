@@ -74,7 +74,7 @@ except ModuleNotFoundError:
     from algos.multiagent.NeuralNetworkCores.RADTEAM_core import StatisticStandardization  # type: ignore
 
 
-USE_RAY = True
+USE_RAY = False
 
 
 @dataclass
@@ -109,7 +109,7 @@ class Distribution:
 
 
 # Uncomment when ready to run with Ray
-@ray.remote
+# @ray.remote
 @dataclass
 class EpisodeRunner:
     """

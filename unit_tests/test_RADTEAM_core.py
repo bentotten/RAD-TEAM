@@ -585,7 +585,7 @@ class Test_MapBuffer:
         assert maps.obstacles_map[0][0] == pytest.approx(0.1)
 
     def test_observation_to_map(self, init_parameters) -> None:
-        """Note: Actual math is tested in individual map tests. This checks that proper coordinate was updated"""
+        """Note: Actual math is tested in conversion tools tests. This checks that proper coordinate was updated"""
 
         init_parameters["number_of_agents"] = 3
 

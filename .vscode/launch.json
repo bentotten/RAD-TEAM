@@ -37,7 +37,7 @@
       "name": "Eval MULTI",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/algos/multiagent/main.py",
+      "program": "${workspaceFolder}/algos/artifact_multiagent/main.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": [
@@ -60,7 +60,7 @@
         // "--save-gif-freq",
         // "20"
       ],
-      "cwd": "${workspaceFolder}/algos/multiagent"
+      "cwd": "${workspaceFolder}/algos/artifact_multiagent"
     },
     {
       "name": "Train MULTI",

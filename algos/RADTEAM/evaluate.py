@@ -368,7 +368,7 @@ class EpisodeRunner:
                 }  # Terminal counter for the epoch (not the episode)
 
                 observations = self.env.refresh_environment(
-                    env_dict=self.env_dict, id=0, num_obs=self.obstruction_count
+                    env_dict=self.env_dict, id=self.id, num_obs=self.obstruction_count
                 )
 
                 # Reset agents
@@ -650,7 +650,6 @@ if __name__ == "__main__":
     parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--runs", type=int, default=100)
-    
     args = parser.parse_args()
 
     number_of_agents = args.agents

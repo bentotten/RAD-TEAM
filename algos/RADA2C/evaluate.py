@@ -342,7 +342,7 @@ class EpisodeRunner:
                 }  # Terminal counter for the epoch (not the episode)
 
                 observations = self.env.refresh_environment(
-                    env_dict=self.env_dict, id=0, num_obs=self.obstruction_count
+                    env_dict=self.env_dict, id=self.id, num_obs=self.obstruction_count
                 )
 
                 # Reset stat buffer for RAD-A2C
