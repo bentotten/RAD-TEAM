@@ -186,7 +186,7 @@ def plot(graphname, datasets, groups, tests, metrics, y_label, path=None):
     # Define which colours you want to use
     colors = []
     for id in range(len(groups)):
-
+        colors.append(create_color(id))
 
     # Set x-positions for boxes
     x_pos_range = np.arange(len(datasets)) / (len(datasets) - 1)
