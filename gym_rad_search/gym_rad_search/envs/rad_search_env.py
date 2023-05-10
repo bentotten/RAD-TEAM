@@ -34,7 +34,6 @@ from matplotlib.animation import PillowWriter  # type: ignore
 from matplotlib.patches import Polygon as PolygonPatches  # type: ignore
 from matplotlib.markers import MarkerStyle  # type: ignore
 
-
 from typing_extensions import TypeAlias
 
 

@@ -139,7 +139,10 @@
       "program": "${workspaceFolder}/utility/plot_results.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      // "args": ["--smooth", "10"],
+    //   "args": [
+    //     "--data_dir",
+    //     ""
+    // ],
       "cwd": "${workspaceFolder}/utility/"
     },    
   ]
