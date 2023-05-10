@@ -1,3 +1,4 @@
+''' Quickly-generated bulk evaluation tool. '''
 import os
 import shutil
 import subprocess
