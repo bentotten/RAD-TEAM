@@ -30,7 +30,7 @@ import RADTEAM_core as RADCNN_core  # type: ignore
 # import RADA2C_core as RADA2C_core  # type: ignore
 
 # NOTE: Do not use Ray with env generator for random position generation; will create duplicates of identical episode configurations. Ok for TEST1
-USE_RAY = False
+USE_RAY = True
 
 ALL_ACKWARGS_SAVED = False
 
@@ -78,7 +78,7 @@ class Distribution:
 
 
 # Uncomment when ready to run with Ray
-# @ray.remote
+@ray.remote
 @dataclass
 class EpisodeRunner:
     """
@@ -572,11 +572,11 @@ class evaluate_PPO:
 
         for ep_index, episode in enumerate(results):
             success_counts[ep_index] = episode.success_counter
-            episode_returns[ep_ret_start_ptr : ep_ret_start_ptr + mc] = episode.total_episode_return
+            episode_returns[ep_ret_start_ptr:ep_ret_start_ptr + mc] = episode.total_episode_return
             ep_ret_start_ptr = ep_ret_start_ptr + mc
 
             successful_episode_lengths[
-                ep_len_start_ptr : ep_len_start_ptr + len(episode.successful.episode_length)
+                ep_len_start_ptr:ep_len_start_ptr + len(episode.successful.episode_length)
             ] = episode.successful.episode_length[:]
             ep_len_start_ptr = ep_len_start_ptr + len(episode.successful.episode_length)
 
@@ -586,21 +586,15 @@ class evaluate_PPO:
         suc_low_whisker, suc_q1, suc_median, suc_q3, suc_high_whisker = self.calc_quartiles(success_counts)
         suc_median2 = np.nanmedian(sorted(success_counts))
         assert suc_median == suc_median2
-        final["accuracy"] = (
-            {"low_whisker": suc_low_whisker, "q1": suc_q1, "median": suc_median, "q3": suc_q3, "high_whisker": suc_high_whisker, "std": succ_std},
-        )
+        final["accuracy"] = {"low_whisker": suc_low_whisker, "q1": suc_q1, "median": suc_median, "q3": suc_q3, "high_whisker": suc_high_whisker, "std": succ_std}
 
         len_std = round(np.nanstd(successful_episode_lengths), 3)
         len_low_whisker, len_q1, len_median, len_q3, len_high_whisker = self.calc_quartiles(successful_episode_lengths)
-        final["speed"] = (
-            {"low_whisker": len_low_whisker, "q1": len_q1, "median": len_median, "q3": len_q3, "high_whisker": len_high_whisker, "std": len_std},
-        )
+        final["speed"] = {"low_whisker": len_low_whisker, "q1": len_q1, "median": len_median, "q3": len_q3, "high_whisker": len_high_whisker, "std": len_std}
 
         ret_std = round(np.nanstd(episode_returns), 3)
         ret_low_whisker, ret_q1, ret_median, ret_q3, ret_high_whisker = self.calc_quartiles(episode_returns)
-        final["score"] = (
-            {"low_whisker": ret_low_whisker, "q1": ret_q1, "median": ret_median, "q3": ret_q3, "high_whisker": ret_high_whisker, "std": ret_std},
-        )
+        final["score"] = {"low_whisker": ret_low_whisker, "q1": ret_q1, "median": ret_median, "q3": ret_q3, "high_whisker": ret_high_whisker, "std": ret_std}
 
         return final
 
