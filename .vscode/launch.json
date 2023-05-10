@@ -13,16 +13,6 @@
       "args": []
     },
     {
-      "name": "PLOT MULTI",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/algos/multiagent/plot_results.py",
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      "args": ["--data_dir", "${workspaceFolder}/models", "--smooth", "10"],
-      "cwd": "${workspaceFolder}/algos/multiagent"
-    },
-    {
       "name": "Eval MULTI",
       "type": "python",
       "request": "launch",
@@ -109,7 +99,6 @@
         // "--episodes", "2", 
         // "--runs", "2"
       ],
-
       "cwd": "${workspaceFolder}/algos/RADA2C"
     },    
     {
@@ -129,7 +118,6 @@
         // "--episodes", "2", 
         // "--runs", "2"
       ],
-
       "cwd": "${workspaceFolder}/algos/RADTEAM"
     },
     {
@@ -143,8 +131,17 @@
         "--test",
         "1"
       ],
-
       "cwd": "${workspaceFolder}/utility"
-    }      
+    },
+    {
+      "name": "PLOT MULTI",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/utility/plot_results.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      // "args": ["--smooth", "10"],
+      "cwd": "${workspaceFolder}/utility/"
+    },    
   ]
 }
