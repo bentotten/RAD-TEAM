@@ -111,12 +111,12 @@
       "args": [
         // "--render",
         "--agents", "1", 
-        "--test", "1"
+        "--test", "1",
         // "--epochs", "1",
         // "--steps_per_epoch", "120",
         // "--test", "0", 
-        // "--episodes", "2", 
-        // "--runs", "2"
+        "--episodes", "2", 
+        "--runs", "100"
       ],
       "cwd": "${workspaceFolder}/algos/RADTEAM"
     },
@@ -128,8 +128,7 @@
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": [
-        "--test",
-        "1"
+        // "--test", "1"
       ],
       "cwd": "${workspaceFolder}/utility"
     },

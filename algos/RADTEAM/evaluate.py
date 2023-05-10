@@ -207,18 +207,14 @@ class EpisodeRunner:
             GlobalCritic=None,
             no_critic=True,
             save_path=self.save_path_for_ac,
-            PFGRU=self.PFGRU
+            PFGRU=self.PFGRU,
         )
 
         # Check current important parameters match parameters read in
         if ALL_ACKWARGS_SAVED:
             for arg in actor_critic_args:
                 if arg != "no_critic" and arg != "GlobalCritic" and arg != "save_path":
-                    if (
-                        type(original_configs[arg]) == int
-                        or type(original_configs[arg]) == float
-                        or type(original_configs[arg]) == bool
-                    ):
+                    if type(original_configs[arg]) == int or type(original_configs[arg]) == float or type(original_configs[arg]) == bool:
                         assert (
                             actor_critic_args[arg] == original_configs[arg]
                         ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
@@ -233,7 +229,7 @@ class EpisodeRunner:
                             ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                     elif type(original_configs[arg]) is list:
                         for a, b in zip(original_configs[arg], actor_critic_args[arg]):
-                            assert (a == b), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                            assert a == b, f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                     else:
                         assert (
                             actor_critic_args[arg] == original_configs[arg]
@@ -303,7 +299,7 @@ class EpisodeRunner:
             steps_in_episode += 1
 
             # Tally up ending conditions
-            # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not all, 
+            # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not all,
             # this will need to be changed.
             terminal_reached_flag = False
             for id in terminal_counter:
@@ -576,29 +572,37 @@ class evaluate_PPO:
 
         for ep_index, episode in enumerate(results):
             success_counts[ep_index] = episode.success_counter
-            episode_returns[ep_ret_start_ptr:ep_ret_start_ptr + mc] = episode.total_episode_return
+            episode_returns[ep_ret_start_ptr : ep_ret_start_ptr + mc] = episode.total_episode_return
             ep_ret_start_ptr = ep_ret_start_ptr + mc
 
             successful_episode_lengths[
-                ep_len_start_ptr:ep_len_start_ptr + len(episode.successful.episode_length)
+                ep_len_start_ptr : ep_len_start_ptr + len(episode.successful.episode_length)
             ] = episode.successful.episode_length[:]
             ep_len_start_ptr = ep_len_start_ptr + len(episode.successful.episode_length)
 
-        low_whisker, q1, median, q3, high_whisker = self.calc_quartiles(success_counts)
-
-        success_counts_median = np.nanmedian(sorted(success_counts))
-        success_lengths_median = np.nanmedian(sorted(successful_episode_lengths))
-        return_median = np.nanmedian(sorted(episode_returns))
+        final = dict(accuracy=dict(), super=dict(), score=dict())
 
         succ_std = round(np.nanstd(success_counts), 3)
-        len_std = round(np.nanstd(successful_episode_lengths), 3)
-        ret_std = round(np.nanstd(episode_returns), 3)
+        suc_low_whisker, suc_q1, suc_median, suc_q3, suc_high_whisker = self.calc_quartiles(success_counts)
+        suc_median2 = np.nanmedian(sorted(success_counts))
+        assert suc_median == suc_median2
+        final["accuracy"] = (
+            {"low_whisker": suc_low_whisker, "q1": suc_q1, "median": suc_median, "q3": suc_q3, "high_whisker": suc_high_whisker, "std": succ_std},
+        )
 
-        return {
-            "accuracy": {"median": success_counts_median, "std": succ_std},
-            "speed": {"median": success_lengths_median, "std": len_std},
-            "score": {"median": return_median, "std": ret_std},
-        }
+        len_std = round(np.nanstd(successful_episode_lengths), 3)
+        len_low_whisker, len_q1, len_median, len_q3, len_high_whisker = self.calc_quartiles(successful_episode_lengths)
+        final["speed"] = (
+            {"low_whisker": len_low_whisker, "q1": len_q1, "median": len_median, "q3": len_q3, "high_whisker": len_high_whisker, "std": len_std},
+        )
+
+        ret_std = round(np.nanstd(episode_returns), 3)
+        ret_low_whisker, ret_q1, ret_median, ret_q3, ret_high_whisker = self.calc_quartiles(episode_returns)
+        final["score"] = (
+            {"low_whisker": ret_low_whisker, "q1": ret_q1, "median": ret_median, "q3": ret_q3, "high_whisker": ret_high_whisker, "std": ret_std},
+        )
+
+        return final
 
     def calc_quartiles(self, data):
         d1 = DescrStatsW(data)
@@ -653,7 +657,7 @@ if __name__ == "__main__":
         "number_agents": number_of_agents,
         "enforce_grid_boundaries": True,
         "np_random": rng,
-        "TEST": args.test
+        "TEST": args.test,
     }
 
     eval_kwargs = dict(
@@ -677,7 +681,7 @@ if __name__ == "__main__":
         seed=seed,
         PFGRU=PFGRU,
         load_env=args.load_env,
-        test_env_path=env_path
+        test_env_path=env_path,
     )
 
     test = evaluate_PPO(eval_kwargs=eval_kwargs)
