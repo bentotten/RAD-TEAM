@@ -101,19 +101,6 @@ def parse_data(data, components, groups, exclude, metrics, performance_markers):
     """Parse data into plt compatible datasets"""
 
     # Goal: have 3 graphs (lists), each containing each component (list) that have a tests (dict of stats):
-    # athens = [
-    #     {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    # ]
-
-    low_whisker = 6.8
-    q1 = 6.9
-    median = 7.0
-    q3 = 8.0
-    high_whisker = 8.59
 
     # TODO use sorting method and statically generated arrays instead of two loops and dicts
     # Eventual graphs to make - because run may be out of order, making a dict first
@@ -153,35 +140,6 @@ def mock_data():
     median = 7.0
     q3 = 8.0
     high_whisker = 8.59
-
-    # athens = pd.DataFrame({
-    #     'Test 1': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 2': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 3': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 4': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 5': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    # })
-    # beijing = pd.DataFrame({
-    #     'Test 1': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 2': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 3': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 4': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 5': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    # })
-    # london = pd.DataFrame({
-    #     'Test 1': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 2': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 3': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 4': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 5': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    # })
-    # rio = pd.DataFrame({
-    #     'Test 1': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 2': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 3': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 4': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    #     'Test 5': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    # })
 
     # Set up stats way
     athens = [
@@ -226,9 +184,9 @@ def plot(graphname, datasets, groups, tests, metrics, y_label, path=None):
     plt.rc('font', family='serif')
 
     # Define which colours you want to use
-    colours = ['blue', 'yellow', 'green', 'brown']
-    # Define the groups
-    #groups = ['Athens 2004', 'Beijing 2008', 'London 2012', 'Rio 2016']
+    colors = []
+    for id in range(len(groups)):
+
 
     # Set x-positions for boxes
     x_pos_range = np.arange(len(datasets)) / (len(datasets) - 1)
@@ -259,9 +217,9 @@ def plot(graphname, datasets, groups, tests, metrics, y_label, path=None):
             )
 
         # Fill the boxes with colours (requires patch_artist=True)
-        k = i % len(colours)
+        k = i % len(colors)
         for box in bp['boxes']:
-            box.set(facecolor=colours[k])
+            box.set(facecolor=colors[k])
 
         # Make the median lines more visible
         plt.setp(bp['medians'], color='red')
@@ -284,8 +242,8 @@ def plot(graphname, datasets, groups, tests, metrics, y_label, path=None):
     legend_elements = []
     for i in range(len(datasets)):
         j = i % len(groups)
-        k = i % len(colours)
-        legend_elements.append(Patch(facecolor=colours[k], label=groups[j]))
+        k = i % len(colors)
+        legend_elements.append(Patch(facecolor=colors[k], label=groups[j]))
     plt.legend(handles=legend_elements, fontsize=8)
 
     if path:
