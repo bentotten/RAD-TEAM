@@ -26,7 +26,7 @@ COLORS = [
     Colorcode([255, 127, 0]),  # Orange
 ]
 
-
+# Helper Functions
 def create_color(id: int) -> Color:
     """Pick initial Colorcode based on id number, then offset it"""
     specific_color: Colorcode = COLORS[id % (len(COLORS))]  #
@@ -40,6 +40,24 @@ def lighten_color(color: Color, factor: float) -> Color:
     """increase tint of a color"""
     scaled_color = color * 255  # return to original scale
     return Color(np.array(list(map(lambda c: (c + (255 - c) * factor) / 255, scaled_color))))
+
+
+def parse_exp_name(name, components, groups, exclude):
+    parts = name.split('_')
+    result = None
+    category = None
+    exclude_flag = False
+    for part in parts:
+        if part in exclude:
+            exclude_flag = True
+        elif part in components:
+            assert result is None, "Multiple results match"
+            result = part
+        elif part in groups:
+            assert category is None, "Multiple categories match"
+            category = part
+
+    return (result, category) if not exclude_flag else (None, None)
 
 
 def get_data(logdir, condition=None):
@@ -79,37 +97,17 @@ def get_data(logdir, condition=None):
     return datasets
 
 
-def parse_data(data, components, tests, agent_counts, modes, metrics, performance_markers):
+def parse_data(data, components, groups, exclude, metrics, performance_markers):
     """Parse data into plt compatible datasets"""
 
-    # data = [{
-    #     'experiment': 'test1_1agent',
-    #     "accuracy": {
-    #         "low_whisker": 100.0,
-    #         "q1": 100.0,
-    #         "median": 100.0,
-    #         "q3": 100.0,
-    #         "high_whisker": 100.0,
-    #         "std": 0.0
-    #     },
-    #     "super": {},
-    #     "score": {
-    #         "low_whisker": 0.55,
-    #         "q1": 1.0,
-    #         "median": 1.0,
-    #         "q3": 1.0,
-    #         "high_whisker": 1.0,
-    #         "std": 0.151
-    #     },
-    #     "speed": {
-    #         "low_whisker": 21.0,
-    #         "q1": 22.0,
-    #         "median": 22.0,
-    #         "q3": 23.0,
-    #         "high_whisker": 27.0,
-    #         "std": 1.836
-    #     }
-    # }]
+    # Goal: have 3 graphs (lists), each containing each component (list) that have a tests (dict of stats):
+    # athens = [
+    #     {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
+    #     {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
+    #     {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
+    #     {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
+    #     {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
+    # ]
 
     low_whisker = 6.8
     q1 = 6.9
@@ -117,47 +115,36 @@ def parse_data(data, components, tests, agent_counts, modes, metrics, performanc
     q3 = 8.0
     high_whisker = 8.59
 
-    # Graphs to make
-    accuracy_datasets = list()
-    speed_datasets = list()
-    score_datasets = list()
+    # TODO use sorting method and statically generated arrays instead of two loops and dicts
+    # Eventual graphs to make - because run may be out of order, making a dict first
+    accuracy_datasets = [[[] for _ in range(len(groups))] for _ in range(len(components))]
+    speed_datasets = [[[] for _ in range(len(groups))] for _ in range(len(components))]
+    score_datasets = [[[] for _ in range(len(groups))] for _ in range(len(components))]
 
-    item = data[0]
+    accuracy_sorted = {component: {test: [] for test in groups} for component in components}
+    speed_sorted = {component: {test: [] for test in groups} for component in components}
+    score_sorted = {component: {test: [] for test in groups} for component in components}
 
     # Pulled from all different files
-    env_accuracy = pd.DataFrame({
-        'Test 1': item['accuracy']
-    })
+    for run in data:
+        # Parse which component this is
+        (comp, test) = parse_exp_name(name=run['experiment'], components=components, groups=groups, exclude=exclude)
 
-    env_speed = pd.DataFrame({
-        'Test 1': item['accuracy']
-    })
+        # Add component results to graph dicts (if not an excluded result)
+        if comp and test:
+            # Only one test per save, thus [0]
+            accuracy_sorted[comp][test] = run['accuracy'][0] 
+            speed_sorted[comp][test] = run['speed'][0]
+            score_sorted[comp][test] = run['score'][0]
 
-    env_score = pd.DataFrame({
-        'Test 1': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        'Test 2': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        'Test 3': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        'Test 4': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        'Test 5': {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-    })    
+    # Rearrange in specified order
+    for ci, component in enumerate(components):
+        for ti, test in enumerate(groups):
+            accuracy_datasets[ci][ti] = accuracy_sorted[component][test]
+            speed_datasets[ci][ti] = speed_sorted[component][test]
+            score_datasets[ci][ti] = score_sorted[component][test]
 
-    # Set up Graphs
-    # for test in data:
-    #     # Set up accuracy graph
-    #     for item in components:
-    #         for group in groups:
-    #                 entry[item] = {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker}
-
-
-    # Create a list of dataframes that contain a dict of statistical info needed for boxplots for each test
-    # for component in components:
-    #     entry = dict()
-    #     for x_label in x_ticks:
-    #         entry[x_label] = {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker}
-
-    #     datasets.append(pd.DataFrame(entry))
-
-    return datasets
+    return accuracy_datasets, speed_datasets, score_datasets
 
 
 def mock_data():
@@ -229,19 +216,7 @@ def mock_data():
     return [athens, beijing, london, rio]
 
 
-def plot(datasets, groups, tests, metrics, y_label, path=None):
-
-    # Fill in data with saved values
-    low_whisker = 6.8
-    q1 = 6.9
-    median = 7.0
-    q3 = 8.0
-    high_whisker = 8.59
-
-    stats = [
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker}
-    ]    
+def plot(graphname, datasets, groups, tests, metrics, y_label, path=None):
 
     # Make figures A6 in size
     A = 6
@@ -314,7 +289,7 @@ def plot(datasets, groups, tests, metrics, y_label, path=None):
     plt.legend(handles=legend_elements, fontsize=8)
 
     if path:
-        plt.savefig(str(path) + "/evaluation_result.png", format="png")
+        plt.savefig(str(path) + f"/{graphname}_result.png", format="png")
         #plt.savefig(str(path) + "/evaluation_result.eps", format="eps")
     else:
         plt.show()
@@ -340,10 +315,24 @@ if __name__ == "__main__":
 
     args.condition = None if args.condition == 'None' else args.condition
 
+    # Groups to sort by
     tests = ['test1', 'test2', 'test3', 'test4', 'ZERO', 'FULL']
     agent_counts = ['1agent', '2agent', '4agent']
     modes = ['collab', 'coop', 'control']
-    components = ['env', 'PPO', 'Optimizer', 'StatBuf', 'CNN']
+
+    groups = tests
+
+    # Groups to represent in each x tick group
+    #components = ['env', 'PPO', 'Optimizer', 'StatBuf', 'CNN']
+    # components = ['1agent', '2agent', '4agent']
+
+    # TODO DELETE
+    components = ['1agent', '2agent']
+    groups = ['test1', 'test2']
+    exclude = []
+
+    # Results to exclude from plotting
+    # exclude = ['coop']
 
     metrics = ['low_whisker', 'q1', 'median', 'q3', 'high_whisker', 'std']
     performance_markers = {
@@ -382,9 +371,10 @@ if __name__ == "__main__":
     }]
     data = get_data(logdir=args.data_dir, condition=args.condition)
 
-    #datasets = parse_data(data=data, components=components, groups=tests, agent_counts=agent_counts, modes=modes, metrics=metrics, performance_markers=performance_markers)
-    datasets = mock_data()
+    accuracy_datasets, speed_datasets, score_datasets = parse_data(data=data, components=components, groups=groups, exclude=exclude, metrics=metrics, performance_markers=performance_markers)
+    #datasets = mock_data()
 
-    plot(datasets=datasets, groups=components, tests=tests, metrics=metrics, y_label=performance_markers['accuracy'], path=os.getcwd())
+    for graphname, graph in zip([performance_markers['accuracy'], performance_markers['speed'], performance_markers['score']], [accuracy_datasets, speed_datasets, score_datasets]):
+        plot(graphname=graphname, datasets=graph, groups=components, tests=groups, metrics=metrics, y_label=performance_markers['accuracy'], path=os.getcwd())
 
     print("Done")
