@@ -62,7 +62,7 @@ def parse_exp_name(name, components, groups, exclude):
 
 def get_data(logdir, condition=None):
     """
-    Recursively look through logdir for results files. Assumes that any file "results_raw.txt" is a valid hit.
+    Recursively look through logdir for results files. Assumes that any file "results_raw.json" is a valid hit.
 
     :param logdir: Root directory where data is contained.
     :param condition: Directory name to filter on. Ex: 'test1'
@@ -281,16 +281,11 @@ if __name__ == "__main__":
     groups = tests
 
     # Groups to represent in each x tick group
-    #components = ['env', 'PPO', 'Optimizer', 'StatBuf', 'CNN']
+    components = ['env', 'PPO', 'Optimizer', 'StatBuf', 'CNN']
     # components = ['1agent', '2agent', '4agent']
 
-    # TODO DELETE
-    components = ['1agent', '2agent']
-    groups = ['test1', 'test2']
-    exclude = []
-
     # Results to exclude from plotting
-    # exclude = ['coop']
+    exclude = ['coop']
 
     metrics = ['low_whisker', 'q1', 'median', 'q3', 'high_whisker', 'std']
     performance_markers = {
@@ -330,7 +325,6 @@ if __name__ == "__main__":
     data = get_data(logdir=args.data_dir, condition=args.condition)
 
     accuracy_datasets, speed_datasets, score_datasets = parse_data(data=data, components=components, groups=groups, exclude=exclude, metrics=metrics, performance_markers=performance_markers)
-    #datasets = mock_data()
 
     for graphname, graph in zip([performance_markers['accuracy'], performance_markers['speed'], performance_markers['score']], [accuracy_datasets, speed_datasets, score_datasets]):
         plot(graphname=graphname, datasets=graph, groups=components, tests=groups, metrics=metrics, y_label=performance_markers['accuracy'], path=os.getcwd())
