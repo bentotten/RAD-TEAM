@@ -1,4 +1,3 @@
-''' Quickly-generated bulk evaluation tool. '''
 import os
 import shutil
 import subprocess
@@ -106,9 +105,6 @@ if __name__ == "__main__":
         if not os.path.isfile(path+'/RADTEAM_core.py'):
             shutil.copy(cwd+'/RADTEAM_core.py', path+'/RADTEAM_core.py')
 
-        if not os.path.isfile(path+'/plot_results.py'):
-            shutil.copy(cwd+'/plot_results.py', path+'/plot_results.py')
-
         if not os.path.isdir(path+'/saved_env/'):
             shutil.copytree(cwd+'/saved_env/', path+'/saved_env/')
 
@@ -119,7 +115,9 @@ if __name__ == "__main__":
         launch = [PYTHON_PATH, "evaluate.py", "--rada2c", "--test", test]
 
         subprocess.run(launch)
-        subprocess.run(["python3", "plot_results.py"])
         os.chdir(og_dir)
 
-        print("Bulk evaluation complete.")
+    # Plot test results
+    subprocess.run(["python3", "plot_results.py"])
+
+    print("Bulk evaluation complete.")

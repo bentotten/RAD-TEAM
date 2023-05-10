@@ -888,9 +888,9 @@ class evaluate_PPO:
             f.write(json.dumps(raw_results, indent=4, cls=NpEncoder))
 
         print(f"Total Runs: {counter}")
-        print(f"Accuracy - Median Success Counts: {score[0]['accuracy']['median']} with std {score['stdev']['accuracy']}")
-        print(f"Speed - Median Successful Episode Length: {score[0]['speed']['median']} with std {score['stdev']['speed']}")
-        print(f"Learning - Median Episode Return: {score[0]['score']['median']} with std {score['stdev']['score']}")            
+        print(f"Accuracy - Median Success Counts: {score['accuracy'][0]['median']} with std {score['stdev']['accuracy']}")
+        print(f"Speed - Median Successful Episode Length: {score['speed'][0]['median']} with std {score['stdev']['speed']}")
+        print(f"Learning - Median Episode Return: {score['score'][0]['median']} with std {score['stdev']['score']}")            
 
     def calc_stats(self, results, mc=None):
         """
