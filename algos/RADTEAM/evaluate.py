@@ -30,7 +30,7 @@ import RADTEAM_core as RADCNN_core  # type: ignore
 # import RADA2C_core as RADA2C_core  # type: ignore
 
 # NOTE: Do not use Ray with env generator for random position generation; will create duplicates of identical episode configurations. Ok for TEST1
-USE_RAY = True
+USE_RAY = False
 
 ALL_ACKWARGS_SAVED = False
 
@@ -78,7 +78,7 @@ class Distribution:
 
 
 # Uncomment when ready to run with Ray
-@ray.remote
+# @ray.remote
 @dataclass
 class EpisodeRunner:
     """
@@ -540,16 +540,16 @@ class evaluate_PPO:
 
             counter += result.completed_runs
 
-        print(f"Total Runs: {counter}")
-        print(f"Accuracy - Median Success Counts: {score['accuracy']['median']} with std {score['accuracy']['std']}")
-        print(f"Speed - Median Successful Episode Length: {score['speed']['median']} with std {score['speed']['std']}")
-        print(f"Learning - Median Episode Return: {score['score']['median']} with std {score['score']['std']}")
-
         with open(f"{self.save_path}/results.json", "w+") as f:
             f.write(json.dumps(score, indent=4, cls=NpEncoder))
 
         with open(f"{self.save_path}/results_raw.json", "w+") as f:
             f.write(json.dumps(raw_results, indent=4, cls=NpEncoder))
+
+        print(f"Total Runs: {counter}")
+        print(f"Accuracy - Median Success Counts: {score[0]['accuracy']['median']} with std {score['stdev']['accuracy']}")
+        print(f"Speed - Median Successful Episode Length: {score[0]['speed']['median']} with std {score['stdev']['speed']}")
+        print(f"Learning - Median Episode Return: {score[0]['score']['median']} with std {score['stdev']['score']}")            
 
     def calc_stats(self, results, mc=None):
         """
@@ -586,15 +586,17 @@ class evaluate_PPO:
         suc_low_whisker, suc_q1, suc_median, suc_q3, suc_high_whisker = self.calc_quartiles(success_counts)
         suc_median2 = np.nanmedian(sorted(success_counts))
         assert suc_median == suc_median2
-        final["accuracy"] = {"low_whisker": suc_low_whisker, "q1": suc_q1, "median": suc_median, "q3": suc_q3, "high_whisker": suc_high_whisker, "std": succ_std}
 
         len_std = round(np.nanstd(successful_episode_lengths), 3)
         len_low_whisker, len_q1, len_median, len_q3, len_high_whisker = self.calc_quartiles(successful_episode_lengths)
-        final["speed"] = {"low_whisker": len_low_whisker, "q1": len_q1, "median": len_median, "q3": len_q3, "high_whisker": len_high_whisker, "std": len_std}
 
         ret_std = round(np.nanstd(episode_returns), 3)
         ret_low_whisker, ret_q1, ret_median, ret_q3, ret_high_whisker = self.calc_quartiles(episode_returns)
-        final["score"] = {"low_whisker": ret_low_whisker, "q1": ret_q1, "median": ret_median, "q3": ret_q3, "high_whisker": ret_high_whisker, "std": ret_std}
+
+        final["speed"] = [{"whislo": len_low_whisker, "q1": len_q1, "med": len_median, "q3": len_q3, "whishi": len_high_whisker, 'fliers': []}]
+        final["accuracy"] = [{"whislo": suc_low_whisker, "q1": suc_q1, "med": suc_median, "q3": suc_q3, "whishi": suc_high_whisker, 'fliers': []}]
+        final["score"] = [{"whislo": ret_low_whisker, "q1": ret_q1, "med": ret_median, "q3": ret_q3, "whishi": ret_high_whisker, 'fliers': []}]
+        final['stdev'] = {"speed": len_std, 'accuracy': succ_std, 'score': ret_std}
 
         return final
 
@@ -636,7 +638,7 @@ if __name__ == "__main__":
         env_path = os.getcwd() + f"/saved_env/test_environments_TEST{args.test}"
     else:
         env_path = os.getcwd() + f"/saved_env/test_environments_{args.max_dim[0]}x{args.max_dim[1]}"
-    assert os.path.isdir(env_path)
+    assert os.path.isdir(env_path), f"{env_path} does not exist"
 
     PFGRU = False
     seed = 2
