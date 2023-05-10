@@ -26,6 +26,7 @@ from gym_rad_search.envs.rad_search_env import RadSearch  # type: ignore
 
 # Neural Networks
 import RADTEAM_core as RADCNN_core  # type: ignore
+import core as RADA2C_core
 
 # import RADA2C_core as RADA2C_core  # type: ignore
 
@@ -80,48 +81,9 @@ class Distribution:
 # Uncomment when ready to run with Ray
 # @ray.remote
 @dataclass
-class EpisodeRunner:
+class RADTEAM_EpisodeRunner:
     """
-    Remote function to execute requested number of episodes for requested number of monte carlo runs each episode.
-
-    Process from RAD-A2C:
-    - 100 episodes classes:
-        - [done] create environment
-        - [done] refresh environment with test env
-        - [done] create and upload agent
-        - [done] Get initial environment observation
-        - Do monte-carlo runs
-            - Get action
-            - Take step in env
-            - Save return and increment steps-in-episode
-            - If terminal or timeout:
-                - Save det_sto from environment (why?)
-                - If first monte-carlo:
-                    - If terminal, save intensity/background intenity into "done" list
-                    - If not terminal, save intensity/background intenity into "not done" list
-                - If Terminal, increment done counter, add episode length to "done" list, and add episode return to "done" list
-                - If not Terminal, add episode length to "not done" list, and add episode return to "not done" list
-                - Render if desired
-                - Refresh environment and reset episode tracking
-                - ? #Reset model in action selection fcn. get_action(0)
-                - ? #Get initial location prediction
-        - Render
-        - Save stats/results and return:
-            mc_stats['dEpLen'] = d_ep_len
-            mc_stats['ndEpLen'] = nd_ep_len
-            mc_stats['dEpRet'] = d_ep_ret
-            mc_stats['ndEpRet'] = nd_ep_ret
-            mc_stats['dIntDist'] = done_dist_int
-            mc_stats['ndIntDist'] = not_done_dist_int
-            mc_stats['dBkgDist'] = done_dist_bkg
-            mc_stats['ndBkgDist'] = not_done_dist_bkg
-            mc_stats['DoneCount'] = np.array([done_count])
-            mc_stats['TotEpLen'] = tot_ep_len
-            mc_stats['LocEstErr'] = loc_est_err
-            results = [loc_est_ls, FIM_bound, J_score_ls, det_ls]
-            print(f'Finished episode {n}!, completed count: {done_count}')
-            return (results,mc_stats)
-
+    Remote function to execute requested number of episodes for requested number of monte carlo runs each episode for RADTEAM models
     """
 
     id: int
@@ -458,6 +420,380 @@ class EpisodeRunner:
             )
 
 
+# Uncomment when ready to run with Ray
+# @ray.remote
+@dataclass
+class RADA2C_EpisodeRunner:
+    ''' Episode runner for RADA2C Models '''
+    id: int
+    # env_sets: Dict
+    current_dir: str
+
+    env_name: str
+    env_kwargs: Dict
+    steps_per_episode: int
+    team_mode: str
+    resolution_multiplier: float
+
+    render: bool
+    save_gif_freq: int
+    render_path: str
+
+    model_path: str
+    save_path_for_ac: str
+    test_env_path: str = field(default="./evaluation/test_environments")
+    save_path: str = field(default=".")
+    seed: Union[int, None] = field(default=0)
+
+    obstruction_count: int = field(default=0)
+    enforce_boundaries: bool = field(default=False)
+    actor_critic_architecture: str = field(default="cnn")
+    number_of_agents: int = field(default=1)
+    episodes: int = field(default=100)
+    montecarlo_runs: int = field(default=100)
+    snr: str = field(default="high")
+
+    render_first_episode: bool = field(default=True)
+    env_sets: Dict = field(default_factory=lambda: dict())
+    load_env: bool = field(default=True)
+
+    # Initialized elsewhere
+    #: Object that holds agents
+    agents: Dict[int, RADA2C_core.RNNModelActorCritic] = field(
+        default_factory=lambda: dict()
+    )
+
+    def __post_init__(self) -> None:
+        # Change to correct directory
+        os.chdir(self.current_dir)
+
+        # Create own instatiation of environment
+        self.env = self.create_environment()
+
+        # Load or create test environments
+        if self.load_env:
+            self.env_sets = joblib.load(self.test_env_path)
+        else:
+            self.env_sets = None
+
+        # Get agent model paths and saved agent configurations
+        agent_models = {}
+        for child in os.scandir(self.model_path):
+            if child.is_dir() and "agent" in child.name:
+                agent_models[
+                    int(child.name[0])
+                ] = (
+                    child.path
+                )  # Read in model path by id number. NOTE: Important that ID number is the first element of file name
+            if child.is_dir() and "general" in child.name:
+                general_config_path = child.path
+
+        obj = json.load(open(f"{self.model_path}/config.json"))
+        if "self" in obj.keys():
+            original_configs = list(obj["self"].values())[0]["ppo_kwargs"][
+                "actor_critic_args"
+            ]
+        else:
+            original_configs = obj["ac_kwargs"]  # Original project save format
+
+        # Set up static A2C actor-critic args
+        actor_critic_args = dict(
+            hidden_sizes_pol=[[32]],
+            hidden_sizes_val=[[32]],
+            hidden_sizes_rec=[24],
+            hidden=[[24]],
+            net_type="rnn",
+            batch_s=1,
+        )
+
+        if self.actor_critic_architecture != "cnn":
+            assert self.team_mode == "individual"  # No global critic for RAD-A2C
+
+        # Check current important parameters match parameters read in
+        for arg in actor_critic_args:
+            if arg != "no_critic" and arg != "GlobalCritic" and arg != "save_path":
+                if (
+                    type(original_configs[arg]) == int
+                    or type(original_configs[arg]) == float
+                    or type(original_configs[arg]) == bool
+                ):
+                    assert (
+                        actor_critic_args[arg] == original_configs[arg]
+                    ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                elif type(original_configs[arg]) is str:
+                    if arg == "net_type":
+                        assert actor_critic_args[arg] == original_configs[arg]
+                    else:
+                        to_list = original_configs[arg].strip("][").split(" ")
+                        config = np.array([float(x) for x in to_list], dtype=np.float32)
+                        assert np.array_equal(
+                            config, actor_critic_args[arg]
+                        ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                elif type(original_configs[arg]) is list:
+                    for a, b in zip(original_configs[arg], actor_critic_args[arg]):
+                        assert (
+                            a == b
+                        ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                else:
+                    assert (
+                        actor_critic_args[arg] == original_configs[arg]
+                    ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+
+        # Initialize agents and load agent models
+        actor_critic_args["observation_space"] = self.env.observation_space
+        actor_critic_args["action_space"] = self.env.action_space
+        actor_critic_args["seed"] = self.seed
+        actor_critic_args["pad_dim"] = 2
+
+        self.agents[0] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
+        self.agents[0].load_state_dict(torch.load("pyt_save/model.pt"))
+
+    def run(self) -> MonteCarloResults:
+        # Prepare tracking buffers and counters
+        episode_return: Dict[int, float] = {id: 0.0 for id in self.agents}
+        steps_in_episode: int = 0
+        terminal_counter: Dict[int, int] = {
+            id: 0 for id in self.agents
+        }  # Terminal counter for the epoch (not the episode)
+        run_counter = 0
+
+        # Prepare results buffers
+        results = MonteCarloResults(id=self.id)
+        # For RAD-A2C Compatibility
+        stat_buffers = dict()
+
+        # Reset environment and save test env parameters
+        if self.load_env:
+            observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
+        else:
+            observations, _, _, _ = self.env.reset()
+
+        # Save env for refresh
+        self.env_sets["env_0"] = [_ for _ in range(5)]
+        self.env_sets["env_0"][0] = self.env.src_coords
+        self.env_sets["env_0"][1] = self.env.agents[0].det_coords
+        self.env_sets["env_0"][2] = self.env.intensity
+        self.env_sets["env_0"][3] = self.env.bkg_intensity
+        self.env_sets["env_0"][4] = []  # obstructions
+
+        self.agents[0].pi.eval()
+        self.agents[0].model.eval()
+
+        # Prepare episode variables
+        agent_thoughts: Dict = dict()
+        hiddens: Dict[
+            int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]
+        ] = {
+            id: self.agents[id].reset_hidden() for id in self.agents
+        }  # For RAD-A2C compatibility
+
+        initial_prediction = np.zeros((3,))
+        for id, ac in self.agents.items():
+            stat_buffers[id] = RADA2C_core.StatBuff()
+            stat_buffers[id].update(observations[id][0])
+            observations[id][0] = np.clip(
+                (observations[id][0] - stat_buffers[id].mu) / stat_buffers[id].sig_obs,
+                -8,
+                8,
+            )
+
+        while run_counter < self.montecarlo_runs:
+            # Get agent thoughts on current state. Actor: Compute action and logp (log probability); Critic: compute state-value
+            agent_thoughts.clear()
+            agent_thoughts[id] = {}
+            for id, ac in self.agents.items():
+                with torch.no_grad():
+                    a, v, logp, hidden, out_pred = ac.step(
+                        observations[id], hiddens[id]
+                    )
+                    agent_thoughts[id]["action"] = a
+
+                hiddens[id] = hidden
+            # Create action list to send to environment
+            agent_action_decisions = {
+                id: int(agent_thoughts[id]["action"]) for id in agent_thoughts
+            }
+            for action in agent_action_decisions.values():
+                assert 0 <= action and action < int(self.env.number_actions)
+
+            # Take step in environment - Note: will be missing last reward, rewards link to previous observation in env
+            observations, rewards, terminals, _ = self.env.step(
+                action=agent_action_decisions
+            )
+
+            for id, ac in self.agents.items():
+                stat_buffers[id].update(observations[id][0])
+                observations[id][0] = np.clip(
+                    (observations[id][0] - stat_buffers[id].mu)
+                    / stat_buffers[id].sig_obs,
+                    -8,
+                    8,
+                )
+
+            # Incremement Counters and save new (individual) cumulative returns
+            for id in range(self.number_of_agents):
+                episode_return[id] += np.array(
+                    rewards["individual_reward"][id], dtype="float32"
+                ).item()
+
+            steps_in_episode += 1
+
+            # Tally up ending conditions
+            # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not all, this will need to be changed.
+            terminal_reached_flag = False
+            for id in terminal_counter:
+                if terminals[id] == True and not timeout:
+                    terminal_counter[id] += 1
+                    terminal_reached_flag = True
+
+            # Stopping conditions for episode
+            timeout: bool = (
+                steps_in_episode == self.steps_per_episode
+            )  # Max steps per episode reached
+            episode_over: bool = (
+                terminal_reached_flag or timeout
+            )  # Either timeout or terminal found
+
+            if episode_over:
+                self.process_render(run_counter=run_counter, id=self.id)
+
+                # Save results
+                if run_counter < 1:
+                    if terminal_reached_flag:
+                        results.successful.intensity.append(self.env.intensity)
+                        results.successful.background_intensity.append(
+                            self.env.bkg_intensity
+                        )
+                    else:
+                        results.unsuccessful.intensity.append(self.env.intensity)
+                        results.unsuccessful.background_intensity.append(
+                            self.env.bkg_intensity
+                        )
+                results.total_episode_length.append(steps_in_episode)
+
+                if terminal_reached_flag:
+                    results.success_counter += 1
+                    results.successful.episode_length.append(steps_in_episode)
+                    results.successful.episode_return.append(
+                        episode_return[0]
+                    )  # TODO change for individual mode
+                else:
+                    results.unsuccessful.episode_length.append(steps_in_episode)
+                    results.unsuccessful.episode_return.append(
+                        episode_return[0]
+                    )  # TODO change for individual mode
+
+                results.total_episode_return.append(
+                    episode_return[0]
+                )  # TODO change for individual mode
+
+                # Incremenet run counter
+                run_counter += 1
+
+                # Reset environment without performing an env.reset()
+                episode_return = {id: 0.0 for id in self.agents}
+                steps_in_episode = 0
+                terminal_counter = {
+                    id: 0 for id in self.agents
+                }  # Terminal counter for the epoch (not the episode)
+
+                observations = self.env.refresh_environment(
+                    env_dict=self.env_sets, id=self.id, num_obs=self.obstruction_count
+                )
+
+                # Reset stat buffer for RAD-A2C
+                for id, ac in self.agents.items():
+                    stat_buffers[id].reset()
+                    stat_buffers[id].update(observations[id][0])
+                    observations[id][0] = np.clip(
+                        (observations[id][0] - stat_buffers[id].mu)
+                        / stat_buffers[id].sig_obs,
+                        -8,
+                        8,
+                    )
+
+        results.completed_runs = run_counter
+
+        print(
+            f"Finished episode {self.id}! Success count: {results.success_counter} out of {run_counter}"
+        )
+        return results
+
+    def create_environment(self) -> RadSearch:
+        env = gym.make(self.env_name, **self.env_kwargs)
+        env.reset()
+        return env
+
+    def getattr(self, attr):
+        return getattr(self, attr)
+
+    def say_hello(self):
+        return self.id
+
+    def process_render(self, run_counter: int, id: int) -> None:
+        # Render
+        save_time_triggered = (
+            (run_counter % self.save_gif_freq == 0)
+            if self.save_gif_freq != 0
+            else False
+        )
+        time_to_save = save_time_triggered or (
+            (run_counter + 1) == self.montecarlo_runs
+        )
+        if self.render and time_to_save:
+            # Render gif
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                episode_count=id,
+                silent=True,
+            )
+            # Render environment image
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                just_env=True,
+                episode_count=id,
+                silent=True,
+            )
+        # Always render first episode
+        if self.render and run_counter == 0 and self.render_first_episode:
+            # Render gif
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                episode_count=id,
+                silent=True,
+            )
+            # Render environment image
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                just_env=True,
+                episode_count=id,
+                silent=True,
+            )
+            self.render_first_episode = False
+
+        # Always render last episode
+        if self.render and run_counter == self.montecarlo_runs - 1:
+            # Render gif
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                episode_count=id,
+                silent=True,
+            )
+            # Render environment image
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                just_env=True,
+                episode_count=id,
+                silent=True,
+            )
+
+
 @dataclass
 class evaluate_PPO:
     """
@@ -479,13 +815,15 @@ class evaluate_PPO:
     montecarlo_runs: int = field(init=False)
     #: Path to save results to
     save_path: Union[str, None] = field(default=None)
-    #: Load from saved env not
+    #: Load RADA2C or RADTEAM
+    RADTEAM: bool = field(init=True)
 
     def __post_init__(self) -> None:
         self.montecarlo_runs = self.eval_kwargs["montecarlo_runs"]
         if not self.save_path:
             self.save_path = eval_kwargs["model_path"]  # type: ignore
 
+        # get test envs
         if self.eval_kwargs["obstruction_count"] == -1:
             raise ValueError("Random sample of obstruction counts indicated. Please indicate a specific count between 1 and 5")
         self.test_env_dir = self.eval_kwargs["test_env_path"]
@@ -503,14 +841,16 @@ class evaluate_PPO:
         """Driver"""
         start_time = time.time()
         if USE_RAY:
-            # Uncomment when ready to run with Ray
-            runners = {i: EpisodeRunner.remote(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}
-
+            if self.RADTEAM:
+                runners = {i: RADTEAM_EpisodeRunner.remote(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}
+            else:
+                runners = {i: RADA2C_EpisodeRunner.remote(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}                
             full_results = ray.get([runner.run.remote() for runner in runners.values()])
         else:
-            # Uncomment when to run without Ray
-            self.runners = {i: EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}
-
+            if self.RADTEAM:
+                self.runners = {i: RADTEAM_EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}
+            else:
+                self.runners = {i: RADA2C_EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}
             full_results = [runner.run() for runner in self.runners.values()]
 
         print("Runtime: {}", time.time() - start_time)
@@ -628,6 +968,12 @@ if __name__ == "__main__":
         default=False,
         help="Render Gif",
     )
+    parser.add_argument(
+        "--rada2c",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Run a RADA2C model instead of RADTEAM",
+    )
     args = parser.parse_args()
 
     number_of_agents = args.agents
@@ -656,29 +1002,54 @@ if __name__ == "__main__":
         "TEST": args.test,
     }
 
-    eval_kwargs = dict(
-        env_name="gym_rad_search:RadSearchMulti-v1",
-        env_kwargs=env_kwargs,
-        model_path=(lambda: os.getcwd())(),
-        episodes=args.episodes,  # Number of episodes to test on [1 - 1000]
-        montecarlo_runs=args.runs,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
-        actor_critic_architecture="cnn",  # Neural network type (control)
-        snr="none",  # signal to noise ratio [none, low, medium, high]
-        obstruction_count=obstruction_count,  # number of obstacles [0 - 7] (num_obs)
-        steps_per_episode=120,
-        number_of_agents=number_of_agents,
-        enforce_boundaries=True,
-        resolution_multiplier=0.01,
-        team_mode=mode,
-        render=render,
-        save_gif_freq=100,
-        render_path=".",
-        save_path_for_ac=".",
-        seed=seed,
-        PFGRU=PFGRU,
-        load_env=args.load_env,
-        test_env_path=env_path,
-    )
+    # Set eval parameters according to which version we're running
+    if not args.rada2c:
+        eval_kwargs = dict(
+            env_name="gym_rad_search:RadSearchMulti-v1",
+            env_kwargs=env_kwargs,
+            model_path=(lambda: os.getcwd())(),
+            episodes=args.episodes,  # Number of episodes to test on [1 - 1000]
+            montecarlo_runs=args.runs,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
+            actor_critic_architecture="cnn",  # Neural network type (control)
+            snr="none",  # signal to noise ratio [none, low, medium, high]
+            obstruction_count=obstruction_count,  # number of obstacles [0 - 7] (num_obs)
+            steps_per_episode=120,
+            number_of_agents=number_of_agents,
+            enforce_boundaries=True,
+            resolution_multiplier=0.01,
+            team_mode=mode,
+            render=render,
+            save_gif_freq=100,
+            render_path=".",
+            save_path_for_ac=".",
+            seed=seed,
+            PFGRU=PFGRU,
+            load_env=args.load_env,
+            test_env_path=env_path,
+        )
+    elif args.rada2c:
+        eval_kwargs = dict(
+            env_name="gym_rad_search:RadSearchMulti-v1",
+            env_kwargs=env_kwargs,
+            model_path=(lambda: os.getcwd())(),
+            episodes=100,  # Number of episodes to test on [1 - 1000]
+            montecarlo_runs=100,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
+            actor_critic_architecture="rnn",  # Neural network type (control)
+            snr="none",  # signal to noise ratio [none, low, medium, high]
+            obstruction_count=0,  # number of obstacles [0 - 7] (num_obs)
+            steps_per_episode=120,
+            number_of_agents=1,
+            enforce_boundaries=True,
+            resolution_multiplier=0.01,
+            team_mode="individual",
+            render=False,
+            save_gif_freq=1,
+            render_path=".",
+            save_path_for_ac=".",
+            seed=seed,
+            load_env=args.load_env,
+            test_env_path=env_path            
+        )
 
     test = evaluate_PPO(eval_kwargs=eval_kwargs)
 

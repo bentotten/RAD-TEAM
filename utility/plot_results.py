@@ -26,6 +26,7 @@ COLORS = [
     Colorcode([255, 127, 0]),  # Orange
 ]
 
+
 # Helper Functions
 def create_color(id: int) -> Color:
     """Pick initial Colorcode based on id number, then offset it"""
@@ -48,7 +49,7 @@ def parse_exp_name(name, components, groups, exclude):
 
     for name in first_split:
         parts += name.split('_')
-        
+
     result = None
     category = None
     exclude_flag = False
