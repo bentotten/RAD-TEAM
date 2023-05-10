@@ -43,7 +43,12 @@ def lighten_color(color: Color, factor: float) -> Color:
 
 
 def parse_exp_name(name, components, groups, exclude):
-    parts = name.split('_')
+    first_split = name.split(' ')
+    parts = []
+
+    for name in first_split:
+        parts += name.split('_')
+        
     result = None
     category = None
     exclude_flag = False
