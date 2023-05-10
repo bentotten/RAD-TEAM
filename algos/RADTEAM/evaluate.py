@@ -32,8 +32,7 @@ import core as RADA2C_core
 
 # NOTE: Do not use Ray with env generator for random position generation; will create duplicates of identical episode configurations. Ok for TEST1
 USE_RAY = False
-
-ALL_ACKWARGS_SAVED = False
+CHECK_CONFIGS = False
 
 
 class NpEncoder(json.JSONEncoder):
@@ -147,11 +146,12 @@ class RADTEAM_EpisodeRunner:
                     int(child.name[0])
                 ] = child.path  # Read in model path by id number. NOTE: Important that ID number is the first element of file name
 
-        obj = json.load(open(f"{self.model_path}/config_agent0.json"))
-        if "self" in obj.keys():
-            original_configs = list(obj["self"].values())[0]["ppo_kwargs"]["actor_critic_args"]
-        else:
-            original_configs = obj  # Original project save format
+        if CHECK_CONFIGS:
+            obj = json.load(open(f"{self.model_path}/config_agent0.json"))
+            if "self" in obj.keys():
+                original_configs = list(obj["self"].values())[0]["ppo_kwargs"]["actor_critic_args"]
+            else:
+                original_configs = obj  # Original project save format
 
         # Set up static A2C actor-critic args
         actor_critic_args = dict(
@@ -173,7 +173,7 @@ class RADTEAM_EpisodeRunner:
         )
 
         # Check current important parameters match parameters read in
-        if ALL_ACKWARGS_SAVED:
+        if CHECK_CONFIGS:
             for arg in actor_critic_args:
                 if arg != "no_critic" and arg != "GlobalCritic" and arg != "save_path":
                     if type(original_configs[arg]) == int or type(original_configs[arg]) == float or type(original_configs[arg]) == bool:
@@ -698,7 +698,7 @@ class RADA2C_EpisodeRunner:
                 }  # Terminal counter for the epoch (not the episode)
 
                 observations = self.env.refresh_environment(
-                    env_dict=self.env_sets, id=self.id, num_obs=self.obstruction_count
+                    env_dict=self.env_sets, id=self.id
                 )
 
                 # Reset stat buffer for RAD-A2C
@@ -801,6 +801,10 @@ class evaluate_PPO:
     """
 
     eval_kwargs: Dict
+    #: Path to save results to
+    save_path: Union[str, None] = field(default=None)
+    #: Load RADA2C or RADTEAM
+    RADTEAM: bool = field(default=True)
 
     # Initialized elsewhere
     #: Directory containing test environments. Each test environment file contains 1000 environment configurations.
@@ -813,10 +817,7 @@ class evaluate_PPO:
     runners: Dict = field(init=False)
     #: Number of monte carlo runs per episode configuration
     montecarlo_runs: int = field(init=False)
-    #: Path to save results to
-    save_path: Union[str, None] = field(default=None)
-    #: Load RADA2C or RADTEAM
-    RADTEAM: bool = field(init=True)
+
 
     def __post_init__(self) -> None:
         self.montecarlo_runs = self.eval_kwargs["montecarlo_runs"]
@@ -1027,6 +1028,8 @@ if __name__ == "__main__":
             load_env=args.load_env,
             test_env_path=env_path,
         )
+        radteam = True
+
     elif args.rada2c:
         eval_kwargs = dict(
             env_name="gym_rad_search:RadSearchMulti-v1",
@@ -1048,10 +1051,11 @@ if __name__ == "__main__":
             save_path_for_ac=".",
             seed=seed,
             load_env=args.load_env,
-            test_env_path=env_path            
+            test_env_path=env_path,
         )
+        radteam = False
 
-    test = evaluate_PPO(eval_kwargs=eval_kwargs)
+    test = evaluate_PPO(RADTEAM=radteam, eval_kwargs=eval_kwargs)
 
     test.evaluate()
 
