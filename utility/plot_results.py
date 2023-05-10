@@ -26,7 +26,6 @@ COLORS = [
     Colorcode([255, 127, 0]),  # Orange
 ]
 
-
 # Helper Functions
 def create_color(id: int) -> Color:
     """Pick initial Colorcode based on id number, then offset it"""
@@ -49,13 +48,14 @@ def parse_exp_name(name, components, groups, exclude):
 
     for name in first_split:
         parts += name.split('_')
-
     result = None
     category = None
     exclude_flag = False
+    excluded = []
     for part in parts:
         if part in exclude:
             exclude_flag = True
+            excluded += part
         elif part in components:
             assert result is None, "Multiple results match"
             result = part
@@ -63,7 +63,7 @@ def parse_exp_name(name, components, groups, exclude):
             assert category is None, "Multiple categories match"
             category = part
 
-    return (result, category) if not exclude_flag else (None, None)
+    return (result, category, None) if not exclude_flag else (None, None, excluded)
 
 
 def get_data(logdir, condition=None):
@@ -103,7 +103,7 @@ def get_data(logdir, condition=None):
     return datasets
 
 
-def parse_data(data, components, groups, exclude, metrics, performance_markers):
+def parse_data(data, components, groups, exclude, performance_markers):
     """Parse data into plt compatible datasets"""
 
     # Goal: have 3 graphs (lists), each containing each component (list) that have a tests (dict of stats):
@@ -121,7 +121,7 @@ def parse_data(data, components, groups, exclude, metrics, performance_markers):
     # Pulled from all different files
     for run in data:
         # Parse which component this is
-        (comp, test) = parse_exp_name(name=run['experiment'], components=components, groups=groups, exclude=exclude)
+        (comp, test, excluded) = parse_exp_name(name=run['experiment'], components=components, groups=groups, exclude=exclude)
 
         # Add component results to graph dicts (if not an excluded result)
         if comp and test:
@@ -180,7 +180,7 @@ def mock_data():
     return [athens, beijing, london, rio]
 
 
-def plot(graphname, datasets, groups, tests, metrics, y_label, path=None):
+def plot(graphname, datasets, groups, tests, y_label, path=None):
 
     # Make figures A6 in size
     A = 6
@@ -205,30 +205,31 @@ def plot(graphname, datasets, groups, tests, metrics, y_label, path=None):
 
     # Plot each component
     for i, data in enumerate(datasets):
-        # positions = [x_pos[i] + j * 1 for j in range(len(data.T))]
-        positions = [x_pos[i] + j * 1 for j in range(len(data))]
+        if len(data[0]) != 0:
+            # positions = [x_pos[i] + j * 1 for j in range(len(data.T))]
+            positions = [x_pos[i] + j * 1 for j in range(len(data))]
 
-        # TODO do this in data parser
-        # stats = list()
-        # for test in data:
-        #     stats.append({'med': data[test]['med'], 'q1':  data[test]['q1'], 'q3':  data[test]['q3'], 'whislo':  data[test]['whislo'], 'whishi': data[test]['whishi']})
+            # TODO do this in data parser
+            # stats = list()
+            # for test in data:
+            #     stats.append({'med': data[test]['med'], 'q1':  data[test]['q1'], 'q3':  data[test]['q3'], 'whislo':  data[test]['whislo'], 'whishi': data[test]['whishi']})
 
-        bp = ax.bxp(
-            # stats,
-            data,
-            showfliers=False,
-            positions=positions,
-            patch_artist=True,
-            widths=0.6 / len(datasets),
-            )
+            bp = ax.bxp(
+                # stats,
+                data,
+                showfliers=False,
+                positions=positions,
+                patch_artist=True,
+                widths=0.6 / len(datasets),
+                )
 
-        # Fill the boxes with colours (requires patch_artist=True)
-        k = i % len(colors)
-        for box in bp['boxes']:
-            box.set(facecolor=colors[k])
+            # Fill the boxes with colours (requires patch_artist=True)
+            k = i % len(colors)
+            for box in bp['boxes']:
+                box.set(facecolor=colors[k])
 
-        # Make the median lines more visible
-        plt.setp(bp['medians'], color='red')
+            # Make the median lines more visible
+            plt.setp(bp['medians'], color='red')
 
     # Titles
     plt.ylabel(y_label)
@@ -280,9 +281,9 @@ if __name__ == "__main__":
     args.condition = None if args.condition == 'None' else args.condition
 
     # Groups to sort by
-    tests = ['test1', 'test2', 'test3', 'test4', 'ZERO', 'FULL']
-    agent_counts = ['1agent', '2agent', '4agent']
-    modes = ['collab', 'coop', 'control']
+    tests = ['test1', 'test2', 'test3', 'test4']
+    # agent_counts = ['1agent', '2agent', '4agent']
+    # modes = ['collab', 'coop', 'control']
 
     groups = tests
 
@@ -291,48 +292,22 @@ if __name__ == "__main__":
     # components = ['1agent', '2agent', '4agent']
 
     # Results to exclude from plotting
-    exclude = ['coop']
+    exclude = ['RADMARL']
 
-    metrics = ['low_whisker', 'q1', 'median', 'q3', 'high_whisker', 'std']
     performance_markers = {
         'accuracy': "Objective Completion %",
         'score': "Episode Cumulative Return [raw]",
         'speed': "Successful Episode Length [samples]"
         }
 
-    data = [{
-        'experiment': 'test1_1agent',
-        "accuracy": {
-            "low_whisker": 100.0,
-            "q1": 100.0,
-            "median": 100.0,
-            "q3": 100.0,
-            "high_whisker": 100.0,
-            "std": 0.0
-        },
-        "super": {},
-        "score": {
-            "low_whisker": 0.55,
-            "q1": 1.0,
-            "median": 1.0,
-            "q3": 1.0,
-            "high_whisker": 1.0,
-            "std": 0.151
-        },
-        "speed": {
-            "low_whisker": 21.0,
-            "q1": 22.0,
-            "median": 22.0,
-            "q3": 23.0,
-            "high_whisker": 27.0,
-            "std": 1.836
-        }
-    }]
     data = get_data(logdir=args.data_dir, condition=args.condition)
 
-    accuracy_datasets, speed_datasets, score_datasets = parse_data(data=data, components=components, groups=groups, exclude=exclude, metrics=metrics, performance_markers=performance_markers)
+    accuracy_datasets, speed_datasets, score_datasets = parse_data(data=data, components=components, groups=groups, exclude=exclude, performance_markers=performance_markers)
 
     for graphname, graph in zip([performance_markers['accuracy'], performance_markers['speed'], performance_markers['score']], [accuracy_datasets, speed_datasets, score_datasets]):
-        plot(graphname=graphname, datasets=graph, groups=components, tests=groups, metrics=metrics, y_label=performance_markers['accuracy'], path=os.getcwd())
+        try:
+            plot(graphname=graphname, datasets=graph, groups=components, tests=groups, y_label=performance_markers['accuracy'], path=os.getcwd())
+        except Exception as e:
+            print(e)
 
-    print("Done")
+    print("Done with plot")
