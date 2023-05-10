@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 import json
 import ray
 import joblib
+from statsmodels.stats.weightstats import DescrStatsW
 
 # Simulation Environment
 import gym  # type: ignore
@@ -206,14 +207,18 @@ class EpisodeRunner:
             GlobalCritic=None,
             no_critic=True,
             save_path=self.save_path_for_ac,
-            PFGRU=self.PFGRU,
+            PFGRU=self.PFGRU
         )
 
         # Check current important parameters match parameters read in
         if ALL_ACKWARGS_SAVED:
             for arg in actor_critic_args:
                 if arg != "no_critic" and arg != "GlobalCritic" and arg != "save_path":
-                    if type(original_configs[arg]) == int or type(original_configs[arg]) == float or type(original_configs[arg]) == bool:
+                    if (
+                        type(original_configs[arg]) == int
+                        or type(original_configs[arg]) == float
+                        or type(original_configs[arg]) == bool
+                    ):
                         assert (
                             actor_critic_args[arg] == original_configs[arg]
                         ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
@@ -228,7 +233,7 @@ class EpisodeRunner:
                             ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                     elif type(original_configs[arg]) is list:
                         for a, b in zip(original_configs[arg], actor_critic_args[arg]):
-                            assert a == b, f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                            assert (a == b), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                     else:
                         assert (
                             actor_critic_args[arg] == original_configs[arg]
@@ -237,6 +242,7 @@ class EpisodeRunner:
         # Initialize agents and load agent models
         for i in range(self.number_of_agents):
             self.agents[i] = RADCNN_core.CNNBase(id=i, **actor_critic_args)  # NOTE: No updates, do not need PPO
+            self.agents[i].load(checkpoint_path=agent_models[i])
 
             # Sanity check
             assert self.agents[i].critic.is_mock_critic()
@@ -352,7 +358,11 @@ class EpisodeRunner:
         return results
 
     def create_environment(self) -> RadSearch:
-        env = gym.make(self.env_name, silent=True, **self.env_kwargs)
+        if USE_RAY:
+            silent = True
+        else:
+            silent = False
+        env = gym.make(self.env_name, silent=silent, **self.env_kwargs)
         env.reset()
         return env
 
@@ -574,6 +584,8 @@ class evaluate_PPO:
             ] = episode.successful.episode_length[:]
             ep_len_start_ptr = ep_len_start_ptr + len(episode.successful.episode_length)
 
+        low_whisker, q1, median, q3, high_whisker = self.calc_quartiles(success_counts)
+
         success_counts_median = np.nanmedian(sorted(success_counts))
         success_lengths_median = np.nanmedian(sorted(successful_episode_lengths))
         return_median = np.nanmedian(sorted(episode_returns))
@@ -587,6 +599,11 @@ class evaluate_PPO:
             "speed": {"median": success_lengths_median, "std": len_std},
             "score": {"median": return_median, "std": ret_std},
         }
+
+    def calc_quartiles(self, data):
+        d1 = DescrStatsW(data)
+        low_whisker, q1, median, q3, high_whisker = d1.quantile([0.025, 0.25, 0.5, 0.75, 0.975], return_pandas=False)
+        return (low_whisker, q1, median, q3, high_whisker)
 
 
 if __name__ == "__main__":
@@ -636,7 +653,7 @@ if __name__ == "__main__":
         "number_agents": number_of_agents,
         "enforce_grid_boundaries": True,
         "np_random": rng,
-        "TEST": args.test,
+        "TEST": args.test
     }
 
     eval_kwargs = dict(
