@@ -907,14 +907,11 @@ class RadSearch(gym.Env):
 
         return step
 
-    def refresh_environment(env_dict, n, num_obs=0):
+    def refresh_environment(self, env_dict, n, num_obs=0):
         """
         Load saved test environment parameters from dictionary
         into the current instantiation of environment
         """
-
-        env = self.env
-
         def to_vis_p(p) -> vis.Point:
             """
             Return a visilibity Point from a Point.
@@ -932,7 +929,10 @@ class RadSearch(gym.Env):
             point.set_y(coords[1])
             return point
 
-        EPSILON = 0.0000001
+        env = self
+
+        # Get correct obstacle number
+        env.obstruction_count = num_obs
 
         key = "env_" + str(n)
         env.src_coords = env_dict[key][0]
@@ -945,11 +945,13 @@ class RadSearch(gym.Env):
             agent.det_coords = env_dict[key][1]
             agent.detector = set_vis_coord(agent.detector, agent.det_coords)
 
+        self.obs_coord: List[List[Point]] = [[] for _ in range(self.obstruction_count)]
+        self.poly: List[Polygon] = []
+        self.line_segs: List[List[vis.Line_Segment]] = []
+
         if num_obs > 0:
             env.obs_coord = env_dict[key][4]
             env.obstruction_count = len(env_dict[key][4])
-            env.poly = []
-            env.line_segs = []
             for obs in env.obs_coord:
                 geom = [vis.Point(float(obs[jj][0]), float(obs[jj][1])) for jj in range(len(obs))]
                 poly = vis.Polygon(geom)
@@ -977,9 +979,7 @@ class RadSearch(gym.Env):
             agent.prev_det_dist = env.world.shortest_path(env.source, agent.detector, env.vis_graph, EPSILON).length()
 
         env.iter_count = 1
-        return o, env
-
-
+        return o
 
     def take_action(
         self,

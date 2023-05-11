@@ -99,7 +99,7 @@
         "--render",
         "--render_freq",
         "1",
-        "--no-load_env",
+        // "--no-load_env",
         "--data_dir",
         "/u/ttotten/models/train/results/10k_full_control_ticino_s2/"
       ],
@@ -120,7 +120,7 @@
         // "--steps_per_epoch", "120",
         // "--test", "0", 
         "--episodes", "2", 
-        "--runs", "100"
+        "--runs", "1"
       ],
       "cwd": "${workspaceFolder}/algos/RADTEAM"
     },

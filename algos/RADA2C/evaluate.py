@@ -597,20 +597,20 @@ class RADA2C_EpisodeRunner:
         # Reset environment and save test env parameters
         if self.load_env:
             #observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
-            self.obstruction_count = len(self.env_sets[self.id][4])
-            observations = self.env.refresh_environment(env_dict=self.env_sets, n=self.id, num_obs=self.obstruction_count)              
+            self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4])
+            observations = self.env.refresh_environment(env_dict=self.env_sets, n=self.id, num_obs=self.obstruction_count)
         else:
             observations, _, _, _ = self.env.reset()
             self.env_sets = {}
             # Save env for refresh
-            self.env_sets["env_0"] = [_ for _ in range(5)]
-            self.env_sets["env_0"][0] = self.env.src_coords
-            self.env_sets["env_0"][1] = self.env.agents[0].det_coords
-            self.env_sets["env_0"][2] = self.env.intensity
-            self.env_sets["env_0"][3] = self.env.bkg_intensity
-            self.env_sets["env_0"][4] = self.env.obs_coord.copy()
+            self.env_sets[f"env_{self.id}"] = [_ for _ in range(5)]
+            self.env_sets[f"env_{self.id}"][0] = self.env.src_coords
+            self.env_sets[f"env_{self.id}"][1] = self.env.agents[0].det_coords
+            self.env_sets[f"env_{self.id}"][2] = self.env.intensity
+            self.env_sets[f"env_{self.id}"][3] = self.env.bkg_intensity
+            self.env_sets[f"env_{self.id}"][4] = self.env.obs_coord.copy()
 
-            self.obstruction_count = len(self.env_sets["env_0"][4])
+            self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4])
 
         self.agents[0].pi.eval()
         self.agents[0].model.eval()
@@ -621,7 +621,6 @@ class RADA2C_EpisodeRunner:
             id: self.agents[id].reset_hidden() for id in self.agents
         }  # For RAD-A2C compatibility
 
-        initial_prediction = np.zeros((3,))
         for id, ac in self.agents.items():
             stat_buffers[id] = RADA2C_core.StatBuff()
             stat_buffers[id].update(observations[id][0])
