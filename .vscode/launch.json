@@ -102,8 +102,7 @@
         "--obstacles",
         "1",
         // "--no-load_env",
-        "--data_dir",
-        "/u/ttotten/models/train/results/10k_full_control_ticino_s2/"
+
       ],
       "cwd": "${workspaceFolder}/algos/RADA2C"
     },    
