@@ -424,7 +424,8 @@ class RADTEAM_EpisodeRunner:
 # @ray.remote
 @dataclass
 class RADA2C_EpisodeRunner:
-    ''' Episode runner for RADA2C Models '''
+    """Episode runner for RADA2C Models"""
+
     id: int
     # env_sets: Dict
     current_dir: str
@@ -459,9 +460,7 @@ class RADA2C_EpisodeRunner:
 
     # Initialized elsewhere
     #: Object that holds agents
-    agents: Dict[int, RADA2C_core.RNNModelActorCritic] = field(
-        default_factory=lambda: dict()
-    )
+    agents: Dict[int, RADA2C_core.RNNModelActorCritic] = field(default_factory=lambda: dict())
 
     def __post_init__(self) -> None:
         # Change to correct directory
@@ -482,17 +481,13 @@ class RADA2C_EpisodeRunner:
             if child.is_dir() and "agent" in child.name:
                 agent_models[
                     int(child.name[0])
-                ] = (
-                    child.path
-                )  # Read in model path by id number. NOTE: Important that ID number is the first element of file name
+                ] = child.path  # Read in model path by id number. NOTE: Important that ID number is the first element of file name
             if child.is_dir() and "general" in child.name:
                 general_config_path = child.path
 
         obj = json.load(open(f"{self.model_path}/config.json"))
         if "self" in obj.keys():
-            original_configs = list(obj["self"].values())[0]["ppo_kwargs"][
-                "actor_critic_args"
-            ]
+            original_configs = list(obj["self"].values())[0]["ppo_kwargs"]["actor_critic_args"]
         else:
             original_configs = obj["ac_kwargs"]  # Original project save format
 
@@ -512,11 +507,7 @@ class RADA2C_EpisodeRunner:
         # Check current important parameters match parameters read in
         for arg in actor_critic_args:
             if arg != "no_critic" and arg != "GlobalCritic" and arg != "save_path":
-                if (
-                    type(original_configs[arg]) == int
-                    or type(original_configs[arg]) == float
-                    or type(original_configs[arg]) == bool
-                ):
+                if type(original_configs[arg]) == int or type(original_configs[arg]) == float or type(original_configs[arg]) == bool:
                     assert (
                         actor_critic_args[arg] == original_configs[arg]
                     ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
@@ -531,9 +522,7 @@ class RADA2C_EpisodeRunner:
                         ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                 elif type(original_configs[arg]) is list:
                     for a, b in zip(original_configs[arg], actor_critic_args[arg]):
-                        assert (
-                            a == b
-                        ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                        assert a == b, f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                 else:
                     assert (
                         actor_critic_args[arg] == original_configs[arg]
@@ -552,9 +541,7 @@ class RADA2C_EpisodeRunner:
         # Prepare tracking buffers and counters
         episode_return: Dict[int, float] = {id: 0.0 for id in self.agents}
         steps_in_episode: int = 0
-        terminal_counter: Dict[int, int] = {
-            id: 0 for id in self.agents
-        }  # Terminal counter for the epoch (not the episode)
+        terminal_counter: Dict[int, int] = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
         run_counter = 0
 
         # Prepare results buffers
@@ -581,9 +568,7 @@ class RADA2C_EpisodeRunner:
 
         # Prepare episode variables
         agent_thoughts: Dict = dict()
-        hiddens: Dict[
-            int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]
-        ] = {
+        hiddens: Dict[int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]] = {
             id: self.agents[id].reset_hidden() for id in self.agents
         }  # For RAD-A2C compatibility
 
@@ -603,38 +588,29 @@ class RADA2C_EpisodeRunner:
             agent_thoughts[id] = {}
             for id, ac in self.agents.items():
                 with torch.no_grad():
-                    a, v, logp, hidden, out_pred = ac.step(
-                        observations[id], hiddens[id]
-                    )
+                    a, v, logp, hidden, out_pred = ac.step(observations[id], hiddens[id])
                     agent_thoughts[id]["action"] = a
 
                 hiddens[id] = hidden
             # Create action list to send to environment
-            agent_action_decisions = {
-                id: int(agent_thoughts[id]["action"]) for id in agent_thoughts
-            }
+            agent_action_decisions = {id: int(agent_thoughts[id]["action"]) for id in agent_thoughts}
             for action in agent_action_decisions.values():
                 assert 0 <= action and action < int(self.env.number_actions)
 
             # Take step in environment - Note: will be missing last reward, rewards link to previous observation in env
-            observations, rewards, terminals, _ = self.env.step(
-                action=agent_action_decisions
-            )
+            observations, rewards, terminals, _ = self.env.step(action=agent_action_decisions)
 
             for id, ac in self.agents.items():
                 stat_buffers[id].update(observations[id][0])
                 observations[id][0] = np.clip(
-                    (observations[id][0] - stat_buffers[id].mu)
-                    / stat_buffers[id].sig_obs,
+                    (observations[id][0] - stat_buffers[id].mu) / stat_buffers[id].sig_obs,
                     -8,
                     8,
                 )
 
             # Incremement Counters and save new (individual) cumulative returns
             for id in range(self.number_of_agents):
-                episode_return[id] += np.array(
-                    rewards["individual_reward"][id], dtype="float32"
-                ).item()
+                episode_return[id] += np.array(rewards["individual_reward"][id], dtype="float32").item()
 
             steps_in_episode += 1
 
@@ -647,12 +623,8 @@ class RADA2C_EpisodeRunner:
                     terminal_reached_flag = True
 
             # Stopping conditions for episode
-            timeout: bool = (
-                steps_in_episode == self.steps_per_episode
-            )  # Max steps per episode reached
-            episode_over: bool = (
-                terminal_reached_flag or timeout
-            )  # Either timeout or terminal found
+            timeout: bool = steps_in_episode == self.steps_per_episode  # Max steps per episode reached
+            episode_over: bool = terminal_reached_flag or timeout  # Either timeout or terminal found
 
             if episode_over:
                 self.process_render(run_counter=run_counter, id=self.id)
@@ -661,31 +633,21 @@ class RADA2C_EpisodeRunner:
                 if run_counter < 1:
                     if terminal_reached_flag:
                         results.successful.intensity.append(self.env.intensity)
-                        results.successful.background_intensity.append(
-                            self.env.bkg_intensity
-                        )
+                        results.successful.background_intensity.append(self.env.bkg_intensity)
                     else:
                         results.unsuccessful.intensity.append(self.env.intensity)
-                        results.unsuccessful.background_intensity.append(
-                            self.env.bkg_intensity
-                        )
+                        results.unsuccessful.background_intensity.append(self.env.bkg_intensity)
                 results.total_episode_length.append(steps_in_episode)
 
                 if terminal_reached_flag:
                     results.success_counter += 1
                     results.successful.episode_length.append(steps_in_episode)
-                    results.successful.episode_return.append(
-                        episode_return[0]
-                    )  # TODO change for individual mode
+                    results.successful.episode_return.append(episode_return[0])  # TODO change for individual mode
                 else:
                     results.unsuccessful.episode_length.append(steps_in_episode)
-                    results.unsuccessful.episode_return.append(
-                        episode_return[0]
-                    )  # TODO change for individual mode
+                    results.unsuccessful.episode_return.append(episode_return[0])  # TODO change for individual mode
 
-                results.total_episode_return.append(
-                    episode_return[0]
-                )  # TODO change for individual mode
+                results.total_episode_return.append(episode_return[0])  # TODO change for individual mode
 
                 # Incremenet run counter
                 run_counter += 1
@@ -693,30 +655,23 @@ class RADA2C_EpisodeRunner:
                 # Reset environment without performing an env.reset()
                 episode_return = {id: 0.0 for id in self.agents}
                 steps_in_episode = 0
-                terminal_counter = {
-                    id: 0 for id in self.agents
-                }  # Terminal counter for the epoch (not the episode)
+                terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
 
-                observations = self.env.refresh_environment(
-                    env_dict=self.env_sets, id=self.id
-                )
+                observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
 
                 # Reset stat buffer for RAD-A2C
                 for id, ac in self.agents.items():
                     stat_buffers[id].reset()
                     stat_buffers[id].update(observations[id][0])
                     observations[id][0] = np.clip(
-                        (observations[id][0] - stat_buffers[id].mu)
-                        / stat_buffers[id].sig_obs,
+                        (observations[id][0] - stat_buffers[id].mu) / stat_buffers[id].sig_obs,
                         -8,
                         8,
                     )
 
         results.completed_runs = run_counter
 
-        print(
-            f"Finished episode {self.id}! Success count: {results.success_counter} out of {run_counter}"
-        )
+        print(f"Finished episode {self.id}! Success count: {results.success_counter} out of {run_counter}")
         return results
 
     def create_environment(self) -> RadSearch:
@@ -732,14 +687,8 @@ class RADA2C_EpisodeRunner:
 
     def process_render(self, run_counter: int, id: int) -> None:
         # Render
-        save_time_triggered = (
-            (run_counter % self.save_gif_freq == 0)
-            if self.save_gif_freq != 0
-            else False
-        )
-        time_to_save = save_time_triggered or (
-            (run_counter + 1) == self.montecarlo_runs
-        )
+        save_time_triggered = (run_counter % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
+        time_to_save = save_time_triggered or ((run_counter + 1) == self.montecarlo_runs)
         if self.render and time_to_save:
             # Render gif
             self.env.render(
@@ -818,7 +767,6 @@ class evaluate_PPO:
     #: Number of monte carlo runs per episode configuration
     montecarlo_runs: int = field(init=False)
 
-
     def __post_init__(self) -> None:
         self.montecarlo_runs = self.eval_kwargs["montecarlo_runs"]
         if not self.save_path:
@@ -843,15 +791,23 @@ class evaluate_PPO:
         start_time = time.time()
         if USE_RAY:
             if self.RADTEAM:
-                runners = {i: RADTEAM_EpisodeRunner.remote(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}
+                runners = {
+                    i: RADTEAM_EpisodeRunner.remote(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])
+                }
             else:
-                runners = {i: RADA2C_EpisodeRunner.remote(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}                
+                runners = {
+                    i: RADA2C_EpisodeRunner.remote(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])
+                }
             full_results = ray.get([runner.run.remote() for runner in runners.values()])
         else:
             if self.RADTEAM:
-                self.runners = {i: RADTEAM_EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}
+                self.runners = {
+                    i: RADTEAM_EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])
+                }
             else:
-                self.runners = {i: RADA2C_EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}
+                self.runners = {
+                    i: RADA2C_EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])
+                }
             full_results = [runner.run() for runner in self.runners.values()]
 
         print("Runtime: {}", time.time() - start_time)
@@ -890,7 +846,7 @@ class evaluate_PPO:
         # print(f"Total Runs: {counter}")
         # print(f"Accuracy - Median Success Counts: {score['accuracy'][0]['median']} with std {score['stdev']['accuracy']}")
         # print(f"Speed - Median Successful Episode Length: {score['speed'][0]['median']} with std {score['stdev']['speed']}")
-        # print(f"Learning - Median Episode Return: {score['score'][0]['median']} with std {score['stdev']['score']}")            
+        # print(f"Learning - Median Episode Return: {score['score'][0]['median']} with std {score['stdev']['score']}")
 
     def calc_stats(self, results, mc=None):
         """
@@ -913,11 +869,11 @@ class evaluate_PPO:
 
         for ep_index, episode in enumerate(results):
             success_counts[ep_index] = episode.success_counter
-            episode_returns[ep_ret_start_ptr:ep_ret_start_ptr + mc] = episode.total_episode_return
+            episode_returns[ep_ret_start_ptr : ep_ret_start_ptr + mc] = episode.total_episode_return
             ep_ret_start_ptr = ep_ret_start_ptr + mc
 
             successful_episode_lengths[
-                ep_len_start_ptr:ep_len_start_ptr + len(episode.successful.episode_length)
+                ep_len_start_ptr : ep_len_start_ptr + len(episode.successful.episode_length)
             ] = episode.successful.episode_length[:]
             ep_len_start_ptr = ep_len_start_ptr + len(episode.successful.episode_length)
 
@@ -934,10 +890,10 @@ class evaluate_PPO:
         ret_std = round(np.nanstd(episode_returns), 3)
         ret_low_whisker, ret_q1, ret_median, ret_q3, ret_high_whisker = self.calc_quartiles(episode_returns)
 
-        final["speed"] = [{"whislo": len_low_whisker, "q1": len_q1, "med": len_median, "q3": len_q3, "whishi": len_high_whisker, 'fliers': []}]
-        final["accuracy"] = [{"whislo": suc_low_whisker, "q1": suc_q1, "med": suc_median, "q3": suc_q3, "whishi": suc_high_whisker, 'fliers': []}]
-        final["score"] = [{"whislo": ret_low_whisker, "q1": ret_q1, "med": ret_median, "q3": ret_q3, "whishi": ret_high_whisker, 'fliers': []}]
-        final['stdev'] = {"speed": len_std, 'accuracy': succ_std, 'score': ret_std}
+        final["speed"] = [{"whislo": len_low_whisker, "q1": len_q1, "med": len_median, "q3": len_q3, "whishi": len_high_whisker, "fliers": []}]
+        final["accuracy"] = [{"whislo": suc_low_whisker, "q1": suc_q1, "med": suc_median, "q3": suc_q3, "whishi": suc_high_whisker, "fliers": []}]
+        final["score"] = [{"whislo": ret_low_whisker, "q1": ret_q1, "med": ret_median, "q3": ret_q3, "whishi": ret_high_whisker, "fliers": []}]
+        final["stdev"] = {"speed": len_std, "accuracy": succ_std, "score": ret_std}
 
         return final
 

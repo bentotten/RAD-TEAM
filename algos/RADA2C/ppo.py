@@ -523,6 +523,7 @@ if __name__ == '__main__':
     parser.add_argument('--alpha',type=float,default=0.1, help='Entropy reward term scaling') 
     parser.add_argument('--load_model', type=int, default=0)
     parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
+
     
     args = parser.parse_args()
 

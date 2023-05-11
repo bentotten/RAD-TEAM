@@ -141,7 +141,7 @@
       "justMyCode": false,
       "args": [
         "--data_dir",
-        "/u/ttotten/models/train/results"
+        "."
     ],
       "cwd": "${workspaceFolder}/utility/"
     },    
