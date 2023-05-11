@@ -907,91 +907,79 @@ class RadSearch(gym.Env):
 
         return step
 
-    def refresh_environment(self, env_dict: Dict, id: int, num_obs: int = -1) -> Dict:
+    def refresh_environment(env_dict, n, num_obs=0):
         """
-        Load saved test environment parameters from dictionary into the current instantiation of environment
-
-        :param env_dict: (Dict) Parameters to refresh environment with
-        :param id: (int) ID number of environment for dictionary
-        :param num_obs: (int) Number of obstructions (deprecated)
+        Load saved test environment parameters from dictionary
+        into the current instantiation of environment
         """
 
-        if num_obs != -1:
-            print("WARNING: Obstacle parameter is deprecated. Reading from env_dict set.")
+        env = self.env
 
-        # Reset counts and flags
-        self.epoch_end = False
-        self.done = False
-        self.iter_count = 0
+        def to_vis_p(p) -> vis.Point:
+            """
+            Return a visilibity Point from a Point.
+            """
+            return vis.Point(p[0], p[1])
 
-        key = "env_" + str(id)
+        def to_vis_poly(poly) -> vis.Polygon:
+            """
+            Return a visilibity Polygon from a Polygon.
+            """
+            return vis.Polygon(list(map(to_vis_p, poly)))
 
-        self.obstruction_count = len(env_dict[key][4])
-        self.src_coords = env_dict[key][0]
-        self.intensity = env_dict[key][2]
-        self.bkg_intensity = env_dict[key][3]
-        self.source = to_vis_p(self.src_coords)
+        def set_vis_coord(point, coords):
+            point.set_x(coords[0])
+            point.set_y(coords[1])
+            return point
 
-        for id, agent in self.agents.items():
+        EPSILON = 0.0000001
+
+        key = "env_" + str(n)
+        env.src_coords = env_dict[key][0]
+        env.intensity = env_dict[key][2]
+        env.bkg_intensity = env_dict[key][3]
+        env.source = set_vis_coord(env.source, env.src_coords)
+
+        for agent in env.agents.values():
             agent.reset()
-            if isinstance(env_dict[key][1], tuple):
-                agent.det_coords = env_dict[key][1]
-            else:
-                agent.det_coords = env_dict[key][1].copy()
-            agent.detector = to_vis_p(agent.det_coords)
+            agent.det_coords = env_dict[key][1]
+            agent.detector = set_vis_coord(agent.detector, agent.det_coords)
 
-        # Get obstacles from parameters
-        if self.obstruction_count > 0:
-            self.poly = []
-            self.line_segs = []
-            obs_coord = env_dict[key][4]
-
-            # Make compatible with latest Rad-Search env
-            self.obs_coord: List[List[Point]] = [[] for _ in range(self.obstruction_count)]
-            for i, obstruction in enumerate(obs_coord):
-                try:
-                    self.obs_coord[i].extend(list(map(tuple, obstruction[0])))  # type: ignore
-                except:
-                    self.obs_coord[i].extend(list(map(tuple, obstruction)))  # type: ignore
-
-            # Create Visilibity environment
-            for obs in self.obs_coord:
-                poly = Polygon(obs)
-                self.poly.append(poly)
-                self.line_segs.append(
+        if num_obs > 0:
+            env.obs_coord = env_dict[key][4]
+            env.obstruction_count = len(env_dict[key][4])
+            env.poly = []
+            env.line_segs = []
+            for obs in env.obs_coord:
+                geom = [vis.Point(float(obs[jj][0]), float(obs[jj][1])) for jj in range(len(obs))]
+                poly = vis.Polygon(geom)
+                env.poly.append(poly)
+                env.line_segs.append(
                     [
-                        vis.Line_Segment(to_vis_p(p1), to_vis_p(p2))
-                        for p1, p2 in (
-                            (poly[0], poly[1]),
-                            (poly[0], poly[3]),
-                            (poly[2], poly[1]),
-                            (poly[2], poly[3]),
-                        )
+                        vis.Line_Segment(geom[0], geom[1]),
+                        vis.Line_Segment(geom[0], geom[3]),
+                        vis.Line_Segment(geom[2], geom[1]),
+                        vis.Line_Segment(geom[2], geom[3]),
                     ]
                 )
-            self.env_ls: List[Polygon] = [self.walls, *self.poly]
-            self.world = vis.Environment(list(map(to_vis_poly, self.env_ls)))
 
+            env.env_ls = [solid for solid in env.poly]
+            env.env_ls.insert(0, to_vis_poly(env.walls))
+            env.world = vis.Environment(env.env_ls)
             # Check if the environment is valid
-            assert self.world.is_valid(EPSILON), "Environment is not valid"
-            self.vis_graph = vis.Visibility_Graph(self.world, EPSILON)
+            assert env.world.is_valid(EPSILON), "Environment is not valid"
+            env.vis_graph = vis.Visibility_Graph(env.world, EPSILON)
 
-        observation, _, _, _ = self.step(action=None)  # Take idle step
+        o, _, _, _ = env.step(-1)
+        for id, agent in env.agents.items():
+            agent.det_sto = [env_dict[key][1]]
+            agent.meas_sto = [o[id][0]]
+            agent.prev_det_dist = env.world.shortest_path(env.source, agent.detector, env.vis_graph, EPSILON).length()
 
-        # Erase previous results from agent's memory (for render)
-        for id, agent in self.agents.items():
-            if isinstance(env_dict[key][1], tuple):
-                agent.det_coords = Point(env_dict[key][1])
-            else:
-                agent.det_sto = [env_dict[key][1].copy()]
-            agent.meas_sto = [observation[id][0].copy()]
-            agent.prev_det_dist = self.world.shortest_path(self.source, agent.detector, self.vis_graph, EPSILON).length()
+        env.iter_count = 1
+        return o, env
 
-        # increment iteration counter
-        self.iter_count = 1
 
-        # return observation
-        return observation
 
     def take_action(
         self,
