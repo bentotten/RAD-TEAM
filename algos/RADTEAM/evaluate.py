@@ -141,7 +141,7 @@ class RADTEAM_EpisodeRunner:
         # Get agent model paths and saved agent configurations
         agent_models = {}
         for child in os.scandir(self.model_path):
-            if child.is_dir() and "agent" in child.name:
+            if child.is_dir() and ("agent" in child.name or "pyt_save" in child.name):
                 agent_models[
                     int(child.name[0])
                 ] = child.path  # Read in model path by id number. NOTE: Important that ID number is the first element of file name

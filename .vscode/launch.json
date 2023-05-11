@@ -145,5 +145,18 @@
     // ],
       "cwd": "${workspaceFolder}/utility/"
     },    
+    {
+      "name": "Bulk Evaluation test",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/utility/evaluate_bulk.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+    //   "args": [
+    //     "--data_dir",
+    //     ""
+    // ],
+      "cwd": "${workspaceFolder}/utility/"
+    },      
   ]
 }

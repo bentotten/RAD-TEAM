@@ -8,7 +8,7 @@ from math import floor
 
 PYTHON_PATH = sys.executable
 SKIP_FILES = -1  # A way to skip directories that have already been processed
-
+OVERWRITE = False
 
 def parse_exp_name(name, components, groups, exclude):
     first_split = name.split(" ")
@@ -131,17 +131,15 @@ def main(args):
     # Get paths
     paths = get_paths(logdir=args.data_dir)
 
-    overwrite_flag = (
-        True  # Flag to ensure overwrite of local copy of files happens every time
-    )
+    overwrite_flag = OVERWRITE  # Flag to ensure overwrite of local copy of files happens every time
 
     # Set up multi-processing
     cpu_count = multiprocessing.cpu_count()
     p = multiprocessing.Pool(cpu_count)
     job_length = floor(len(paths) / cpu_count) if len(paths) > cpu_count else 1
-    extra = len(paths) % cpu_count
+    extra = len(paths) % cpu_count if len(paths) > cpu_count else 0
 
-    limit = cpu_count if cpu_count > paths else len(paths)
+    limit = cpu_count if cpu_count < len(paths) else len(paths)
 
     thread_it = partial(
         run,
