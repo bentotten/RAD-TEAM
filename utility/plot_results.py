@@ -19,12 +19,12 @@ Colorcode = NewType("Colorcode", List[int])
 
 COLOR_FACTOR = 0.75  # How much to lighten previous color by
 COLORS = [
-    # Colorcode([148, 0, 211]), # Violet (Removed due to being too similar to indigo)
-    Colorcode([255, 105, 180]),  # Pink
     Colorcode([75, 0, 130]),  # Indigo
     Colorcode([0, 0, 255]),  # Blue
+    Colorcode([255, 105, 180]),  # Pink    
     Colorcode([0, 255, 0]),  # Green
     Colorcode([255, 127, 0]),  # Orange
+    Colorcode([148, 0, 211]), # Violet (Removed due to being too similar to indigo)    
 ]
 
 # Helper Functions
@@ -213,7 +213,7 @@ def mock_data(small):
     return [athens]
 
 
-def plot(graphname, datasets, groups, tests, y_label, path=None):
+def plot(graphname, datasets, groups, tests, y_label, path=None, inverty=False):
     # Datasets correspond to components. Groups correspond to tests
     
     # Make figures A6 in size
@@ -267,6 +267,9 @@ def plot(graphname, datasets, groups, tests, y_label, path=None):
 
             # Make the median lines more visible
             plt.setp(bp['medians'], color='red')
+
+    # If invert y, invert - helps with visualizing things where minimizing the value is the goal (speed etc)
+    if inverty: plt.gca().invert_yaxis()
 
     # Titles
     plt.ylabel(y_label)
@@ -346,9 +349,10 @@ if __name__ == "__main__":
     # accuracy_datasets, speed_datasets, score_datasets = mock_data(True), mock_data(True), mock_data(True)
 
     for graphname, graph in zip([performance_markers['accuracy'], performance_markers['speed'], performance_markers['score']], [accuracy_datasets, speed_datasets, score_datasets]):
-        # try:
-        plot(graphname=graphname, datasets=graph, groups=components, tests=groups, y_label=graphname, path=os.getcwd())
-        # except Exception as e:
-        #     print(e)
+        inverty = True if graphname in performance_markers['speed'] else False
+        try:
+            plot(graphname=graphname, datasets=graph, groups=components, tests=groups, y_label=graphname, path=os.getcwd(), inverty=inverty)
+        except Exception as e:
+            print(e)
 
     print("Done with plot")
