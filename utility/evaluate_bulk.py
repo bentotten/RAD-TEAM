@@ -76,9 +76,12 @@ def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extr
             name=name, components=components, groups=groups, exclude=exclude
         )
         if not excluded and (not comp or not test):
-            raise ValueError("Component or Test not in saved path name")
-        if test and comp:
+            print(f"WARNING: Component or Test not in saved path name and not excluded:\n{path}")
+        elif test and comp:
             test = test[-1]  # Get just test digit
+
+            # Set up launch command
+            launch = [PYTHON_PATH, "evaluate.py", "--test", test]
 
             # Copy evaluate and saved_envs into test folder
             cwd = os.getcwd()
@@ -99,7 +102,6 @@ def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extr
             og_dir = os.getcwd()
             os.chdir(path)
 
-            launch = [PYTHON_PATH, "evaluate.py", "--rada2c", "--test", test]
             try:
                 subprocess.run(launch)
             except Exception as e:
@@ -120,10 +122,11 @@ def main(args):
     groups = ["test1", "test2", "test3", "test4"]
 
     # Groups to represent in each x tick group
-    components = ["env", "PPO", "Optimizer", "StatBuf", "CNN"]
+    # components = ["env", "PPO", "Optimizer", "StatBuf", "CNN"]
+    components = ["CNN"]
 
     # Results to exclude from plotting
-    exclude = ["RADMARL", "CNN"]
+    exclude = ["RADMARL", "env", "PPO", "Optimizer", "StatBuf"]
 
     # Get paths
     paths = get_paths(logdir=args.data_dir)
@@ -135,8 +138,10 @@ def main(args):
     # Set up multi-processing
     cpu_count = multiprocessing.cpu_count()
     p = multiprocessing.Pool(cpu_count)
-    job_length = floor(len(paths) / cpu_count)
+    job_length = floor(len(paths) / cpu_count) if len(paths) > cpu_count else 1
     extra = len(paths) % cpu_count
+
+    limit = cpu_count if cpu_count > paths else len(paths)
 
     thread_it = partial(
         run,
@@ -150,7 +155,7 @@ def main(args):
     )
 
     # Start processes
-    p.map(thread_it, range(0, cpu_count))
+    p.map(thread_it, range(0, limit))
 
     # Plot test results
     subprocess.run(["python3", "plot_results.py"])
