@@ -2,6 +2,8 @@ import os
 import shutil
 import subprocess
 import sys
+import multiprocessing
+from functools import partial
 
 
 PYTHON_PATH = sys.executable
@@ -56,43 +58,13 @@ def get_paths(logdir, condition=None):
     return paths
 
 
-if __name__ == "__main__":
-    ''' Get all paths to directories containing progress.txt and evaluate that directory ''' # noqa
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--data_dir",
-        type=str,
-        help="Directory where results are saved. Ex: ../models/train/gru_8_acts/bpf/model_dir",  # noqa
-        default=".",  # noqa
-    )
-    args = parser.parse_args()
-
-    print(args)
-
-    # Data directory formatting
-    if args.data_dir == ".":
-        args.data_dir = os.getcwd() + "/"
-    args.data_dir = args.data_dir + '/' if args.data_dir[-1] != '/' else args.data_dir # noqa
-
-    # Set up name parsing
-    groups = ['test1', 'test2', 'test3', 'test4']
-
-    # Groups to represent in each x tick group
-    components = ['env', 'PPO', 'Optimizer', 'StatBuf', 'CNN']
-
-    # Results to exclude from plotting
-    exclude = ['RADMARL']
-
-    # Get paths
-    paths = get_paths(logdir=args.data_dir)
-
-    counter = 0
-    overwrite_flag = True  # Flag to ensure overwrite of local copy of files happens every time
+def run(paths, components, groups, exclude, overwrite_flag, job_length, id):
+    # Calcuate slice to process
+    start_index = id * job_length
+    stop_index = start_index + job_length
 
     # Begin evaluation
-    for path in paths:
+    for path in paths[start_index:stop_index]:
         # Get name
         name = os.path.split(path)[-1]
         (comp, test, excluded) = parse_exp_name(name=name, components=components, groups=groups, exclude=exclude)
@@ -120,18 +92,62 @@ if __name__ == "__main__":
             og_dir = os.getcwd()
             os.chdir(path)
 
-            if counter > SKIP_FILES:
-                launch = [PYTHON_PATH, "evaluate.py", "--rada2c", "--test", test]
-                try:
-                    subprocess.run(launch)
-                except Exception as e:
-                    print(e)
+            launch = [PYTHON_PATH, "evaluate.py", "--rada2c", "--test", test]
+            try:
+                subprocess.run(launch)
+            except Exception as e:
+                print(e)
 
             os.chdir(og_dir)
-        counter += 1
 
+
+def main(args):
+    # Data directory formatting
+    if args.data_dir == ".":
+        args.data_dir = os.getcwd() + "/"
+    args.data_dir = args.data_dir + '/' if args.data_dir[-1] != '/' else args.data_dir # noqa
+
+    # Set up name parsing
+    groups = ['test1', 'test2', 'test3', 'test4']
+
+    # Groups to represent in each x tick group
+    components = ['env', 'PPO', 'Optimizer', 'StatBuf', 'CNN']
+
+    # Results to exclude from plotting
+    exclude = ['RADMARL']
+
+    # Get paths
+    paths = get_paths(logdir=args.data_dir)
+
+    overwrite_flag = True  # Flag to ensure overwrite of local copy of files happens every time
+
+    # Set up multi-processing
+    cpu_count = multiprocessing.cpu_count()
+    p = multiprocessing.Pool(cpu_count)
+    job_length = len(paths) / cpu_count
+
+    thread_it = partial(run, paths, components, groups, exclude, overwrite_flag, job_length)
+
+    # Start processes
+    p.map(thread_it, range(0, cpu_count))
 
     # Plot test results
     subprocess.run(["python3", "plot_results.py"])
 
     print("Bulk evaluation complete.")
+
+
+if __name__ == "__main__":
+    ''' Get all paths to directories containing progress.txt and evaluate that directory ''' # noqa
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        help="Directory where results are saved. Ex: ../models/train/gru_8_acts/bpf/model_dir",  # noqa
+        default=".",  # noqa
+    )
+    args = parser.parse_args()
+
+    main(args)
