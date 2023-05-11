@@ -77,6 +77,63 @@ class Distribution:
     counts: Dict = field(default_factory=lambda: dict())
 
 
+def refresh_env(env_dict, env, n, num_obs=0):
+    """
+    Load saved test environment parameters from dictionary
+    into the current instantiation of environment
+    """
+
+    def set_vis_coord(point, coords):
+        point.set_x(coords[0])
+        point.set_y(coords[1])
+        return point
+
+    EPSILON = 0.0000001
+
+    key = "env_" + str(n)
+    env.src_coords = env_dict[key][0]
+    env.intensity = env_dict[key][2]
+    env.bkg_intensity = env_dict[key][3]
+    env.source = set_vis_coord(env.source, env.src_coords)
+
+    for agent in env.agents.values():
+        agent.det_coords = env_dict[key][1].copy()    
+        agent.detector = set_vis_coord(agent.detector, agent.det_coords)
+
+    if num_obs > 0:
+        env.obs_coord = env_dict[key][4]
+        env.obstruction_count = len(env_dict[key][4])
+        env.poly = []
+        env.line_segs = []
+        for obs in env.obs_coord:
+            geom = [vis.Point(float(obs[0][jj][0]), float(obs[0][jj][1])) for jj in range(len(obs[0]))]
+            poly = vis.Polygon(geom)
+            env.poly.append(poly)
+            env.line_segs.append(
+                [
+                    vis.Line_Segment(geom[0], geom[1]),
+                    vis.Line_Segment(geom[0], geom[3]),
+                    vis.Line_Segment(geom[2], geom[1]),
+                    vis.Line_Segment(geom[2], geom[3]),
+                ]
+            )
+
+        env.env_ls = [solid for solid in env.poly]
+        env.env_ls.insert(0, env.walls)
+        env.world = vis.Environment(env.env_ls)
+        # Check if the environment is valid
+        assert env.world.is_valid(EPSILON), "Environment is not valid"
+        env.vis_graph = vis.Visibility_Graph(env.world, EPSILON)
+
+    o, _, _, _ = env.step(-1)
+    env.det_sto = [env_dict[key][1].copy()]
+    env.src_sto = [env_dict[key][0].copy()]
+    env.meas_sto = [o[0].copy()]
+    env.prev_det_dist = env.world.shortest_path(env.source, env.detector, env.vis_graph, EPSILON).length()
+    env.iter_count = 1
+    return o, env
+
+
 # Uncomment when ready to run with Ray
 # @ray.remote
 @dataclass
@@ -331,31 +388,11 @@ class RADTEAM_EpisodeRunner:
         return self.id
 
     def process_render(self, run_counter: int, id: int) -> None:
-        if USE_RAY:
-            silent = True
-        else:
-            silent = False
+        silent = False
         # Render
         save_time_triggered = (run_counter % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
         time_to_save = save_time_triggered or ((run_counter + 1) == self.montecarlo_runs)
         if self.render and time_to_save:
-            # Render Agent heatmaps
-            if self.actor_critic_architecture == "cnn":
-                for id, ac in self.agents.items():
-                    # TODO add episode counter
-                    ac.render(
-                        savepath=self.render_path,
-                        episode_count=id,
-                        epoch_count=run_counter,
-                        add_value_text=True,
-                    )
-            # Render gif
-            self.env.render(
-                path=self.render_path,
-                epoch_count=run_counter,
-                episode_count=id,
-                silent=silent,
-            )
             # Render environment image
             self.env.render(
                 path=self.render_path,
@@ -363,25 +400,17 @@ class RADTEAM_EpisodeRunner:
                 just_env=True,
                 episode_count=id,
                 silent=silent,
+            )            
+            # Render gif
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                episode_count=id,
+                silent=silent,
             )
+
         # Always render first episode
-        if self.render and run_counter == 0 and self.render_first_episode:
-            # Render Agent heatmaps
-            if self.actor_critic_architecture == "cnn":
-                for id, ac in self.agents.items():
-                    ac.render(
-                        savepath=self.render_path,
-                        epoch_count=run_counter,
-                        add_value_text=True,
-                        episode_count=id,
-                    )
-            # Render gif
-            self.env.render(
-                path=self.render_path,
-                epoch_count=run_counter,
-                episode_count=id,
-                silent=silent,
-            )
+        elif self.render and run_counter == 0 and self.render_first_episode:
             # Render environment image
             self.env.render(
                 path=self.render_path,
@@ -390,31 +419,29 @@ class RADTEAM_EpisodeRunner:
                 episode_count=id,
                 silent=silent,
             )
-            self.render_first_episode = False
+            self.render_first_episode = False            
+            # Render gif
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                episode_count=id,
+                silent=silent,
+            )
 
         # Always render last episode
-        if self.render and run_counter == self.montecarlo_runs - 1:
-            # Render Agent heatmaps
-            if self.actor_critic_architecture == "cnn":
-                for id, ac in self.agents.items():
-                    ac.render(
-                        savepath=self.render_path,
-                        epoch_count=run_counter,
-                        add_value_text=True,
-                        episode_count=id,
-                    )
-            # Render gif
-            self.env.render(
-                path=self.render_path,
-                epoch_count=run_counter,
-                episode_count=id,
-                silent=silent,
-            )
+        elif self.render and run_counter == self.montecarlo_runs - 1:
             # Render environment image
             self.env.render(
                 path=self.render_path,
                 epoch_count=run_counter,
                 just_env=True,
+                episode_count=id,
+                silent=silent,
+            )            
+            # Render gif
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
                 episode_count=id,
                 silent=silent,
             )
@@ -551,7 +578,10 @@ class RADA2C_EpisodeRunner:
 
         # Reset environment and save test env parameters
         if self.load_env:
-            observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
+            #observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
+            num_obs = len(self.env_sets[self.id][4])
+            self.obstruction_count = num_obs
+            observations, self.env = refresh_env(env_dict=self.env_sets, env=self.env, n=self.id, num_obs=self.obstruction_count)     
         else:
             observations, _, _, _ = self.env.reset()
             self.env_sets = {}
@@ -657,7 +687,8 @@ class RADA2C_EpisodeRunner:
                 steps_in_episode = 0
                 terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
 
-                observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
+                # observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
+                observations, self.env = refresh_env(env_dict=self.env_sets, env=self.env, n=self.id, num_obs=self.obstruction_count)
 
                 # Reset stat buffer for RAD-A2C
                 for id, ac in self.agents.items():
@@ -709,13 +740,6 @@ class RADA2C_EpisodeRunner:
 
         # Always render first episode
         elif self.render and run_counter == 0 and self.render_first_episode:
-            # Render gif
-            self.env.render(
-                path=self.render_path,
-                epoch_count=run_counter,
-                episode_count=id,
-                silent=silent,
-            )
             # Render environment image
             self.env.render(
                 path=self.render_path,
@@ -724,22 +748,29 @@ class RADA2C_EpisodeRunner:
                 episode_count=id,
                 silent=silent,
             )
-            self.render_first_episode = False
+            self.render_first_episode = False            
+            # Render gif
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                episode_count=id,
+                silent=silent,
+            )
 
         # Always render last episode
         elif self.render and run_counter == self.montecarlo_runs - 1:
-            # Render gif
-            self.env.render(
-                path=self.render_path,
-                epoch_count=run_counter,
-                episode_count=id,
-                silent=silent,
-            )
             # Render environment image
             self.env.render(
                 path=self.render_path,
                 epoch_count=run_counter,
                 just_env=True,
+                episode_count=id,
+                silent=silent,
+            )            
+            # Render gif
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
                 episode_count=id,
                 silent=silent,
             )

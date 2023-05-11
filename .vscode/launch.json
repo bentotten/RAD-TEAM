@@ -92,7 +92,7 @@
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": [
-        "--test", "FULL", 
+        // "--test", "FULL", 
         "--episodes", "2", 
         "--runs", "2",
         "--rada2c",
@@ -100,7 +100,8 @@
         "--render_freq",
         "1",
         "--no-load_env",
-
+        "--data_dir",
+        "/u/ttotten/models/train/results/10k_full_control_ticino_s2/"
       ],
       "cwd": "${workspaceFolder}/algos/RADA2C"
     },    
