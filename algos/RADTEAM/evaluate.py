@@ -708,7 +708,7 @@ class RADA2C_EpisodeRunner:
             )
 
         # Always render first episode
-        if self.render and run_counter == 0 and self.render_first_episode:
+        elif self.render and run_counter == 0 and self.render_first_episode:
             # Render gif
             self.env.render(
                 path=self.render_path,
@@ -727,7 +727,7 @@ class RADA2C_EpisodeRunner:
             self.render_first_episode = False
 
         # Always render last episode
-        if self.render and run_counter == self.montecarlo_runs - 1:
+        elif self.render and run_counter == self.montecarlo_runs - 1:
             # Render gif
             self.env.render(
                 path=self.render_path,
