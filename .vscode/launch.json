@@ -139,10 +139,10 @@
       "program": "${workspaceFolder}/utility/plot_results.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-    //   "args": [
-    //     "--data_dir",
-    //     ""
-    // ],
+      "args": [
+        "--data_dir",
+        "/u/ttotten/models/train/results"
+    ],
       "cwd": "${workspaceFolder}/utility/"
     },    
     {

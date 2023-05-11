@@ -8,6 +8,7 @@ import json
 import pandas as pd
 from typing import NewType, List
 import numpy.typing as npt
+import matplotlib.ticker as mticker
 
 
 # Global vars for tracking and labeling data at load time.
@@ -110,14 +111,18 @@ def parse_data(data, components, groups, exclude, performance_markers):
 
     # TODO use sorting method and statically generated arrays instead of two loops and dicts
     # Eventual graphs to make - because run may be out of order, making a dict first
-    accuracy_datasets = [[[] for _ in range(len(groups))] for _ in range(len(components))]
-    speed_datasets = [[[] for _ in range(len(groups))] for _ in range(len(components))]
-    score_datasets = [[[] for _ in range(len(groups))] for _ in range(len(components))]
+    accuracy_datasets = [[None for _ in range(len(groups))] for _ in range(len(components))]
+    speed_datasets = [[None for _ in range(len(groups))] for _ in range(len(components))]
+    score_datasets = [[None for _ in range(len(groups))] for _ in range(len(components))]
 
-    accuracy_sorted = {component: {test: [] for test in groups} for component in components}
-    speed_sorted = {component: {test: [] for test in groups} for component in components}
-    score_sorted = {component: {test: [] for test in groups} for component in components}
+    # accuracy_sorted = {component: {test: None for test in groups} for component in components}
+    # speed_sorted = {component: {test: None for test in groups} for component in components}
+    # score_sorted = {component: {test: None for test in groups} for component in components}
 
+    accuracy_sorted = {component: {} for component in components}
+    speed_sorted = {component: {} for component in components}
+    score_sorted = {component: {} for component in components}
+    
     # Pulled from all different files
     for run in data:
         # Parse which component this is
@@ -126,9 +131,9 @@ def parse_data(data, components, groups, exclude, performance_markers):
         # Add component results to graph dicts (if not an excluded result)
         if comp and test:
             # Only one test per save, thus [0]
-            accuracy_sorted[comp][test] = run['accuracy'][0] 
-            speed_sorted[comp][test] = run['speed'][0]
-            score_sorted[comp][test] = run['score'][0]
+            accuracy_sorted[comp][test] = run['accuracy'][0] if isinstance(run['accuracy'], list) else run['accuracy']
+            speed_sorted[comp][test] = run['speed'][0] if isinstance(run['speed'], list) else run['speed']
+            score_sorted[comp][test] = run['score'][0] if isinstance(run['score'], list) else run['score']
 
     # Rearrange in specified order
     for ci, component in enumerate(components):
@@ -180,8 +185,37 @@ def mock_data():
     return [athens, beijing, london, rio]
 
 
-def plot(graphname, datasets, groups, tests, y_label, path=None):
+def mock_data(small):
+    low_whisker = 6.8
+    q1 = 6.9
+    median = 7.0
+    q3 = 8.0
+    high_whisker = 8.59
 
+    # Set up stats way
+    athens = [
+        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
+        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},        
+    ]
+    beijing = [
+        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
+        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker}
+    ]
+    london = [
+        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
+        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker}
+    ]
+    rio = [
+        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
+        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker}
+    ]
+
+    return [athens]
+
+
+def plot(graphname, datasets, groups, tests, y_label, path=None):
+    # Datasets correspond to components. Groups correspond to tests
+    
     # Make figures A6 in size
     A = 6
     plt.rc('figure', figsize=[46.82 * .5**(.5 * A), 33.11 * .5**(.5 * A)])
@@ -195,19 +229,22 @@ def plot(graphname, datasets, groups, tests, y_label, path=None):
         colors.append(create_color(id))
 
     # Set x-positions for boxes
-    x_pos_range = np.arange(len(datasets)) / (len(datasets) - 1)
-    x_pos = (x_pos_range * 0.5) + 0.75
+    x_pos_range = np.arange(len(datasets)) / (len(datasets) - 1) if len(datasets) > 1 else np.array(1)
+    x_pos = (x_pos_range * 0.5) + 0.75 if x_pos_range.size > 1 else x_pos_range
 
     _, ax = plt.subplots()
 
-    # Plot
+    # Set labels
     ax.set_xticklabels(tests)
 
     # Plot each component
-    for i, data in enumerate(datasets):
-        if len(data[0]) != 0:
+    for i, data_to_plot in enumerate(datasets):
+        if len(data_to_plot[0]) != 0:
             # positions = [x_pos[i] + j * 1 for j in range(len(data.T))]
-            positions = [x_pos[i] + j * 1 for j in range(len(data))]
+            if x_pos_range.size > 1:
+                positions = [x_pos[i] + j * 1 for j in range(len(data_to_plot))]
+            else:
+                positions = [x_pos + j * 1 for j in range(len(data_to_plot))]
 
             # TODO do this in data parser
             # stats = list()
@@ -216,7 +253,7 @@ def plot(graphname, datasets, groups, tests, y_label, path=None):
 
             bp = ax.bxp(
                 # stats,
-                data,
+                data_to_plot,
                 showfliers=False,
                 positions=positions,
                 patch_artist=True,
@@ -271,28 +308,28 @@ if __name__ == "__main__":
         default=".",  # noqa
     )
     parser.add_argument("--save", type=bool, default=True)
-    parser.add_argument("--condition", type=str, default="None", help="Condition to filter on when reading in data")
     args = parser.parse_args()
 
     if args.data_dir == ".":
         args.data_dir = os.getcwd() + "/"
     args.data_dir = args.data_dir + '/' if args.data_dir[-1] != '/' else args.data_dir
 
-    args.condition = None if args.condition == 'None' else args.condition
-
     # Groups to sort by
-    tests = ['test1', 'test2', 'test3', 'test4']
+    tests = ['zero', 'full'] # 'test3', 'test4']
     # agent_counts = ['1agent', '2agent', '4agent']
     # modes = ['collab', 'coop', 'control']
 
     groups = tests
 
     # Groups to represent in each x tick group
-    components = ['env', 'PPO', 'Optimizer', 'StatBuf', 'CNN']
+    components = ['control']
     # components = ['1agent', '2agent', '4agent']
 
     # Results to exclude from plotting
-    exclude = ['RADMARL']
+    exclude = ['agent']
+    
+    # Conditions for file read-in
+    condition = '10k'
 
     performance_markers = {
         'accuracy': "Objective Completion %",
@@ -300,14 +337,18 @@ if __name__ == "__main__":
         'speed': "Successful Episode Length [samples]"
         }
 
-    data = get_data(logdir=args.data_dir, condition=args.condition)
+    data = get_data(logdir=args.data_dir, condition=condition)
 
     accuracy_datasets, speed_datasets, score_datasets = parse_data(data=data, components=components, groups=groups, exclude=exclude, performance_markers=performance_markers)
 
+    print(accuracy_datasets)
+    print(mock_data(True))
+    # accuracy_datasets, speed_datasets, score_datasets = mock_data(True), mock_data(True), mock_data(True)
+
     for graphname, graph in zip([performance_markers['accuracy'], performance_markers['speed'], performance_markers['score']], [accuracy_datasets, speed_datasets, score_datasets]):
-        try:
-            plot(graphname=graphname, datasets=graph, groups=components, tests=groups, y_label=performance_markers['accuracy'], path=os.getcwd())
-        except Exception as e:
-            print(e)
+        # try:
+        plot(graphname=graphname, datasets=graph, groups=components, tests=groups, y_label=performance_markers['accuracy'], path=os.getcwd())
+        # except Exception as e:
+        #     print(e)
 
     print("Done with plot")

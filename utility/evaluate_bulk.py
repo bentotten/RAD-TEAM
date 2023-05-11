@@ -59,7 +59,7 @@ def get_paths(logdir, condition=None):
     return paths
 
 
-def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extra):
+def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extra, RADTEAM):
     # Calcuate slice to process
     start_index = id * job_length
     stop_index = start_index + job_length
@@ -81,7 +81,10 @@ def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extr
             test = test[-1]  # Get just test digit
 
             # Set up launch command
-            launch = [PYTHON_PATH, "evaluate.py", "--test", test]
+            if RADTEAM:
+                launch = [PYTHON_PATH, "evaluate.py", "--test", test]
+            else:
+                launch = [PYTHON_PATH, "evaluate.py", "--test", test, "--rada2c"]
 
             # Copy evaluate and saved_envs into test folder
             cwd = os.getcwd()
@@ -119,14 +122,16 @@ def main(args):
     )  # noqa
 
     # Set up name parsing
-    groups = ["test1", "test2", "test3", "test4"]
+    groups = ["test1", "test2", "test3", "test4", "test5"]
 
     # Groups to represent in each x tick group
     # components = ["env", "PPO", "Optimizer", "StatBuf", "CNN"]
-    components = ["CNN"]
+    components = ["RADMARL"]
 
     # Results to exclude from plotting
-    exclude = ["RADMARL", "env", "PPO", "Optimizer", "StatBuf"]
+    exclude = ["RADTEAM", "2agent"]
+
+    RADTEAM = False if 'RADTEAM' in exclude else True
 
     # Get paths
     paths = get_paths(logdir=args.data_dir)
@@ -150,6 +155,7 @@ def main(args):
         overwrite_flag=overwrite_flag,
         job_length=job_length,
         extra=extra,
+        RADTEAM=RADTEAM
     )
 
     # Start processes
