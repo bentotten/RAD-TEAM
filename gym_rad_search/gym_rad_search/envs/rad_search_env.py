@@ -930,6 +930,7 @@ class RadSearch(gym.Env):
             return point
 
         env = self
+        env.reset()
 
         # Get correct obstacle number
         env.obstruction_count = num_obs
@@ -1764,7 +1765,7 @@ class RadSearch(gym.Env):
                 if os.path.isdir(str(path) + "/gifs/"):
                     fig.savefig(str(path) + "/gifs/environment.png")
                 else:
-                    os.mkdir(str(path) + ".." + "/gifs/")
+                    os.mkdir(str(path) + "/gifs/")
                     fig.savefig(str(path) + "/gifs/environment.png")
             else:
                 plt.show()
