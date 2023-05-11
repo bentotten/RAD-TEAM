@@ -1,3 +1,6 @@
+# VSCode
+.vscode/
+
 # Ray configurations
 *ray*.yaml
 
