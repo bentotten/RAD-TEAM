@@ -4,7 +4,7 @@ import subprocess
 import sys
 import multiprocessing
 from functools import partial
-
+from math import floor
 
 PYTHON_PATH = sys.executable
 SKIP_FILES = -1  # A way to skip directories that have already been processed
@@ -58,10 +58,14 @@ def get_paths(logdir, condition=None):
     return paths
 
 
-def run(paths, components, groups, exclude, overwrite_flag, job_length, id):
+def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extra):
     # Calcuate slice to process
     start_index = id * job_length
     stop_index = start_index + job_length
+
+    # If last id, need to run extra jobs
+    if id == len(paths):
+        stop_index += extra
 
     # Begin evaluation
     for path in paths[start_index:stop_index]:
@@ -114,7 +118,7 @@ def main(args):
     components = ['env', 'PPO', 'Optimizer', 'StatBuf', 'CNN']
 
     # Results to exclude from plotting
-    exclude = ['RADMARL']
+    exclude = ['RADMARL', 'CNN']
 
     # Get paths
     paths = get_paths(logdir=args.data_dir)
@@ -124,9 +128,12 @@ def main(args):
     # Set up multi-processing
     cpu_count = multiprocessing.cpu_count()
     p = multiprocessing.Pool(cpu_count)
-    job_length = len(paths) / cpu_count
+    job_length = floor(len(paths) / cpu_count)
+    extra = len(paths) % cpu_count
 
-    thread_it = partial(run, paths, components, groups, exclude, overwrite_flag, job_length)
+    thread_it = partial(
+        run, paths=paths, components=components, groups=groups, exclude=exclude, overwrite_flag=overwrite_flag, job_length=job_length, extra=extra
+        )
 
     # Start processes
     p.map(thread_it, range(0, cpu_count))
