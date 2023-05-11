@@ -915,6 +915,12 @@ if __name__ == "__main__":
     parser.add_argument("--max_dim", type=list, default=[1500, 1500])
     parser.add_argument("--render_freq", type=int, default=100)
     parser.add_argument(
+        "--data_dir",
+        type=str,
+        help="Directory where results are saved. Ex: ../models/train/gru_8_acts/bpf/model_dir",
+        default=".",  # noqa
+    )    
+    parser.add_argument(
         "--load_env",
         action=argparse.BooleanOptionalAction,
         default=True,

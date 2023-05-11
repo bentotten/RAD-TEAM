@@ -92,12 +92,13 @@
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": [
-        // "--agents", "1", 
-        "--epochs", "1",
-        "--steps_per_epoch", "120",
-        // "--test", "0", 
-        // "--episodes", "2", 
-        // "--runs", "2"
+        "--test", "FULL", 
+        "--episodes", "2", 
+        "--runs", "2",
+        "--rada2c",
+        "--render",
+        "--render_freq",
+        "1"
       ],
       "cwd": "${workspaceFolder}/algos/RADA2C"
     },    
