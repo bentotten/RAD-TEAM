@@ -913,6 +913,7 @@ if __name__ == "__main__":
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--runs", type=int, default=100)
     parser.add_argument("--max_dim", type=list, default=[1500, 1500])
+    parser.add_argument("--render_freq", type=int, default=100)
     parser.add_argument(
         "--load_env",
         action=argparse.BooleanOptionalAction,
@@ -976,7 +977,7 @@ if __name__ == "__main__":
             resolution_multiplier=0.01,
             team_mode=mode,
             render=render,
-            save_gif_freq=100,
+            save_gif_freq=args.render_freq,
             render_path=".",
             save_path_for_ac=".",
             seed=seed,
@@ -1001,8 +1002,8 @@ if __name__ == "__main__":
             enforce_boundaries=True,
             resolution_multiplier=0.01,
             team_mode="individual",
-            render=False,
-            save_gif_freq=1,
+            render=render,
+            save_gif_freq=args.render_freq,
             render_path=".",
             save_path_for_ac=".",
             seed=seed,
