@@ -9,12 +9,13 @@ from math import floor
 PYTHON_PATH = sys.executable
 SKIP_FILES = -1  # A way to skip directories that have already been processed
 
+
 def parse_exp_name(name, components, groups, exclude):
-    first_split = name.split(' ')
+    first_split = name.split(" ")
     parts = []
 
     for name in first_split:
-        parts += name.split('_')
+        parts += name.split("_")
 
     result = None
     category = None
@@ -71,7 +72,9 @@ def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extr
     for path in paths[start_index:stop_index]:
         # Get name
         name = os.path.split(path)[-1]
-        (comp, test, excluded) = parse_exp_name(name=name, components=components, groups=groups, exclude=exclude)
+        (comp, test, excluded) = parse_exp_name(
+            name=name, components=components, groups=groups, exclude=exclude
+        )
         if not excluded and (not comp or not test):
             raise ValueError("Component or Test not in saved path name")
         if test and comp:
@@ -79,17 +82,17 @@ def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extr
 
             # Copy evaluate and saved_envs into test folder
             cwd = os.getcwd()
-            if not os.path.isfile(path+'/evaluate.py') or overwrite_flag:
-                shutil.copy(cwd+'/evaluate.py', path+'/evaluate.py')
+            if not os.path.isfile(path + "/evaluate.py") or overwrite_flag:
+                shutil.copy(cwd + "/evaluate.py", path + "/evaluate.py")
 
-            if not os.path.isfile(path+'/RADTEAM_core.py') or overwrite_flag:
-                shutil.copy(cwd+'/RADTEAM_core.py', path+'/RADTEAM_core.py')
+            if not os.path.isfile(path + "/RADTEAM_core.py") or overwrite_flag:
+                shutil.copy(cwd + "/RADTEAM_core.py", path + "/RADTEAM_core.py")
 
-            if not os.path.isfile(path+'/core.py') or overwrite_flag:
-                shutil.copy(cwd+'/core.py', path+'/core.py')
+            if not os.path.isfile(path + "/core.py") or overwrite_flag:
+                shutil.copy(cwd + "/core.py", path + "/core.py")
 
-            if not os.path.isdir(path+'/saved_env/'):
-                shutil.copytree(cwd+'/saved_env/', path+'/saved_env/')
+            if not os.path.isdir(path + "/saved_env/"):
+                shutil.copytree(cwd + "/saved_env/", path + "/saved_env/")
 
             # Start evaluation
             print(f"### STARTING: {path}")
@@ -109,21 +112,25 @@ def main(args):
     # Data directory formatting
     if args.data_dir == ".":
         args.data_dir = os.getcwd() + "/"
-    args.data_dir = args.data_dir + '/' if args.data_dir[-1] != '/' else args.data_dir # noqa
+    args.data_dir = (
+        args.data_dir + "/" if args.data_dir[-1] != "/" else args.data_dir
+    )  # noqa
 
     # Set up name parsing
-    groups = ['test1', 'test2', 'test3', 'test4']
+    groups = ["test1", "test2", "test3", "test4"]
 
     # Groups to represent in each x tick group
-    components = ['env', 'PPO', 'Optimizer', 'StatBuf', 'CNN']
+    components = ["env", "PPO", "Optimizer", "StatBuf", "CNN"]
 
     # Results to exclude from plotting
-    exclude = ['RADMARL', 'CNN']
+    exclude = ["RADMARL", "CNN"]
 
     # Get paths
     paths = get_paths(logdir=args.data_dir)
 
-    overwrite_flag = True  # Flag to ensure overwrite of local copy of files happens every time
+    overwrite_flag = (
+        True  # Flag to ensure overwrite of local copy of files happens every time
+    )
 
     # Set up multi-processing
     cpu_count = multiprocessing.cpu_count()
@@ -132,8 +139,15 @@ def main(args):
     extra = len(paths) % cpu_count
 
     thread_it = partial(
-        run, paths=paths, components=components, groups=groups, exclude=exclude, overwrite_flag=overwrite_flag, job_length=job_length, extra=extra
-        )
+        run,
+        paths=paths,
+        components=components,
+        groups=groups,
+        exclude=exclude,
+        overwrite_flag=overwrite_flag,
+        job_length=job_length,
+        extra=extra,
+    )
 
     # Start processes
     p.map(thread_it, range(0, cpu_count))
@@ -145,7 +159,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    ''' Get all paths to directories containing progress.txt and evaluate that directory ''' # noqa
+    """Get all paths to directories containing progress.txt and evaluate that directory"""  # noqa
     import argparse
 
     parser = argparse.ArgumentParser()
