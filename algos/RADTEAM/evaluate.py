@@ -34,7 +34,7 @@ import core as RADA2C_core
 # NOTE: Do not use Ray with env generator for random position generation; will create duplicates of identical episode configurations. Ok for TEST1
 USE_RAY = False
 CHECK_CONFIGS = False
-
+MIN_DISTANCE = 250  # Minimum cm between source and agent
 
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -361,6 +361,25 @@ class RADTEAM_EpisodeRunner:
                         results.unsuccessful.background_intensity.append(self.env.bkg_intensity)
                 results.total_episode_length.append(steps_in_episode)
 
+                # SANITY CHECK
+                if steps_in_episode <= int(MIN_DISTANCE / 100):
+                    # Render environment image
+                    self.env.render(
+                        path=self.render_path,
+                        epoch_count=run_counter,
+                        just_env=True,
+                        episode_count=id,
+                        silent=False,
+                    )            
+                    # Render gif
+                    self.env.render(
+                        path=self.render_path,
+                        epoch_count=run_counter,
+                        episode_count=id,
+                        silent=False,
+                    )
+                    raise ValueError("Steps in episode fewer than min distance from source. Check render and environment.")                
+
                 if terminal_reached_flag:
                     results.success_counter += 1
                     results.successful.episode_length.append(steps_in_episode)
@@ -677,7 +696,7 @@ class RADA2C_EpisodeRunner:
             if episode_over:
                 self.process_render(run_counter=run_counter, id=self.id)
 
-                # Save results
+                # Save info that doesnt change 
                 if run_counter < 1:
                     if terminal_reached_flag:
                         results.successful.intensity.append(self.env.intensity)
@@ -685,7 +704,27 @@ class RADA2C_EpisodeRunner:
                     else:
                         results.unsuccessful.intensity.append(self.env.intensity)
                         results.unsuccessful.background_intensity.append(self.env.bkg_intensity)
+                # Save results
                 results.total_episode_length.append(steps_in_episode)
+
+                # SANITY CHECK
+                if steps_in_episode <= int(MIN_DISTANCE / 100):
+                    # Render environment image
+                    self.env.render(
+                        path=self.render_path,
+                        epoch_count=run_counter,
+                        just_env=True,
+                        episode_count=id,
+                        silent=False,
+                    )            
+                    # Render gif
+                    self.env.render(
+                        path=self.render_path,
+                        epoch_count=run_counter,
+                        episode_count=id,
+                        silent=False,
+                    )
+                    raise ValueError("Steps in episode fewer than min distance from source. Check render and environment.")
 
                 if terminal_reached_flag:
                     results.success_counter += 1
