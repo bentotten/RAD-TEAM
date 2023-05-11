@@ -88,7 +88,7 @@
       "name": "Test RADA2C",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/algos/RADA2C/ppo.py",
+      "program": "${workspaceFolder}/algos/RADA2C/evaluate.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": [
@@ -98,7 +98,9 @@
         "--rada2c",
         "--render",
         "--render_freq",
-        "1"
+        "1",
+        "--no-load_env",
+
       ],
       "cwd": "${workspaceFolder}/algos/RADA2C"
     },    

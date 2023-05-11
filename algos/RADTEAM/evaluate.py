@@ -554,7 +554,7 @@ class RADA2C_EpisodeRunner:
             observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
         else:
             observations, _, _, _ = self.env.reset()
-
+            self.env_sets = {}
             # Save env for refresh
             self.env_sets["env_0"] = [_ for _ in range(5)]
             self.env_sets["env_0"][0] = self.env.src_coords
@@ -686,25 +686,27 @@ class RADA2C_EpisodeRunner:
         return self.id
 
     def process_render(self, run_counter: int, id: int) -> None:
+        silent = False
         # Render
         save_time_triggered = (run_counter % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
         time_to_save = save_time_triggered or ((run_counter + 1) == self.montecarlo_runs)
         if self.render and time_to_save:
-            # Render gif
-            self.env.render(
-                path=self.render_path,
-                epoch_count=run_counter,
-                episode_count=id,
-                silent=True,
-            )
             # Render environment image
             self.env.render(
                 path=self.render_path,
                 epoch_count=run_counter,
                 just_env=True,
                 episode_count=id,
-                silent=True,
+                silent=silent,
+            )            
+            # Render gif
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                episode_count=id,
+                silent=silent,
             )
+
         # Always render first episode
         if self.render and run_counter == 0 and self.render_first_episode:
             # Render gif
@@ -712,7 +714,7 @@ class RADA2C_EpisodeRunner:
                 path=self.render_path,
                 epoch_count=run_counter,
                 episode_count=id,
-                silent=True,
+                silent=silent,
             )
             # Render environment image
             self.env.render(
@@ -720,7 +722,7 @@ class RADA2C_EpisodeRunner:
                 epoch_count=run_counter,
                 just_env=True,
                 episode_count=id,
-                silent=True,
+                silent=silent,
             )
             self.render_first_episode = False
 
@@ -731,7 +733,7 @@ class RADA2C_EpisodeRunner:
                 path=self.render_path,
                 epoch_count=run_counter,
                 episode_count=id,
-                silent=True,
+                silent=silent,
             )
             # Render environment image
             self.env.render(
@@ -739,7 +741,7 @@ class RADA2C_EpisodeRunner:
                 epoch_count=run_counter,
                 just_env=True,
                 episode_count=id,
-                silent=True,
+                silent=silent,
             )
 
 
@@ -776,7 +778,7 @@ class evaluate_PPO:
         if self.eval_kwargs["obstruction_count"] == -1:
             raise ValueError("Random sample of obstruction counts indicated. Please indicate a specific count between 1 and 5")
         self.test_env_dir = self.eval_kwargs["test_env_path"]
-        self.test_env_path = self.test_env_dir + f"/test_env_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}"
+        self.test_env_path = self.test_env_dir + f"/test_env_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}" if self.test_env_dir else None
         self.eval_kwargs["test_env_path"] = self.test_env_path
 
         # Initialize ray
@@ -939,16 +941,26 @@ if __name__ == "__main__":
         help="Run a RADA2C model instead of RADTEAM",
     )
     args = parser.parse_args()
+    
+    # Go to data directory
+    if args.data_dir == ".":
+        args.data_dir = os.getcwd() + "/"
+    args.data_dir = args.data_dir + "/" if args.data_dir[-1] != "/" else args.data_dir
+    
+    os.chdir(args.data_dir)    
 
     number_of_agents = args.agents
     mode = "collaborative"  # No critic, ok to leave as collaborative for all tests
     render = args.render
     obstruction_count = args.obstruct
-    if args.test in ["1", "2", "3", "4"]:
-        env_path = os.getcwd() + f"/saved_env/test_environments_TEST{args.test}"
+    if args.load_env:
+        if args.test in ["1", "2", "3", "4"]:
+            env_path = os.getcwd() + f"/saved_env/test_environments_TEST{args.test}"
+        else:
+            env_path = os.getcwd() + f"/saved_env/test_environments_{args.max_dim[0]}x{args.max_dim[1]}"
+        assert os.path.isdir(env_path), f"{env_path} does not exist"
     else:
-        env_path = os.getcwd() + f"/saved_env/test_environments_{args.max_dim[0]}x{args.max_dim[1]}"
-    assert os.path.isdir(env_path), f"{env_path} does not exist"
+        env_path = None
 
     PFGRU = False
     seed = 2
