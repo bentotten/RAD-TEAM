@@ -347,7 +347,7 @@ if __name__ == "__main__":
 
     for graphname, graph in zip([performance_markers['accuracy'], performance_markers['speed'], performance_markers['score']], [accuracy_datasets, speed_datasets, score_datasets]):
         # try:
-        plot(graphname=graphname, datasets=graph, groups=components, tests=groups, y_label=performance_markers['accuracy'], path=os.getcwd())
+        plot(graphname=graphname, datasets=graph, groups=components, tests=groups, y_label=graphname, path=os.getcwd())
         # except Exception as e:
         #     print(e)
 
