@@ -703,7 +703,7 @@ class RadSearch(gym.Env):
 
             # Sensor measurement for obstacles and boundaries directly around agent
             sensor_meas: npt.NDArray[np.float64] = (
-                self.obstruction_sensors(agent=agent) if self.num_obs > 0 or self.enforce_grid_boundaries else np.zeros(DETECTABLE_DIRECTIONS)
+                self.obstruction_sensors(agent=agent) if self.obstruction_count > 0 or self.enforce_grid_boundaries else np.zeros(DETECTABLE_DIRECTIONS)
             )
             # State is an 11-tuple ndarray
             # [intensity, x-coord, y-coord, 8 directions of obstacle detection]
@@ -853,11 +853,11 @@ class RadSearch(gym.Env):
 
         if self.epoch_end:
             if self.obstruction_count == -1:
-                self.num_obs = self.np_random.integers(1, self.obstruction_max)  # type: ignore
+                self.obstruction_count = self.np_random.integers(1, self.obstruction_max)  # type: ignore
             elif self.obstruction_count == 0:
-                self.num_obs = 0
+                self.obstruction_count = 0
             else:
-                self.num_obs = self.obstruction_count
+                self.obstruction_count = self.obstruction_count
 
             self.create_obs()
             self.walls = Polygon(list(self.bbox))
@@ -926,7 +926,7 @@ class RadSearch(gym.Env):
 
         key = "env_" + str(id)
 
-        self.num_obs = len(env_dict[key][4])
+        self.obstruction_count = len(env_dict[key][4])
         self.src_coords = env_dict[key][0]
         self.intensity = env_dict[key][2]
         self.bkg_intensity = env_dict[key][3]
@@ -941,13 +941,13 @@ class RadSearch(gym.Env):
             agent.detector = to_vis_p(agent.det_coords)
 
         # Get obstacles from parameters
-        if self.num_obs > 0:
+        if self.obstruction_count > 0:
             self.poly = []
             self.line_segs = []
             obs_coord = env_dict[key][4]
 
             # Make compatible with latest Rad-Search env
-            self.obs_coord: List[List[Point]] = [[] for _ in range(self.num_obs)]
+            self.obs_coord: List[List[Point]] = [[] for _ in range(self.obstruction_count)]
             for i, obstruction in enumerate(obs_coord):
                 try:
                     self.obs_coord[i].extend(list(map(tuple, obstruction[0])))  # type: ignore
@@ -1070,12 +1070,12 @@ class RadSearch(gym.Env):
         """
         ii = 0
         intersect = False
-        self.obs_coord: List[List[Point]] = [[] for _ in range(self.num_obs)]
+        self.obs_coord: List[List[Point]] = [[] for _ in range(self.obstruction_count)]
         self.poly: List[Polygon] = []
         self.line_segs: List[List[vis.Line_Segment]] = []
         obs_coord: List[Point] = []
 
-        while ii < self.num_obs:
+        while ii < self.obstruction_count:
             seed_x: float = self.np_random.integers(  # type: ignore
                 self.search_area[0][0], self.search_area[2][0] * 0.9  # type: ignore
             ).astype(
@@ -1177,7 +1177,7 @@ class RadSearch(gym.Env):
         # Check if detectors starting location is in an object
         test_count = 0
         while not det_clear and test_count < MAX_CREATION_TRIES:
-            while not resamp and obstacle_index < self.num_obs:
+            while not resamp and obstacle_index < self.obstruction_count:
                 if det_point._in(to_vis_poly(self.poly[obstacle_index]), EPSILON):  # type: ignore
                     resamp = True
                 obstacle_index += 1
@@ -1219,14 +1219,14 @@ class RadSearch(gym.Env):
                         )
                 src_point = to_vis_p(source)
                 L: vis.Line_Segment = vis.Line_Segment(det_point, src_point)
-                while not resamp and obstacle_index < self.num_obs:
+                while not resamp and obstacle_index < self.obstruction_count:
                     poly_p: vis.Polygon = to_vis_poly(self.poly[obstacle_index])
                     if src_point._in(poly_p, EPSILON):  # type: ignore
                         resamp = True
                     if not resamp and vis.boundary_distance(L, poly_p) < 0.001:  # type: ignore
                         inter = True
                     obstacle_index += 1
-                if self.num_obs == 0 or (num_retry > 20 and not resamp):
+                if self.obstruction_count == 0 or (num_retry > 20 and not resamp):
                     src_clear = True
                 elif resamp or not inter:
                     source = rand_point()
@@ -1257,7 +1257,7 @@ class RadSearch(gym.Env):
         inter = False
         kk = 0
         L = vis.Line_Segment(agent.detector, self.source)
-        while not inter and kk < self.num_obs:
+        while not inter and kk < self.obstruction_count:
             if vis.boundary_distance(L, to_vis_poly(self.poly[kk])) < threshold and not math.isclose(  # type: ignore
                 math.sqrt(agent.euc_dist), agent.sp_dist, abs_tol=0.1
             ):
@@ -1271,7 +1271,7 @@ class RadSearch(gym.Env):
         """
         jj = 0
         obs_boundary = False
-        while not obs_boundary and jj < self.num_obs:
+        while not obs_boundary and jj < self.obstruction_count:
             if agent.detector._in(to_vis_poly(self.poly[jj]), EPSILON):  # type: ignore
                 obs_boundary = True
             jj += 1
@@ -1308,7 +1308,7 @@ class RadSearch(gym.Env):
         obs_idx_ls: List[int] = [0] * len(self.poly)  # Keeps track of how many steps will interect with which obstacle
         inter = 0  # Intersect flag
         seg_dist: List[float] = [0.0] * 4  # Saves obstruction line segments
-        if self.num_obs > 0:
+        if self.obstruction_count > 0:
             for idx, seg in enumerate(segs):  # TODO change seg to direction_segment
                 for obs_idx, poly in enumerate(self.line_segs):  # TODO change poly to obstacle
                     for seg_idx, obs_seg in enumerate(poly):  # TODO change obs_seg to obstacle_line_segment

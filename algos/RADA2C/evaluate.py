@@ -19,6 +19,7 @@ import json
 import ray
 import joblib
 from statsmodels.stats.weightstats import DescrStatsW
+import visilibity as vis
 
 # Simulation Environment
 import gym  # type: ignore
@@ -218,6 +219,8 @@ class RADTEAM_EpisodeRunner:
         if self.load_env:
             # Refresh environment with test env parameters
             observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
+            # observations, self.env = refresh_env(env_dict=self.env_sets, env=self.env, n=self.id, num_obs=self.env.obstruction_count)
+
         else:
             # Reset environment and save test env parameters
             observations, _, _, _ = self.env.reset()
@@ -698,7 +701,7 @@ class RADA2C_EpisodeRunner:
                 just_env=True,
                 episode_count=id,
                 silent=silent,
-            )            
+            )
             # Render gif
             self.env.render(
                 path=self.render_path,
@@ -778,7 +781,9 @@ class evaluate_PPO:
         if self.eval_kwargs["obstruction_count"] == -1:
             raise ValueError("Random sample of obstruction counts indicated. Please indicate a specific count between 1 and 5")
         self.test_env_dir = self.eval_kwargs["test_env_path"]
-        self.test_env_path = self.test_env_dir + f"/test_env_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}" if self.test_env_dir else None
+        self.test_env_path = (
+            self.test_env_dir + f"/test_env_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}" if self.test_env_dir else None
+        )
         self.eval_kwargs["test_env_path"] = self.test_env_path
 
         # Initialize ray
@@ -921,7 +926,7 @@ if __name__ == "__main__":
         type=str,
         help="Directory where results are saved. Ex: ../models/train/gru_8_acts/bpf/model_dir",
         default=".",  # noqa
-    )    
+    )
     parser.add_argument(
         "--load_env",
         action=argparse.BooleanOptionalAction,
@@ -941,13 +946,13 @@ if __name__ == "__main__":
         help="Run a RADA2C model instead of RADTEAM",
     )
     args = parser.parse_args()
-    
+
     # Go to data directory
     if args.data_dir == ".":
         args.data_dir = os.getcwd() + "/"
     args.data_dir = args.data_dir + "/" if args.data_dir[-1] != "/" else args.data_dir
-    
-    os.chdir(args.data_dir)    
+
+    os.chdir(args.data_dir)
 
     number_of_agents = args.agents
     mode = "collaborative"  # No critic, ok to leave as collaborative for all tests
