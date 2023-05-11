@@ -707,17 +707,6 @@ class RADA2C_EpisodeRunner:
 
                 # observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
                 observations = self.env.refresh_environment(env_dict=self.env_sets, n=self.id, num_obs=self.obstruction_count)
-                
-                # TODO DELETE ME
-                # Render environment image
-                self.env.render(
-                    path=self.render_path,
-                    epoch_count=run_counter,
-                    just_env=True,
-                    episode_count=id,
-                    silent=False,
-                )
-                ##############################
 
                 # Reset stat buffer for RAD-A2C
                 for id, ac in self.agents.items():
@@ -969,9 +958,10 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--obstruct", type=int, default=0, help="Number of obstructions")
+    parser.add_argument("--obstacles", type=int, default=0, help="Number of obstructions")
     parser.add_argument("--agents", type=int, default=1, help="Number of agents")
     parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
+    parser.add_argument("--snr", type=str, default="none", help="Signal to noise ratio [none, low, med, high]")    
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--runs", type=int, default=100)
     parser.add_argument("--max_dim", type=list, default=[1500, 1500])
@@ -1001,18 +991,19 @@ if __name__ == "__main__":
         help="Run a RADA2C model instead of RADTEAM",
     )
     args = parser.parse_args()
-    
+
     # Go to data directory
     if args.data_dir == ".":
         args.data_dir = os.getcwd() + "/"
     args.data_dir = args.data_dir + "/" if args.data_dir[-1] != "/" else args.data_dir
-    
-    os.chdir(args.data_dir)    
+
+    os.chdir(args.data_dir)
 
     number_of_agents = args.agents
     mode = "collaborative"  # No critic, ok to leave as collaborative for all tests
     render = args.render
-    obstruction_count = args.obstruct
+    obstruction_count = args.obstacles
+
     if args.load_env:
         if args.test in ["1", "2", "3", "4"]:
             env_path = os.getcwd() + f"/saved_env/test_environments_TEST{args.test}"
@@ -1047,7 +1038,7 @@ if __name__ == "__main__":
             episodes=args.episodes,  # Number of episodes to test on [1 - 1000]
             montecarlo_runs=args.runs,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
             actor_critic_architecture="cnn",  # Neural network type (control)
-            snr="none",  # signal to noise ratio [none, low, medium, high]
+            snr=args.snr,  # signal to noise ratio [none, low, medium, high]
             obstruction_count=obstruction_count,  # number of obstacles [0 - 7] (num_obs)
             steps_per_episode=120,
             number_of_agents=number_of_agents,
@@ -1070,11 +1061,11 @@ if __name__ == "__main__":
             env_name="gym_rad_search:RadSearchMulti-v1",
             env_kwargs=env_kwargs,
             model_path=(lambda: os.getcwd())(),
-            episodes=100,  # Number of episodes to test on [1 - 1000]
-            montecarlo_runs=100,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
+            episodes=args.episodes,  # Number of episodes to test on [1 - 1000]
+            montecarlo_runs=args.runs,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
             actor_critic_architecture="rnn",  # Neural network type (control)
-            snr="none",  # signal to noise ratio [none, low, medium, high]
-            obstruction_count=0,  # number of obstacles [0 - 7] (num_obs)
+            snr=args.snr,  # signal to noise ratio [none, low, medium, high]
+            obstruction_count=obstruction_count,  # number of obstacles [0 - 7] (num_obs)
             steps_per_episode=120,
             number_of_agents=1,
             enforce_boundaries=True,

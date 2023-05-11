@@ -954,7 +954,8 @@ class RadSearch(gym.Env):
             env.obstruction_count = len(env_dict[key][4])
             for obs in env.obs_coord:
                 geom = [vis.Point(float(obs[jj][0]), float(obs[jj][1])) for jj in range(len(obs))]
-                poly = vis.Polygon(geom)
+                # poly = vis.Polygon(geom)
+                poly = [(float(obs[jj][0]), float(obs[jj][1])) for jj in range(len(obs))]
                 env.poly.append(poly)
                 env.line_segs.append(
                     [
@@ -966,8 +967,10 @@ class RadSearch(gym.Env):
                 )
 
             env.env_ls = [solid for solid in env.poly]
-            env.env_ls.insert(0, to_vis_poly(env.walls))
-            env.world = vis.Environment(env.env_ls)
+            env.env_ls.insert(0, env.walls)
+            # env.world = vis.Environment(env.env_ls)
+            self.world = vis.Environment(list(map(to_vis_poly, env.env_ls)))
+
             # Check if the environment is valid
             assert env.world.is_valid(EPSILON), "Environment is not valid"
             env.vis_graph = vis.Visibility_Graph(env.world, EPSILON)
