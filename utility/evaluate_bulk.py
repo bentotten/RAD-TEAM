@@ -5,7 +5,7 @@ import sys
 
 
 PYTHON_PATH = sys.executable
-
+SKIP_FILES = -1  # A way to skip directories that have already been processed
 
 def parse_exp_name(name, components, groups, exclude):
     first_split = name.split(' ')
@@ -88,6 +88,9 @@ if __name__ == "__main__":
     # Get paths
     paths = get_paths(logdir=args.data_dir)
 
+    counter = 0
+    overwrite_flag = True  # Flag to ensure overwrite of local copy of files happens every time
+
     # Begin evaluation
     for path in paths:
         # Get name
@@ -95,27 +98,38 @@ if __name__ == "__main__":
         (comp, test, excluded) = parse_exp_name(name=name, components=components, groups=groups, exclude=exclude)
         if not excluded and (not comp or not test):
             raise ValueError("Component or Test not in saved path name")
-        test = test[-1]  # Get just test digit
+        if test and comp:
+            test = test[-1]  # Get just test digit
 
-        # Copy evaluate and saved_envs into test folder
-        cwd = os.getcwd()
-        if not os.path.isfile(path+'/evaluate.py'):
-            shutil.copy(cwd+'/evaluate.py', path+'/evaluate.py')
+            # Copy evaluate and saved_envs into test folder
+            cwd = os.getcwd()
+            if not os.path.isfile(path+'/evaluate.py') or overwrite_flag:
+                shutil.copy(cwd+'/evaluate.py', path+'/evaluate.py')
 
-        if not os.path.isfile(path+'/RADTEAM_core.py'):
-            shutil.copy(cwd+'/RADTEAM_core.py', path+'/RADTEAM_core.py')
+            if not os.path.isfile(path+'/RADTEAM_core.py') or overwrite_flag:
+                shutil.copy(cwd+'/RADTEAM_core.py', path+'/RADTEAM_core.py')
 
-        if not os.path.isdir(path+'/saved_env/'):
-            shutil.copytree(cwd+'/saved_env/', path+'/saved_env/')
+            if not os.path.isfile(path+'/core.py') or overwrite_flag:
+                shutil.copy(cwd+'/core.py', path+'/core.py')
 
-        # Start evaluation
-        og_dir = os.getcwd()
-        os.chdir(path)
+            if not os.path.isdir(path+'/saved_env/'):
+                shutil.copytree(cwd+'/saved_env/', path+'/saved_env/')
 
-        launch = [PYTHON_PATH, "evaluate.py", "--rada2c", "--test", test]
+            # Start evaluation
+            print(f"### STARTING: {path}")
+            og_dir = os.getcwd()
+            os.chdir(path)
 
-        subprocess.run(launch)
-        os.chdir(og_dir)
+            if counter > SKIP_FILES:
+                launch = [PYTHON_PATH, "evaluate.py", "--rada2c", "--test", test]
+                try:
+                    subprocess.run(launch)
+                except Exception as e:
+                    print(e)
+
+            os.chdir(og_dir)
+        counter += 1
+
 
     # Plot test results
     subprocess.run(["python3", "plot_results.py"])
