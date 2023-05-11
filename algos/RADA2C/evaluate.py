@@ -4,9 +4,7 @@ Evaluate agents and update neural networks using simulation environment.
 
 import os
 import time
-
 import torch
-
 import numpy as np
 
 from typing import (
@@ -19,17 +17,22 @@ from dataclasses import dataclass, field
 
 import json
 import ray
+import joblib
+from statsmodels.stats.weightstats import DescrStatsW
 
 # Simulation Environment
 import gym  # type: ignore
-from gym_rad_search.envs import rad_search_env  # type: ignore
 from gym_rad_search.envs.rad_search_env import RadSearch  # type: ignore
 
 # Neural Networks
-import core as RADA2C_core  # type: ignore
+import RADTEAM_core as RADCNN_core  # type: ignore
+import core as RADA2C_core
+
+# import RADA2C_core as RADA2C_core  # type: ignore
 
 # NOTE: Do not use Ray with env generator for random position generation; will create duplicates of identical episode configurations. Ok for TEST1
 USE_RAY = False
+CHECK_CONFIGS = False
 
 
 class NpEncoder(json.JSONEncoder):
@@ -49,7 +52,6 @@ class Results:
     episode_return: List[float] = field(default_factory=lambda: list())
     intensity: List[float] = field(default_factory=lambda: list())
     background_intensity: List[float] = field(default_factory=lambda: list())
-    success_count: List[int] = field(default_factory=lambda: list())
 
 
 @dataclass
@@ -78,7 +80,351 @@ class Distribution:
 # Uncomment when ready to run with Ray
 # @ray.remote
 @dataclass
-class EpisodeRunner:
+class RADTEAM_EpisodeRunner:
+    """
+    Remote function to execute requested number of episodes for requested number of monte carlo runs each episode for RADTEAM models
+    """
+
+    id: int
+    current_dir: str
+
+    env_name: str
+    env_kwargs: Dict
+    steps_per_episode: int
+    team_mode: str
+    resolution_multiplier: float
+
+    render: bool
+    save_gif_freq: int
+    render_path: str
+
+    model_path: str
+    save_path_for_ac: str
+    test_env_path: str = field(default="./test_environments")
+    save_path: str = field(default=".")
+    seed: Union[int, None] = field(default=0)
+
+    obstruction_count: int = field(default=0)
+    enforce_boundaries: bool = field(default=False)
+    actor_critic_architecture: str = field(default="cnn")
+    number_of_agents: int = field(default=1)
+    episodes: int = field(default=100)
+    montecarlo_runs: int = field(default=100)
+    snr: str = field(default="high")
+    env_sets: Dict = field(default_factory=lambda: dict())
+
+    render_first_episode: bool = field(default=True)
+    PFGRU: bool = field(default=True)
+    load_env: bool = field(default=True)
+
+    # Initialized elsewhere
+    #: Object that holds agents
+    agents: Dict[int, RADCNN_core.CNNBase] = field(default_factory=lambda: dict())
+
+    def __post_init__(self) -> None:
+        # Change to correct directory
+        os.chdir(self.current_dir)
+
+        # Load or create test environments
+        if self.load_env:
+            self.env_sets = joblib.load(self.test_env_path)
+        else:
+            self.env_sets = None
+
+        # Create own instatiation of environment
+        self.env = self.create_environment()
+        self.test_number = self.env.TEST
+
+        if not USE_RAY:
+            print(f"Evaluating: {self.number_of_agents} agents with obstruction count: {self.obstruction_count}")
+
+        # Get agent model paths and saved agent configurations
+        agent_models = {}
+        for child in os.scandir(self.model_path):
+            if child.is_dir() and ("agent" in child.name or "pyt_save" in child.name):
+                agent_models[
+                    int(child.name[0])
+                ] = child.path  # Read in model path by id number. NOTE: Important that ID number is the first element of file name
+
+        if CHECK_CONFIGS:
+            obj = json.load(open(f"{self.model_path}/config_agent0.json"))
+            if "self" in obj.keys():
+                original_configs = list(obj["self"].values())[0]["ppo_kwargs"]["actor_critic_args"]
+            else:
+                original_configs = obj  # Original project save format
+
+        # Set up static A2C actor-critic args
+        actor_critic_args = dict(
+            action_space=self.env.detectable_directions,
+            # Also known as state dimensions: The dimensions of the observation returned from the environment
+            observation_space=self.env.observation_space.shape[0],
+            steps_per_episode=self.steps_per_episode,
+            number_of_agents=self.number_of_agents,
+            detector_step_size=self.env.step_size,
+            environment_scale=self.env.scale,
+            bounds_offset=self.env.observation_area,
+            enforce_boundaries=self.enforce_boundaries,
+            grid_bounds=self.env.scaled_grid_max,
+            resolution_multiplier=self.resolution_multiplier,
+            GlobalCritic=None,
+            no_critic=True,
+            save_path=self.save_path_for_ac,
+            PFGRU=self.PFGRU,
+        )
+
+        # Check current important parameters match parameters read in
+        if CHECK_CONFIGS:
+            for arg in actor_critic_args:
+                if arg != "no_critic" and arg != "GlobalCritic" and arg != "save_path":
+                    if type(original_configs[arg]) == int or type(original_configs[arg]) == float or type(original_configs[arg]) == bool:
+                        assert (
+                            actor_critic_args[arg] == original_configs[arg]
+                        ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                    elif type(original_configs[arg]) is str:
+                        if arg == "net_type":
+                            assert actor_critic_args[arg] == original_configs[arg]
+                        else:
+                            to_list = original_configs[arg].strip("][").split(" ")
+                            config = np.array([float(x) for x in to_list], dtype=np.float32)
+                            assert np.array_equal(
+                                config, actor_critic_args[arg]
+                            ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                    elif type(original_configs[arg]) is list:
+                        for a, b in zip(original_configs[arg], actor_critic_args[arg]):
+                            assert a == b, f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                    else:
+                        assert (
+                            actor_critic_args[arg] == original_configs[arg]
+                        ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+
+        # Initialize agents and load agent models
+        for i in range(self.number_of_agents):
+            self.agents[i] = RADCNN_core.CNNBase(id=i, **actor_critic_args)  # NOTE: No updates, do not need PPO
+            self.agents[i].load(checkpoint_path=agent_models[i])
+
+            # Sanity check
+            assert self.agents[i].critic.is_mock_critic()
+
+    def run(self) -> MonteCarloResults:
+        # Prepare tracking buffers and counters
+        episode_return = 0
+        steps_in_episode: int = 0
+        terminal_counter: Dict[int, int] = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
+        run_counter = 0
+
+        # Prepare results buffers
+        results = MonteCarloResults(id=self.id)
+
+        if self.load_env:
+            # Refresh environment with test env parameters
+            observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
+        else:
+            # Reset environment and save test env parameters
+            observations, _, _, _ = self.env.reset()
+
+            # Save env for refresh
+            self.env_sets[f"env_{self.id}"] = [_ for _ in range(5)]
+            self.env_sets[f"env_{self.id}"][0] = self.env.src_coords
+            self.env_sets[f"env_{self.id}"][1] = self.env.agents[0].det_coords
+            self.env_sets[f"env_{self.id}"][2] = self.env.intensity
+            self.env_sets[f"env_{self.id}"][3] = self.env.bkg_intensity
+            self.env_sets[f"env_{self.id}"][4] = []  # obstructions
+
+        for agent in self.agents.values():
+            agent.set_mode("eval")
+
+        # Prepare episode variables
+        agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
+        hiddens: Dict[int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]] = {
+            id: self.agents[id].reset_hidden() for id in self.agents
+        }  # For RAD-A2C compatibility
+
+        while run_counter < self.montecarlo_runs:
+            # Get agent thoughts on current state. Actor: Compute action and logp (log probability); Critic: compute state-value
+            agent_thoughts.clear()
+            for id, ac in self.agents.items():
+                with torch.no_grad():
+                    agent_thoughts[id], _ = ac.step(observations, hiddens[id])
+
+                hiddens[id] = agent_thoughts[id].hidden
+
+            # Create action list to send to environment
+            agent_action_decisions = {id: int(agent_thoughts[id].action) for id in agent_thoughts}
+            for action in agent_action_decisions.values():
+                assert 0 <= action and action < int(self.env.number_actions)
+
+            # Take step in environment - Note: will be missing last reward, rewards link to previous observation in env
+            observations, rewards, terminals, _ = self.env.step(action=agent_action_decisions)
+
+            # Incremement Counters
+            episode_return += rewards["team_reward"]
+            steps_in_episode += 1
+
+            # Tally up ending conditions
+            # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not all,
+            # this will need to be changed.
+            terminal_reached_flag = False
+            for id in terminal_counter:
+                if terminals[id] is True:
+                    terminal_counter[id] += 1
+                    terminal_reached_flag = True
+
+            # Stopping conditions for episode
+            timeout: bool = steps_in_episode == self.steps_per_episode  # Max steps per episode reached
+            episode_over: bool = terminal_reached_flag or timeout  # Either timeout or terminal found
+
+            if episode_over:
+                self.process_render(run_counter=run_counter, id=self.id)
+
+                # Save results
+                if run_counter < 1:
+                    if terminal_reached_flag:
+                        results.successful.intensity.append(self.env.intensity)
+                        results.successful.background_intensity.append(self.env.bkg_intensity)
+                    else:
+                        results.unsuccessful.intensity.append(self.env.intensity)
+                        results.unsuccessful.background_intensity.append(self.env.bkg_intensity)
+                results.total_episode_length.append(steps_in_episode)
+
+                if terminal_reached_flag:
+                    results.success_counter += 1
+                    results.successful.episode_length.append(steps_in_episode)
+                    results.successful.episode_return.append(episode_return)
+                else:
+                    results.unsuccessful.episode_length.append(steps_in_episode)
+                    results.unsuccessful.episode_return.append(episode_return)
+
+                results.total_episode_return.append(episode_return)
+
+                # Incremenet run counter
+                run_counter += 1
+
+                # Reset environment without performing an env.reset()
+                episode_return = 0
+                steps_in_episode = 0
+                terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
+
+                observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
+
+                # Reset agents
+                for agent in self.agents.values():
+                    agent.reset()
+
+        results.completed_runs = run_counter
+
+        print(f"Finished episode {self.id}! Success count: {results.success_counter} out of {self.montecarlo_runs}")
+        return results
+
+    def create_environment(self) -> RadSearch:
+        if USE_RAY:
+            silent = True
+        else:
+            silent = False
+        env = gym.make(self.env_name, silent=silent, **self.env_kwargs)
+        env.reset()
+        return env
+
+    def getattr(self, attr):
+        return getattr(self, attr)
+
+    def say_hello(self):
+        return self.id
+
+    def process_render(self, run_counter: int, id: int) -> None:
+        if USE_RAY:
+            silent = True
+        else:
+            silent = False
+        # Render
+        save_time_triggered = (run_counter % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
+        time_to_save = save_time_triggered or ((run_counter + 1) == self.montecarlo_runs)
+        if self.render and time_to_save:
+            # Render Agent heatmaps
+            if self.actor_critic_architecture == "cnn":
+                for id, ac in self.agents.items():
+                    # TODO add episode counter
+                    ac.render(
+                        savepath=self.render_path,
+                        episode_count=id,
+                        epoch_count=run_counter,
+                        add_value_text=True,
+                    )
+            # Render gif
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                episode_count=id,
+                silent=silent,
+            )
+            # Render environment image
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                just_env=True,
+                episode_count=id,
+                silent=silent,
+            )
+        # Always render first episode
+        if self.render and run_counter == 0 and self.render_first_episode:
+            # Render Agent heatmaps
+            if self.actor_critic_architecture == "cnn":
+                for id, ac in self.agents.items():
+                    ac.render(
+                        savepath=self.render_path,
+                        epoch_count=run_counter,
+                        add_value_text=True,
+                        episode_count=id,
+                    )
+            # Render gif
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                episode_count=id,
+                silent=silent,
+            )
+            # Render environment image
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                just_env=True,
+                episode_count=id,
+                silent=silent,
+            )
+            self.render_first_episode = False
+
+        # Always render last episode
+        if self.render and run_counter == self.montecarlo_runs - 1:
+            # Render Agent heatmaps
+            if self.actor_critic_architecture == "cnn":
+                for id, ac in self.agents.items():
+                    ac.render(
+                        savepath=self.render_path,
+                        epoch_count=run_counter,
+                        add_value_text=True,
+                        episode_count=id,
+                    )
+            # Render gif
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                episode_count=id,
+                silent=silent,
+            )
+            # Render environment image
+            self.env.render(
+                path=self.render_path,
+                epoch_count=run_counter,
+                just_env=True,
+                episode_count=id,
+                silent=silent,
+            )
+
+
+# Uncomment when ready to run with Ray
+# @ray.remote
+@dataclass
+class RADA2C_EpisodeRunner:
+    ''' Episode runner for RADA2C Models '''
     id: int
     # env_sets: Dict
     current_dir: str
@@ -108,7 +454,8 @@ class EpisodeRunner:
     snr: str = field(default="high")
 
     render_first_episode: bool = field(default=True)
-    env_dict: Dict = field(default_factory=lambda: dict())
+    env_sets: Dict = field(default_factory=lambda: dict())
+    load_env: bool = field(default=True)
 
     # Initialized elsewhere
     #: Object that holds agents
@@ -121,7 +468,13 @@ class EpisodeRunner:
         os.chdir(self.current_dir)
 
         # Create own instatiation of environment
-        self.env: rad_search_env = self.create_environment()
+        self.env = self.create_environment()
+
+        # Load or create test environments
+        if self.load_env:
+            self.env_sets = joblib.load(self.test_env_path)
+        else:
+            self.env_sets = None
 
         # Get agent model paths and saved agent configurations
         agent_models = {}
@@ -210,15 +563,18 @@ class EpisodeRunner:
         stat_buffers = dict()
 
         # Reset environment and save test env parameters
-        observations, _, _, _ = self.env.reset()
+        if self.load_env:
+            observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
+        else:
+            observations, _, _, _ = self.env.reset()
 
-        # Save env for refresh
-        self.env_dict["env_0"] = [_ for _ in range(5)]
-        self.env_dict["env_0"][0] = self.env.src_coords
-        self.env_dict["env_0"][1] = self.env.agents[0].det_coords
-        self.env_dict["env_0"][2] = self.env.intensity
-        self.env_dict["env_0"][3] = self.env.bkg_intensity
-        self.env_dict["env_0"][4] = []  # obstructions
+            # Save env for refresh
+            self.env_sets["env_0"] = [_ for _ in range(5)]
+            self.env_sets["env_0"][0] = self.env.src_coords
+            self.env_sets["env_0"][1] = self.env.agents[0].det_coords
+            self.env_sets["env_0"][2] = self.env.intensity
+            self.env_sets["env_0"][3] = self.env.bkg_intensity
+            self.env_sets["env_0"][4] = []  # obstructions
 
         self.agents[0].pi.eval()
         self.agents[0].model.eval()
@@ -342,7 +698,7 @@ class EpisodeRunner:
                 }  # Terminal counter for the epoch (not the episode)
 
                 observations = self.env.refresh_environment(
-                    env_dict=self.env_dict, id=self.id, num_obs=self.obstruction_count
+                    env_dict=self.env_sets, id=self.id
                 )
 
                 # Reset stat buffer for RAD-A2C
@@ -445,6 +801,10 @@ class evaluate_PPO:
     """
 
     eval_kwargs: Dict
+    #: Path to save results to
+    save_path: Union[str, None] = field(default=None)
+    #: Load RADA2C or RADTEAM
+    RADTEAM: bool = field(default=True)
 
     # Initialized elsewhere
     #: Directory containing test environments. Each test environment file contains 1000 environment configurations.
@@ -457,40 +817,41 @@ class evaluate_PPO:
     runners: Dict = field(init=False)
     #: Number of monte carlo runs per episode configuration
     montecarlo_runs: int = field(init=False)
-    #: Path to save results to
-    save_path: Union[str, None] = field(default=None)
+
 
     def __post_init__(self) -> None:
         self.montecarlo_runs = self.eval_kwargs["montecarlo_runs"]
         if not self.save_path:
             self.save_path = eval_kwargs["model_path"]  # type: ignore
+
+        # get test envs
+        if self.eval_kwargs["obstruction_count"] == -1:
+            raise ValueError("Random sample of obstruction counts indicated. Please indicate a specific count between 1 and 5")
+        self.test_env_dir = self.eval_kwargs["test_env_path"]
+        self.test_env_path = self.test_env_dir + f"/test_env_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}"
+        self.eval_kwargs["test_env_path"] = self.test_env_path
+
         # Initialize ray
         if USE_RAY:
             try:
                 ray.init(address="auto")
-            except:
+            except:  # noqa
                 print("Ray failed to initialize. Running on single server.")
 
     def evaluate(self):
         """Driver"""
         start_time = time.time()
         if USE_RAY:
-            # Uncomment when ready to run with Ray
-            runners = {
-                i: EpisodeRunner.remote(
-                    id=i, current_dir=os.getcwd(), **self.eval_kwargs
-                )
-                for i in range(self.eval_kwargs["episodes"])
-            }
-
+            if self.RADTEAM:
+                runners = {i: RADTEAM_EpisodeRunner.remote(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}
+            else:
+                runners = {i: RADA2C_EpisodeRunner.remote(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}                
             full_results = ray.get([runner.run.remote() for runner in runners.values()])
         else:
-            # Uncomment when to run without Ray
-            self.runners = {
-                i: EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs)
-                for i in range(self.eval_kwargs["episodes"])
-            }
-
+            if self.RADTEAM:
+                self.runners = {i: RADTEAM_EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}
+            else:
+                self.runners = {i: RADA2C_EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs) for i in range(self.eval_kwargs["episodes"])}
             full_results = [runner.run() for runner in self.runners.values()]
 
         print("Runtime: {}", time.time() - start_time)
@@ -509,44 +870,27 @@ class evaluate_PPO:
             raw_results[index]["total_episode_return"] = result.total_episode_length
             raw_results[index]["successful"] = dict()
 
-            raw_results[index]["successful"][
-                "episode_length"
-            ] = result.successful.episode_length
-            raw_results[index]["successful"][
-                "episode_return"
-            ] = result.successful.episode_return
+            raw_results[index]["successful"]["episode_length"] = result.successful.episode_length
+            raw_results[index]["successful"]["episode_return"] = result.successful.episode_return
             raw_results[index]["successful"]["intensity"] = result.successful.intensity
 
             raw_results[index]["unsuccessful"] = dict()
-            raw_results[index]["unsuccessful"][
-                "episode_length"
-            ] = result.unsuccessful.episode_length
-            raw_results[index]["unsuccessful"][
-                "episode_return"
-            ] = result.unsuccessful.episode_return
-            raw_results[index]["unsuccessful"][
-                "intensity"
-            ] = result.unsuccessful.intensity
+            raw_results[index]["unsuccessful"]["episode_length"] = result.unsuccessful.episode_length
+            raw_results[index]["unsuccessful"]["episode_return"] = result.unsuccessful.episode_return
+            raw_results[index]["unsuccessful"]["intensity"] = result.unsuccessful.intensity
 
             counter += result.completed_runs
-            
 
-        print(f"Total Runs: {counter}")
-        print(
-            f"Accuracy - Median Success Counts: {score['accuracy']['median']} with std {score['accuracy']['std']}"
-        )
-        print(
-            f"Speed - Median Successful Episode Length: {score['speed']['median']} with std {score['speed']['std']}"
-        )
-        print(
-            f"Learning - Median Episode Return: {score['score']['median']} with std {score['score']['std']}"
-        )
-        
         with open(f"{self.save_path}/results.json", "w+") as f:
             f.write(json.dumps(score, indent=4, cls=NpEncoder))
-            
+
         with open(f"{self.save_path}/results_raw.json", "w+") as f:
-            f.write(json.dumps(raw_results, indent=4, cls=NpEncoder))        
+            f.write(json.dumps(raw_results, indent=4, cls=NpEncoder))
+
+        # print(f"Total Runs: {counter}")
+        # print(f"Accuracy - Median Success Counts: {score['accuracy'][0]['median']} with std {score['stdev']['accuracy']}")
+        # print(f"Speed - Median Successful Episode Length: {score['speed'][0]['median']} with std {score['stdev']['speed']}")
+        # print(f"Learning - Median Episode Return: {score['score'][0]['median']} with std {score['stdev']['score']}")            
 
     def calc_stats(self, results, mc=None):
         """
@@ -569,77 +913,149 @@ class evaluate_PPO:
 
         for ep_index, episode in enumerate(results):
             success_counts[ep_index] = episode.success_counter
-            episode_returns[
-                ep_ret_start_ptr : ep_ret_start_ptr + mc
-            ] = episode.total_episode_return
+            episode_returns[ep_ret_start_ptr:ep_ret_start_ptr + mc] = episode.total_episode_return
             ep_ret_start_ptr = ep_ret_start_ptr + mc
 
             successful_episode_lengths[
-                ep_len_start_ptr : ep_len_start_ptr
-                + len(episode.successful.episode_length)
+                ep_len_start_ptr:ep_len_start_ptr + len(episode.successful.episode_length)
             ] = episode.successful.episode_length[:]
             ep_len_start_ptr = ep_len_start_ptr + len(episode.successful.episode_length)
 
-        success_counts_median = np.nanmedian(sorted(success_counts))
-        success_lengths_median = np.nanmedian(sorted(successful_episode_lengths))
-        return_median = np.nanmedian(sorted(episode_returns))
+        final = dict(accuracy=dict(), super=dict(), score=dict())
 
         succ_std = round(np.nanstd(success_counts), 3)
-        len_std = round(np.nanstd(successful_episode_lengths), 3)
-        ret_std = round(np.nanstd(episode_returns), 3)
+        suc_low_whisker, suc_q1, suc_median, suc_q3, suc_high_whisker = self.calc_quartiles(success_counts)
+        suc_median2 = np.nanmedian(sorted(success_counts))
+        assert suc_median == suc_median2
 
-        return {
-            "accuracy": {"median": success_counts_median, "std": succ_std},
-            "speed": {"median": success_lengths_median, "std": len_std},
-            "score": {"median": return_median, "std": ret_std},
-        }
+        len_std = round(np.nanstd(successful_episode_lengths), 3)
+        len_low_whisker, len_q1, len_median, len_q3, len_high_whisker = self.calc_quartiles(successful_episode_lengths)
+
+        ret_std = round(np.nanstd(episode_returns), 3)
+        ret_low_whisker, ret_q1, ret_median, ret_q3, ret_high_whisker = self.calc_quartiles(episode_returns)
+
+        final["speed"] = [{"whislo": len_low_whisker, "q1": len_q1, "med": len_median, "q3": len_q3, "whishi": len_high_whisker, 'fliers': []}]
+        final["accuracy"] = [{"whislo": suc_low_whisker, "q1": suc_q1, "med": suc_median, "q3": suc_q3, "whishi": suc_high_whisker, 'fliers': []}]
+        final["score"] = [{"whislo": ret_low_whisker, "q1": ret_q1, "med": ret_median, "q3": ret_q3, "whishi": ret_high_whisker, 'fliers': []}]
+        final['stdev'] = {"speed": len_std, 'accuracy': succ_std, 'score': ret_std}
+
+        return final
+
+    def calc_quartiles(self, data):
+        d1 = DescrStatsW(data)
+        low_whisker, q1, median, q3, high_whisker = d1.quantile([0.025, 0.25, 0.5, 0.75, 0.975], return_pandas=False)
+        return (low_whisker, q1, median, q3, high_whisker)
 
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--obstruct', type=int, default=0, help="Number of obstructions")
+    parser.add_argument("--obstruct", type=int, default=0, help="Number of obstructions")
     parser.add_argument("--agents", type=int, default=1, help="Number of agents")
     parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
+    parser.add_argument("--episodes", type=int, default=100)
+    parser.add_argument("--runs", type=int, default=100)
+    parser.add_argument("--max_dim", type=list, default=[1500, 1500])
+    parser.add_argument(
+        "--load_env",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Load from standardized saved environment. False will generate a new environment from seed (do not run with Ray!).",
+    )
+    parser.add_argument(
+        "--render",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Render Gif",
+    )
+    parser.add_argument(
+        "--rada2c",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Run a RADA2C model instead of RADTEAM",
+    )
     args = parser.parse_args()
-        
+
+    number_of_agents = args.agents
+    mode = "collaborative"  # No critic, ok to leave as collaborative for all tests
+    render = args.render
+    obstruction_count = args.obstruct
+    if args.test in ["1", "2", "3", "4"]:
+        env_path = os.getcwd() + f"/saved_env/test_environments_TEST{args.test}"
+    else:
+        env_path = os.getcwd() + f"/saved_env/test_environments_{args.max_dim[0]}x{args.max_dim[1]}"
+    assert os.path.isdir(env_path), f"{env_path} does not exist"
+
+    PFGRU = False
     seed = 2
+
     # Generate a large random seed and random generator object for reproducibility
     rng = np.random.default_rng(seed)
-
     env_kwargs = {
-        "bbox": [[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]],
-        "observation_area": [100.0, 100.0],
-        "obstruction_count": args.obstruct,
-        "number_agents": args.agents,
+        "bbox": [[0.0, 0.0], [args.max_dim[0], 0.0], [args.max_dim[0], args.max_dim[1]], [0.0, args.max_dim[1]]],
+        "observation_area": [100.0, 200.0],
+        "obstruction_count": obstruction_count,
+        "MIN_STARTING_DISTANCE": 500,
+        "number_agents": number_of_agents,
         "enforce_grid_boundaries": True,
-        "DEBUG": True,
         "np_random": rng,
         "TEST": args.test,
     }
 
-    eval_kwargs = dict(
-        env_name="gym_rad_search:RadSearchMulti-v1",
-        env_kwargs=env_kwargs,
-        model_path=(lambda: os.getcwd())(),
-        episodes=100,  # Number of episodes to test on [1 - 1000]
-        montecarlo_runs=100,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
-        actor_critic_architecture="rnn",  # Neural network type (control)
-        snr="none",  # signal to noise ratio [none, low, medium, high]
-        obstruction_count=0,  # number of obstacles [0 - 7] (num_obs)
-        steps_per_episode=120,
-        number_of_agents=1,
-        enforce_boundaries=True,
-        resolution_multiplier=0.01,
-        team_mode="individual",
-        render=False,
-        save_gif_freq=1,
-        render_path=".",
-        save_path_for_ac=".",
-        seed=seed,
-    )
+    # Set eval parameters according to which version we're running
+    if not args.rada2c:
+        eval_kwargs = dict(
+            env_name="gym_rad_search:RadSearchMulti-v1",
+            env_kwargs=env_kwargs,
+            model_path=(lambda: os.getcwd())(),
+            episodes=args.episodes,  # Number of episodes to test on [1 - 1000]
+            montecarlo_runs=args.runs,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
+            actor_critic_architecture="cnn",  # Neural network type (control)
+            snr="none",  # signal to noise ratio [none, low, medium, high]
+            obstruction_count=obstruction_count,  # number of obstacles [0 - 7] (num_obs)
+            steps_per_episode=120,
+            number_of_agents=number_of_agents,
+            enforce_boundaries=True,
+            resolution_multiplier=0.01,
+            team_mode=mode,
+            render=render,
+            save_gif_freq=100,
+            render_path=".",
+            save_path_for_ac=".",
+            seed=seed,
+            PFGRU=PFGRU,
+            load_env=args.load_env,
+            test_env_path=env_path,
+        )
+        radteam = True
 
-    test = evaluate_PPO(eval_kwargs=eval_kwargs)
+    elif args.rada2c:
+        eval_kwargs = dict(
+            env_name="gym_rad_search:RadSearchMulti-v1",
+            env_kwargs=env_kwargs,
+            model_path=(lambda: os.getcwd())(),
+            episodes=100,  # Number of episodes to test on [1 - 1000]
+            montecarlo_runs=100,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
+            actor_critic_architecture="rnn",  # Neural network type (control)
+            snr="none",  # signal to noise ratio [none, low, medium, high]
+            obstruction_count=0,  # number of obstacles [0 - 7] (num_obs)
+            steps_per_episode=120,
+            number_of_agents=1,
+            enforce_boundaries=True,
+            resolution_multiplier=0.01,
+            team_mode="individual",
+            render=False,
+            save_gif_freq=1,
+            render_path=".",
+            save_path_for_ac=".",
+            seed=seed,
+            load_env=args.load_env,
+            test_env_path=env_path,
+        )
+        radteam = False
+
+    test = evaluate_PPO(RADTEAM=radteam, eval_kwargs=eval_kwargs)
 
     test.evaluate()
 

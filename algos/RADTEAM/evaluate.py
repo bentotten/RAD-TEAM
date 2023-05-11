@@ -568,13 +568,13 @@ class RADA2C_EpisodeRunner:
         else:
             observations, _, _, _ = self.env.reset()
 
-        # Save env for refresh
-        self.env_sets["env_0"] = [_ for _ in range(5)]
-        self.env_sets["env_0"][0] = self.env.src_coords
-        self.env_sets["env_0"][1] = self.env.agents[0].det_coords
-        self.env_sets["env_0"][2] = self.env.intensity
-        self.env_sets["env_0"][3] = self.env.bkg_intensity
-        self.env_sets["env_0"][4] = []  # obstructions
+            # Save env for refresh
+            self.env_sets["env_0"] = [_ for _ in range(5)]
+            self.env_sets["env_0"][0] = self.env.src_coords
+            self.env_sets["env_0"][1] = self.env.agents[0].det_coords
+            self.env_sets["env_0"][2] = self.env.intensity
+            self.env_sets["env_0"][3] = self.env.bkg_intensity
+            self.env_sets["env_0"][4] = []  # obstructions
 
         self.agents[0].pi.eval()
         self.agents[0].model.eval()
