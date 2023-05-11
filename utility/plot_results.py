@@ -21,11 +21,12 @@ COLOR_FACTOR = 0.75  # How much to lighten previous color by
 COLORS = [
     Colorcode([75, 0, 130]),  # Indigo
     Colorcode([0, 0, 255]),  # Blue
-    Colorcode([255, 105, 180]),  # Pink    
+    Colorcode([255, 105, 180]),  # Pink
     Colorcode([0, 255, 0]),  # Green
     Colorcode([255, 127, 0]),  # Orange
-    Colorcode([148, 0, 211]), # Violet (Removed due to being too similar to indigo)    
+    Colorcode([148, 0, 211]),  # Violet (Removed due to being too similar to indigo)
 ]
+
 
 # Helper Functions
 def create_color(id: int) -> Color:
@@ -44,11 +45,11 @@ def lighten_color(color: Color, factor: float) -> Color:
 
 
 def parse_exp_name(name, components, groups, exclude):
-    first_split = name.split(' ')
+    first_split = name.split(" ")
     parts = []
 
     for name in first_split:
-        parts += name.split('_')
+        parts += name.split("_")
     result = None
     category = None
     exclude_flag = False
@@ -122,18 +123,18 @@ def parse_data(data, components, groups, exclude, performance_markers):
     accuracy_sorted = {component: {} for component in components}
     speed_sorted = {component: {} for component in components}
     score_sorted = {component: {} for component in components}
-    
+
     # Pulled from all different files
     for run in data:
         # Parse which component this is
-        (comp, test, excluded) = parse_exp_name(name=run['experiment'], components=components, groups=groups, exclude=exclude)
+        (comp, test, excluded) = parse_exp_name(name=run["experiment"], components=components, groups=groups, exclude=exclude)
 
         # Add component results to graph dicts (if not an excluded result)
         if comp and test:
             # Only one test per save, thus [0]
-            accuracy_sorted[comp][test] = run['accuracy'][0] if isinstance(run['accuracy'], list) else run['accuracy']
-            speed_sorted[comp][test] = run['speed'][0] if isinstance(run['speed'], list) else run['speed']
-            score_sorted[comp][test] = run['score'][0] if isinstance(run['score'], list) else run['score']
+            accuracy_sorted[comp][test] = run["accuracy"][0] if isinstance(run["accuracy"], list) else run["accuracy"]
+            speed_sorted[comp][test] = run["speed"][0] if isinstance(run["speed"], list) else run["speed"]
+            score_sorted[comp][test] = run["score"][0] if isinstance(run["score"], list) else run["score"]
 
     # Rearrange in specified order
     for ci, component in enumerate(components):
@@ -154,32 +155,32 @@ def mock_data():
 
     # Set up stats way
     athens = [
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
     ]
     beijing = [
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
     ]
     london = [
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
     ]
     rio = [
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
     ]
 
     return [athens, beijing, london, rio]
@@ -194,20 +195,20 @@ def mock_data(small):
 
     # Set up stats way
     athens = [
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},        
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
     ]
     beijing = [
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker}
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
     ]
     london = [
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker}
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
     ]
     rio = [
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker},
-        {'med': median, 'q1': q1, 'q3': q3, 'whislo': low_whisker, 'whishi': high_whisker}
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
+        {"med": median, "q1": q1, "q3": q3, "whislo": low_whisker, "whishi": high_whisker},
     ]
 
     return [athens]
@@ -215,13 +216,13 @@ def mock_data(small):
 
 def plot(graphname, datasets, groups, tests, y_label, path=None, inverty=False):
     # Datasets correspond to components. Groups correspond to tests
-    
+
     # Make figures A6 in size
     A = 6
-    plt.rc('figure', figsize=[46.82 * .5**(.5 * A), 33.11 * .5**(.5 * A)])
+    plt.rc("figure", figsize=[46.82 * 0.5 ** (0.5 * A), 33.11 * 0.5 ** (0.5 * A)])
     # Use Latex
-    plt.rc('text', usetex=True)
-    plt.rc('font', family='serif')
+    plt.rc("text", usetex=True)
+    plt.rc("font", family="serif")
 
     # Define which colours you want to use
     colors = []
@@ -258,29 +259,28 @@ def plot(graphname, datasets, groups, tests, y_label, path=None, inverty=False):
                 positions=positions,
                 patch_artist=True,
                 widths=0.6 / len(datasets),
-                )
+            )
 
             # Fill the boxes with colours (requires patch_artist=True)
             k = i % len(colors)
-            for box in bp['boxes']:
+            for box in bp["boxes"]:
                 box.set(facecolor=colors[k])
 
             # Make the median lines more visible
-            plt.setp(bp['medians'], color='red')
+            plt.setp(bp["medians"], color="red")
 
     # If invert y, invert - helps with visualizing things where minimizing the value is the goal (speed etc)
-    if inverty: plt.gca().invert_yaxis()
+    if inverty:
+        plt.gca().invert_yaxis()
 
     # Titles
     plt.ylabel(y_label)
 
     # Axis ticks and labels
     plt.xticks(np.arange(len(list(datasets[0]))) + 1)
-    plt.gca().xaxis.set_minor_locator(ticker.FixedLocator(
-        np.array(range(len(list(datasets[0])) + 1)) + 0.5)
-    )
-    plt.gca().tick_params(axis='x', which='minor', length=4)
-    plt.gca().tick_params(axis='x', which='major', length=0)
+    plt.gca().xaxis.set_minor_locator(ticker.FixedLocator(np.array(range(len(list(datasets[0])) + 1)) + 0.5))
+    plt.gca().tick_params(axis="x", which="minor", length=4)
+    plt.gca().tick_params(axis="x", which="major", length=0)
 
     # Change the limits of the x-axis
     plt.xlim([0.5, len(list(datasets[0])) + 0.5])
@@ -295,7 +295,7 @@ def plot(graphname, datasets, groups, tests, y_label, path=None, inverty=False):
 
     if path:
         plt.savefig(str(path) + f"/{graphname}_result.png", format="png")
-        #plt.savefig(str(path) + "/evaluation_result.eps", format="eps")
+        # plt.savefig(str(path) + "/evaluation_result.eps", format="eps")
     else:
         plt.show()
 
@@ -315,41 +315,46 @@ if __name__ == "__main__":
 
     if args.data_dir == ".":
         args.data_dir = os.getcwd() + "/"
-    args.data_dir = args.data_dir + '/' if args.data_dir[-1] != '/' else args.data_dir
+    args.data_dir = args.data_dir + "/" if args.data_dir[-1] != "/" else args.data_dir
 
     # Groups to sort by
-    tests = ['zero', 'full'] # 'test3', 'test4']
+    tests = ["zero", "full"]  # 'test3', 'test4']
     # agent_counts = ['1agent', '2agent', '4agent']
     # modes = ['collab', 'coop', 'control']
 
     groups = tests
 
     # Groups to represent in each x tick group
-    components = ['control']
+    components = ["control"]
     # components = ['1agent', '2agent', '4agent']
 
     # Results to exclude from plotting
-    exclude = ['agent']
-    
+    exclude = ["agent"]
+
     # Conditions for file read-in
-    condition = '10k'
+    condition = "10k"
 
     performance_markers = {
-        'accuracy': "Objective Completion %",
-        'score': "Episode Cumulative Return [raw]",
-        'speed': "Successful Episode Length [samples]"
-        }
+        "accuracy": "Objective Completion %",
+        "score": "Episode Cumulative Return [raw]",
+        "speed": "Successful Episode Length [samples]",
+    }
 
     data = get_data(logdir=args.data_dir, condition=condition)
 
-    accuracy_datasets, speed_datasets, score_datasets = parse_data(data=data, components=components, groups=groups, exclude=exclude, performance_markers=performance_markers)
+    accuracy_datasets, speed_datasets, score_datasets = parse_data(
+        data=data, components=components, groups=groups, exclude=exclude, performance_markers=performance_markers
+    )
 
     print(accuracy_datasets)
     print(mock_data(True))
     # accuracy_datasets, speed_datasets, score_datasets = mock_data(True), mock_data(True), mock_data(True)
 
-    for graphname, graph in zip([performance_markers['accuracy'], performance_markers['speed'], performance_markers['score']], [accuracy_datasets, speed_datasets, score_datasets]):
-        inverty = True if graphname in performance_markers['speed'] else False
+    for graphname, graph in zip(
+        [performance_markers["accuracy"], performance_markers["speed"], performance_markers["score"]],
+        [accuracy_datasets, speed_datasets, score_datasets],
+    ):
+        inverty = True if graphname in performance_markers["speed"] else False
         try:
             plot(graphname=graphname, datasets=graph, groups=components, tests=groups, y_label=graphname, path=os.getcwd(), inverty=inverty)
         except Exception as e:

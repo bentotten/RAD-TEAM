@@ -72,9 +72,30 @@ def multi_plot(data, smooth=None, x_axis="Epoch", save_f=False, file_name="."):
     ref_DF = pd.DataFrame()
 
     lst = data.columns  # ['MeanEpRet','StdEpRet','DoneCount','EpLen','Entropy','kl_divergence', 'loss_predictor', 'loss_critic']
-    exclude = ["Condition1", "Condition2", "AgentID", "Time", "Epoch", 'MaxEpRet', 'MinEpRet', 'AverageVVals',	'StdVVals',
-               'MaxVVals',	'MinVVals',	'TotalEnvInteracts', 'LossPi',	'LossV',	'LossModel', 'LocLoss',	'Entropy',	'KL',
-               'ClipFrac',	'OutOfBound',	'StopIter',	'Time']
+    exclude = [
+        "Condition1",
+        "Condition2",
+        "AgentID",
+        "Time",
+        "Epoch",
+        "MaxEpRet",
+        "MinEpRet",
+        "AverageVVals",
+        "StdVVals",
+        "MaxVVals",
+        "MinVVals",
+        "TotalEnvInteracts",
+        "LossPi",
+        "LossV",
+        "LossModel",
+        "LocLoss",
+        "Entropy",
+        "KL",
+        "ClipFrac",
+        "OutOfBound",
+        "StopIter",
+        "Time",
+    ]
     include = ["AverageEpRet", "StdEpRet", "DoneCount", "EpLen"]
 
     for lab in lst:
@@ -118,6 +139,7 @@ def multi_plot(data, smooth=None, x_axis="Epoch", save_f=False, file_name="."):
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--data_dir",
@@ -134,8 +156,8 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    if args.data_dir == '.':
-        args.data_dir = os.getcwd() + '/'
+    if args.data_dir == ".":
+        args.data_dir = os.getcwd() + "/"
 
     dataset = get_datasets(args.data_dir)  # np.load(data_dir)
     multi_plot(

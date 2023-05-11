@@ -10,6 +10,7 @@ PYTHON_PATH = sys.executable
 SKIP_FILES = -1  # A way to skip directories that have already been processed
 OVERWRITE = False
 
+
 def parse_exp_name(name, components, groups, exclude):
     first_split = name.split(" ")
     parts = []
@@ -72,9 +73,7 @@ def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extr
     for path in paths[start_index:stop_index]:
         # Get name
         name = os.path.split(path)[-1]
-        (comp, test, excluded) = parse_exp_name(
-            name=name, components=components, groups=groups, exclude=exclude
-        )
+        (comp, test, excluded) = parse_exp_name(name=name, components=components, groups=groups, exclude=exclude)
         if not excluded and (not comp or not test):
             print(f"WARNING: Component or Test not in saved path name and not excluded:\n{path}")
         elif test and comp:
@@ -117,9 +116,7 @@ def main(args):
     # Data directory formatting
     if args.data_dir == ".":
         args.data_dir = os.getcwd() + "/"
-    args.data_dir = (
-        args.data_dir + "/" if args.data_dir[-1] != "/" else args.data_dir
-    )  # noqa
+    args.data_dir = args.data_dir + "/" if args.data_dir[-1] != "/" else args.data_dir  # noqa
 
     # Set up name parsing
     groups = ["test1", "test2", "test3", "test4", "test5"]
@@ -131,7 +128,7 @@ def main(args):
     # Results to exclude from plotting
     exclude = ["RADTEAM", "2agent"]
 
-    RADTEAM = False if 'RADTEAM' in exclude else True
+    RADTEAM = False if "RADTEAM" in exclude else True
 
     # Get paths
     paths = get_paths(logdir=args.data_dir)
@@ -155,7 +152,7 @@ def main(args):
         overwrite_flag=overwrite_flag,
         job_length=job_length,
         extra=extra,
-        RADTEAM=RADTEAM
+        RADTEAM=RADTEAM,
     )
 
     # Start processes
