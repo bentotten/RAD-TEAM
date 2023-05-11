@@ -1778,10 +1778,7 @@ class RadSearch(gym.Env):
             else:
                 plt.show()
             # Figure is not reused, ok to close
-            plt.close(fig)
-            if not self.silent:
-                print("Render Complete", end="\r")  # Acts as a progress bar
-                print("Figures open", plt.get_fignums())
+            plt.close('all')
             return
 
         else:
