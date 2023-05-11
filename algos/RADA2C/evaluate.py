@@ -894,10 +894,10 @@ class evaluate_PPO:
         with open(f"{self.save_path}/results_raw.json", "w+") as f:
             f.write(json.dumps(raw_results, indent=4, cls=NpEncoder))
 
-        # print(f"Total Runs: {counter}")
-        # print(f"Accuracy - Median Success Counts: {score['accuracy'][0]['median']} with std {score['stdev']['accuracy']}")
-        # print(f"Speed - Median Successful Episode Length: {score['speed'][0]['median']} with std {score['stdev']['speed']}")
-        # print(f"Learning - Median Episode Return: {score['score'][0]['median']} with std {score['stdev']['score']}")
+        print(f"Total Runs: {counter}")
+        print(f"Accuracy - Median Success Counts: {score['accuracy'][0]['median']} with std {score['stdev']['accuracy']}")
+        print(f"Speed - Median Successful Episode Length: {score['speed'][0]['median']} with std {score['stdev']['speed']}")
+        print(f"Learning - Median Episode Return: {score['score'][0]['median']} with std {score['stdev']['score']}")
 
     def calc_stats(self, results, mc=None):
         """
@@ -920,11 +920,11 @@ class evaluate_PPO:
 
         for ep_index, episode in enumerate(results):
             success_counts[ep_index] = episode.success_counter
-            episode_returns[ep_ret_start_ptr : ep_ret_start_ptr + mc] = episode.total_episode_return
+            episode_returns[ep_ret_start_ptr:ep_ret_start_ptr + mc] = episode.total_episode_return
             ep_ret_start_ptr = ep_ret_start_ptr + mc
 
             successful_episode_lengths[
-                ep_len_start_ptr : ep_len_start_ptr + len(episode.successful.episode_length)
+                ep_len_start_ptr:ep_len_start_ptr + len(episode.successful.episode_length)
             ] = episode.successful.episode_length[:]
             ep_len_start_ptr = ep_len_start_ptr + len(episode.successful.episode_length)
 
