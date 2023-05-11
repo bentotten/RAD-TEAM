@@ -19,6 +19,7 @@ import json
 import ray
 import joblib
 from statsmodels.stats.weightstats import DescrStatsW
+import visilibity as vis
 
 # Simulation Environment
 import gym  # type: ignore
@@ -83,6 +84,18 @@ def refresh_env(env_dict, env, n, num_obs=0):
     into the current instantiation of environment
     """
 
+    def to_vis_p(p) -> vis.Point:
+        """
+        Return a visilibity Point from a Point.
+        """
+        return vis.Point(p[0], p[1])
+
+    def to_vis_poly(poly) -> vis.Polygon:
+        """
+        Return a visilibity Polygon from a Polygon.
+        """
+        return vis.Polygon(list(map(to_vis_p, poly)))
+
     def set_vis_coord(point, coords):
         point.set_x(coords[0])
         point.set_y(coords[1])
@@ -97,7 +110,8 @@ def refresh_env(env_dict, env, n, num_obs=0):
     env.source = set_vis_coord(env.source, env.src_coords)
 
     for agent in env.agents.values():
-        agent.det_coords = env_dict[key][1].copy()    
+        agent.reset()
+        agent.det_coords = env_dict[key][1]
         agent.detector = set_vis_coord(agent.detector, agent.det_coords)
 
     if num_obs > 0:
@@ -106,7 +120,7 @@ def refresh_env(env_dict, env, n, num_obs=0):
         env.poly = []
         env.line_segs = []
         for obs in env.obs_coord:
-            geom = [vis.Point(float(obs[0][jj][0]), float(obs[0][jj][1])) for jj in range(len(obs[0]))]
+            geom = [vis.Point(float(obs[jj][0]), float(obs[jj][1])) for jj in range(len(obs))]
             poly = vis.Polygon(geom)
             env.poly.append(poly)
             env.line_segs.append(
@@ -119,17 +133,18 @@ def refresh_env(env_dict, env, n, num_obs=0):
             )
 
         env.env_ls = [solid for solid in env.poly]
-        env.env_ls.insert(0, env.walls)
+        env.env_ls.insert(0, to_vis_poly(env.walls))
         env.world = vis.Environment(env.env_ls)
         # Check if the environment is valid
         assert env.world.is_valid(EPSILON), "Environment is not valid"
         env.vis_graph = vis.Visibility_Graph(env.world, EPSILON)
 
     o, _, _, _ = env.step(-1)
-    env.det_sto = [env_dict[key][1].copy()]
-    env.src_sto = [env_dict[key][0].copy()]
-    env.meas_sto = [o[0].copy()]
-    env.prev_det_dist = env.world.shortest_path(env.source, env.detector, env.vis_graph, EPSILON).length()
+    for id, agent in env.agents.items():
+        agent.det_sto = [env_dict[key][1]]
+        agent.meas_sto = [o[id][0]]
+        agent.prev_det_dist = env.world.shortest_path(env.source, agent.detector, env.vis_graph, EPSILON).length()
+
     env.iter_count = 1
     return o, env
 
@@ -272,20 +287,23 @@ class RADTEAM_EpisodeRunner:
         # Prepare results buffers
         results = MonteCarloResults(id=self.id)
 
+        # Reset environment and save test env parameters
         if self.load_env:
-            # Refresh environment with test env parameters
-            observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
+            #observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
+            self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4])
+            observations = self.env.refresh_environment(env_dict=self.env_sets, n=self.id, num_obs=self.obstruction_count)
         else:
-            # Reset environment and save test env parameters
             observations, _, _, _ = self.env.reset()
-
+            self.env_sets = {}
             # Save env for refresh
             self.env_sets[f"env_{self.id}"] = [_ for _ in range(5)]
             self.env_sets[f"env_{self.id}"][0] = self.env.src_coords
             self.env_sets[f"env_{self.id}"][1] = self.env.agents[0].det_coords
             self.env_sets[f"env_{self.id}"][2] = self.env.intensity
             self.env_sets[f"env_{self.id}"][3] = self.env.bkg_intensity
-            self.env_sets[f"env_{self.id}"][4] = []  # obstructions
+            self.env_sets[f"env_{self.id}"][4] = self.env.obs_coord.copy()
+
+            self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4])
 
         for agent in self.agents.values():
             agent.set_mode("eval")
@@ -361,7 +379,7 @@ class RADTEAM_EpisodeRunner:
                 steps_in_episode = 0
                 terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
 
-                observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
+                observations = self.env.refresh_environment(env_dict=self.env_sets, n=self.id, num_obs=self.obstruction_count)
 
                 # Reset agents
                 for agent in self.agents.values():
@@ -579,19 +597,20 @@ class RADA2C_EpisodeRunner:
         # Reset environment and save test env parameters
         if self.load_env:
             #observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
-            num_obs = len(self.env_sets[self.id][4])
-            self.obstruction_count = num_obs
-            observations, self.env = refresh_env(env_dict=self.env_sets, env=self.env, n=self.id, num_obs=self.obstruction_count)     
+            self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4])
+            observations = self.env.refresh_environment(env_dict=self.env_sets, n=self.id, num_obs=self.obstruction_count)
         else:
             observations, _, _, _ = self.env.reset()
             self.env_sets = {}
             # Save env for refresh
-            self.env_sets["env_0"] = [_ for _ in range(5)]
-            self.env_sets["env_0"][0] = self.env.src_coords
-            self.env_sets["env_0"][1] = self.env.agents[0].det_coords
-            self.env_sets["env_0"][2] = self.env.intensity
-            self.env_sets["env_0"][3] = self.env.bkg_intensity
-            self.env_sets["env_0"][4] = []  # obstructions
+            self.env_sets[f"env_{self.id}"] = [_ for _ in range(5)]
+            self.env_sets[f"env_{self.id}"][0] = self.env.src_coords
+            self.env_sets[f"env_{self.id}"][1] = self.env.agents[0].det_coords
+            self.env_sets[f"env_{self.id}"][2] = self.env.intensity
+            self.env_sets[f"env_{self.id}"][3] = self.env.bkg_intensity
+            self.env_sets[f"env_{self.id}"][4] = self.env.obs_coord.copy()
+
+            self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4])
 
         self.agents[0].pi.eval()
         self.agents[0].model.eval()
@@ -602,7 +621,6 @@ class RADA2C_EpisodeRunner:
             id: self.agents[id].reset_hidden() for id in self.agents
         }  # For RAD-A2C compatibility
 
-        initial_prediction = np.zeros((3,))
         for id, ac in self.agents.items():
             stat_buffers[id] = RADA2C_core.StatBuff()
             stat_buffers[id].update(observations[id][0])
@@ -688,7 +706,7 @@ class RADA2C_EpisodeRunner:
                 terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
 
                 # observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
-                observations, self.env = refresh_env(env_dict=self.env_sets, env=self.env, n=self.id, num_obs=self.obstruction_count)
+                observations = self.env.refresh_environment(env_dict=self.env_sets, n=self.id, num_obs=self.obstruction_count)
 
                 # Reset stat buffer for RAD-A2C
                 for id, ac in self.agents.items():
@@ -940,9 +958,10 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--obstruct", type=int, default=0, help="Number of obstructions")
+    parser.add_argument("--obstacles", type=int, default=0, help="Number of obstructions")
     parser.add_argument("--agents", type=int, default=1, help="Number of agents")
     parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
+    parser.add_argument("--snr", type=str, default="none", help="Signal to noise ratio [none, low, med, high]")    
     parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--runs", type=int, default=100)
     parser.add_argument("--max_dim", type=list, default=[1500, 1500])
@@ -972,18 +991,19 @@ if __name__ == "__main__":
         help="Run a RADA2C model instead of RADTEAM",
     )
     args = parser.parse_args()
-    
+
     # Go to data directory
     if args.data_dir == ".":
         args.data_dir = os.getcwd() + "/"
     args.data_dir = args.data_dir + "/" if args.data_dir[-1] != "/" else args.data_dir
-    
-    os.chdir(args.data_dir)    
+
+    os.chdir(args.data_dir)
 
     number_of_agents = args.agents
     mode = "collaborative"  # No critic, ok to leave as collaborative for all tests
     render = args.render
-    obstruction_count = args.obstruct
+    obstruction_count = args.obstacles
+
     if args.load_env:
         if args.test in ["1", "2", "3", "4"]:
             env_path = os.getcwd() + f"/saved_env/test_environments_TEST{args.test}"
@@ -1018,7 +1038,7 @@ if __name__ == "__main__":
             episodes=args.episodes,  # Number of episodes to test on [1 - 1000]
             montecarlo_runs=args.runs,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
             actor_critic_architecture="cnn",  # Neural network type (control)
-            snr="none",  # signal to noise ratio [none, low, medium, high]
+            snr=args.snr,  # signal to noise ratio [none, low, medium, high]
             obstruction_count=obstruction_count,  # number of obstacles [0 - 7] (num_obs)
             steps_per_episode=120,
             number_of_agents=number_of_agents,
@@ -1041,11 +1061,11 @@ if __name__ == "__main__":
             env_name="gym_rad_search:RadSearchMulti-v1",
             env_kwargs=env_kwargs,
             model_path=(lambda: os.getcwd())(),
-            episodes=100,  # Number of episodes to test on [1 - 1000]
-            montecarlo_runs=100,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
+            episodes=args.episodes,  # Number of episodes to test on [1 - 1000]
+            montecarlo_runs=args.runs,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
             actor_critic_architecture="rnn",  # Neural network type (control)
-            snr="none",  # signal to noise ratio [none, low, medium, high]
-            obstruction_count=0,  # number of obstacles [0 - 7] (num_obs)
+            snr=args.snr,  # signal to noise ratio [none, low, medium, high]
+            obstruction_count=obstruction_count,  # number of obstacles [0 - 7] (num_obs)
             steps_per_episode=120,
             number_of_agents=1,
             enforce_boundaries=True,
