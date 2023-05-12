@@ -549,6 +549,8 @@ class MapsBuffer:
                         current_prediction=inflated_prediction,
                         last_prediction=last_prediction,
                     )
+                    # Update last prediction
+                    self.tools.last_prediction = inflated_prediction                    
                 else:
                     self._update_prediction_map(
                         current_prediction=last_prediction,
@@ -587,8 +589,6 @@ class MapsBuffer:
 
             # Update last coordinates
             self.tools.last_coords[agent_id] = inflated_agent_coordinates
-            if self.PFGRU:
-                self.tools.last_prediction = inflated_prediction
 
         return MapStack(
             (
