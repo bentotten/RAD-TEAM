@@ -341,7 +341,7 @@ def ppo(
         if load_model != 0:
             if not model_path:
                 model_path = os.getcwd()
-            agents[id].load(model_path)
+            agents[id].load(f"{model_path}/{id}agent")
 
     optimizaters = [
         ppo_tools.OptimizationStorage(
@@ -718,7 +718,12 @@ if __name__ == "__main__":
                               is individual zero-sum game"
                         )
     parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
-
+    parser.add_argument(
+        "--PFGRU",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Whether RADTEAM should use the particle filter module for source location prediction or not.",
+    )    
     args = parser.parse_args()
 
     if args.mode == 'competative':
@@ -728,7 +733,7 @@ if __name__ == "__main__":
     args.batch = 1
 
     # To use PFGRU or not
-    PFGRU = False
+    PFGRU = args.PFGRU
 
     # Save directory and experiment name
     save_freq = 250

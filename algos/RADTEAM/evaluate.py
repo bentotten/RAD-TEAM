@@ -1029,6 +1029,12 @@ if __name__ == "__main__":
         default=False,
         help="Run a RADA2C model instead of RADTEAM",
     )
+    parser.add_argument(
+        "--PFGRU",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Whether RADTEAM should use the particle filter module for source location prediction or not.",
+    )    
     args = parser.parse_args()
 
     # Go to data directory
@@ -1052,7 +1058,7 @@ if __name__ == "__main__":
     else:
         env_path = None
 
-    PFGRU = False
+    PFGRU = args.PFGRU
     seed = 2
 
     # Generate a large random seed and random generator object for reproducibility
