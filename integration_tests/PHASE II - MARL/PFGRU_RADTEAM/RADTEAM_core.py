@@ -543,11 +543,17 @@ class MapsBuffer:
             # Update Prediction maps
             if self.PFGRU:
                 last_prediction: Tuple = self.tools.last_prediction
-
-                self._update_prediction_map(
-                    current_prediction=inflated_prediction,
-                    last_prediction=last_prediction,
-                )
+                # Check that prediction is within map bounds, else update with last prediction again
+                if inflated_prediction[0] < self.map_dimensions[0] and inflated_prediction[1] < self.map_dimensions[0] and inflated_prediction >= (0, 0):
+                    self._update_prediction_map(
+                        current_prediction=inflated_prediction,
+                        last_prediction=last_prediction,
+                    )
+                else:
+                    self._update_prediction_map(
+                        current_prediction=last_prediction,
+                        last_prediction=last_prediction,
+                    )                    
             # Update Locations maps
             if id == agent_id:
                 self._update_current_agent_location_map(
@@ -1690,8 +1696,8 @@ class CNNBase:
         self.mseLoss = nn.MSELoss()
 
         self.model = PFGRUCell(
-            input_size=self.observation_space - 8,
-            obs_size=self.observation_space - 8,
+            input_size=self.observation_space - 8, # TODO This just means "3"; adjust for 3 for arbritrary number of agents
+            obs_size=self.observation_space - 8, # TODO This just means "3"; adjust for 3 for arbritrary number of agents
             activation="tanh",
             hidden_size=self.predictor_hidden_size,  # (bpf_hsize) (hid_rec in cli)
         )
@@ -1814,10 +1820,15 @@ class CNNBase:
         """
         with torch.no_grad():
             if not SMALL_VERSION and self.PFGRU:
+                # TODO
                 # Extract all observations for PFGRU
+                # obs_list = np.array(
+                #     [state_observation[i][:3] for i in range(self.number_of_agents)]
+                # )  # Create a list of just readings and locations for all agents
+                # Create a list of just readings and locations for current agent                           
                 obs_list = np.array(
-                    [state_observation[i][:3] for i in range(self.number_of_agents)]
-                )  # Create a list of just readings and locations for all agents
+                    [state_observation[id][:3]]
+                )
                 obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)
                 location_prediction, new_hidden = self.model(obs_tensor, hidden)
 
