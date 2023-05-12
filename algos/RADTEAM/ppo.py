@@ -564,72 +564,101 @@ def ppo(
         VarExplain = np.zeros(number_of_agents)
         stop_iteration = np.zeros(number_of_agents)
 
-        for id in range(number_of_agents):
-            (
-                actor_loss[id],
-                critic_loss[id],
-                model_loss[id],
-                kl[id],
-                entropy[id],
-                clip_frac[id],
-                loc_loss[id],
-                VarExplain[id],
-                stop_iteration[id],
-            ) = update(
-                ac=agents[id],
-                buf=buffer[id],
-                optimization=optimizaters[id],
-                PFGRU=PFGRU,
-                train_pi_iters=train_pi_iters,
-                train_v_iters=train_v_iters,
-                train_pfgru_iters=0,
-                target_kl=target_kl,
-                clip_ratio=clip_ratio,
-                number_of_agents=number_of_agents,
-                id=id,
-                mode=mode,
+        try:
+            for id in range(number_of_agents):
+                (
+                    actor_loss[id],
+                    critic_loss[id],
+                    model_loss[id],
+                    kl[id],
+                    entropy[id],
+                    clip_frac[id],
+                    loc_loss[id],
+                    VarExplain[id],
+                    stop_iteration[id],
+                ) = update(
+                    ac=agents[id],
+                    buf=buffer[id],
+                    optimization=optimizaters[id],
+                    PFGRU=PFGRU,
+                    train_pi_iters=train_pi_iters,
+                    train_v_iters=train_v_iters,
+                    train_pfgru_iters=0,
+                    target_kl=target_kl,
+                    clip_ratio=clip_ratio,
+                    number_of_agents=number_of_agents,
+                    id=id,
+                    mode=mode,
+                )
+
+            # Get averages
+            loss_pi = actor_loss.mean().item()
+            loss_v = np.nanmean(critic_loss).item()
+            loss_mod = model_loss.mean().item()
+            loc_loss = loc_loss.mean().item()
+            kl = kl.mean().item()
+            ent = entropy.mean().item()
+            cf = clip_frac.mean().item()
+            var_explain = VarExplain.mean().item()
+            stop_iteration = stop_iteration.mean().item()
+
+            logger.store(
+                LossPi=loss_pi,
+                LossV=loss_v,
+                LossModel=loss_mod,  # loss_mod
+                KL=kl,
+                Entropy=ent,
+                ClipFrac=cf,
+                LocLoss=0,
+                VarExplain=var_explain,
+                StopIter=stop_iteration,
             )
 
-        # Get averages
-        loss_pi = actor_loss.mean().item()
-        loss_v = np.nanmean(critic_loss).item()
-        loss_mod = model_loss.mean().item()
-        loc_loss = loc_loss.mean().item()
-        kl = kl.mean().item()
-        ent = entropy.mean().item()
-        cf = clip_frac.mean().item()
-        var_explain = VarExplain.mean().item()
-        stop_iteration = stop_iteration.mean().item()
-
-        logger.store(
-            LossPi=loss_pi,
-            LossV=loss_v,
-            LossModel=loss_mod,  # loss_mod
-            KL=kl,
-            Entropy=ent,
-            ClipFrac=cf,
-            LocLoss=0,
-            VarExplain=var_explain,
-            StopIter=stop_iteration,
-        )
-
-        # Log info about epoch
-        logger.log_tabular("Epoch", epoch)
-        logger.log_tabular("EpRet", with_min_and_max=True)
-        logger.log_tabular("EpLen", average_only=True)
-        logger.log_tabular("VVals", with_min_and_max=True)
-        logger.log_tabular("TotalEnvInteracts", (epoch + 1) * steps_per_epoch)
-        logger.log_tabular("LossPi", average_only=True)
-        logger.log_tabular("LossV", average_only=True)
-        logger.log_tabular("LossModel", average_only=True)
-        logger.log_tabular("LocLoss", average_only=True)
-        logger.log_tabular("Entropy", average_only=True)
-        logger.log_tabular("KL", average_only=True)
-        logger.log_tabular("ClipFrac", average_only=True)
-        logger.log_tabular("DoneCount", sum_only=True)
-        logger.log_tabular("StopIter", average_only=True)
-        logger.log_tabular("Time", time.time() - start_time)
-        logger.dump_tabular()
+            # Log info about epoch
+            logger.log_tabular("Epoch", epoch)
+            logger.log_tabular("EpRet", with_min_and_max=True)
+            logger.log_tabular("EpLen", average_only=True)
+            logger.log_tabular("VVals", with_min_and_max=True)
+            logger.log_tabular("TotalEnvInteracts", (epoch + 1) * steps_per_epoch)
+            logger.log_tabular("LossPi", average_only=True)
+            logger.log_tabular("LossV", average_only=True)
+            logger.log_tabular("LossModel", average_only=True)
+            logger.log_tabular("LocLoss", average_only=True)
+            logger.log_tabular("Entropy", average_only=True)
+            logger.log_tabular("KL", average_only=True)
+            logger.log_tabular("ClipFrac", average_only=True)
+            logger.log_tabular("DoneCount", sum_only=True)
+            logger.log_tabular("StopIter", average_only=True)
+            logger.log_tabular("Time", time.time() - start_time)
+            logger.dump_tabular()
+        except Exception as e:
+            print(f"WARNING: Exception encountered: {e}")
+            print(f"Saving latest model to {logger.output_dir}")
+            for id in range(number_of_agents):
+                fpath = f"{id}agent"
+                fpath = os.path.join(logger.output_dir, fpath)
+                os.makedirs(fpath, exist_ok=True)
+                agents[id].save(checkpoint_path=fpath)
+                save_counter += 1            
+            print(f"Saving environment image and episode gif to {logger.output_dir}")            
+            # Render environment image
+            env.render(
+                path=logger.output_dir,
+                epoch_count=epoch,
+                just_env=True,
+                episode_count=episode_count,
+                silent=False,
+            )
+            # Render gif
+            env.render(
+                path=logger.output_dir,
+                epoch_count=epoch,
+                episode_count=episode_count,
+                silent=False,
+            )
+            # Save heatmaps
+            for id in range(number_of_agents):
+                agents[id].render(savepath=logger.output_dir)
 
 
 if __name__ == "__main__":
