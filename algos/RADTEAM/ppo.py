@@ -17,14 +17,14 @@ except ModuleNotFoundError:
     from algos.RADTEAM.rl_tools.logx import EpochLogger  # type: ignore
     from algos.RADTEAM.rl_tools.mpi_pytorch import setup_pytorch_for_mpi, mpi_avg_grads  # type: ignore
     from algos.RADTEAM.rl_tools.mpi_tools import mpi_fork, proc_id, num_procs  # type: ignore
-except: # noqa
+except:  # noqa
     raise Exception
 
 BATCHED_UPDATE = True
 MAX_SAVES = 3
 
 
-def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pfgru_iters, target_kl, clip_ratio, number_of_agents, id, mode):
+def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pfgru_iters, target_kl, clip_ratio, number_of_agents, id, mode, bp_args):
     """Update for the localization and A2C modules"""
 
     def sample(data, minibatch=1):
@@ -153,16 +153,88 @@ def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pf
         # take mean of everything for batch update
         return torch.stack(critic_loss_list).mean()
 
-    # data = buf.get(logger=logger)
+    def update_model(data, args):
+        # Update the PFGRU, see Ma et al. 2020 for more details
+        ep_form = data["ep_form"]
+        model_loss_arr_buff = torch.zeros((len(ep_form), 1), dtype=torch.float32)
+        source_loc_idx = 15
+        o_idx = 3
+
+        for jj in range(train_pfgru_iters):
+            model_loss_arr_buff.zero_()
+            model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
+            for ii, ep in enumerate(ep_form):
+                sl = len(ep[0])
+                hidden = ac.reset_hidden()
+                src_tar = ep[0][:, source_loc_idx:].clone()
+                src_tar[:, :2] = src_tar[:, :2] / args["area_scale"]
+                obs_t = torch.as_tensor(ep[0][:, :o_idx], dtype=torch.float32)
+                loc_pred = torch.empty_like(src_tar)
+                particle_pred = torch.empty((sl, ac.model.num_particles, src_tar.shape[1]))
+
+                bpdecay_params = np.exp(args["bp_decay"] * np.arange(sl))
+                bpdecay_params = bpdecay_params / np.sum(bpdecay_params)
+                for zz, meas in enumerate(obs_t):
+                    loc, hidden = ac.model(meas, hidden)
+                    particle_pred[zz] = ac.model.hid_obs(hidden[0])
+                    loc_pred[zz, :] = loc
+
+                bpdecay_params = torch.FloatTensor(bpdecay_params)
+                bpdecay_params = bpdecay_params.unsqueeze(-1)
+                l2_pred_loss = torch.nn.functional.mse_loss(loc_pred.squeeze(), src_tar.squeeze(), reduction="none") * bpdecay_params
+                l1_pred_loss = torch.nn.functional.l1_loss(loc_pred.squeeze(), src_tar.squeeze(), reduction="none") * bpdecay_params
+
+                l2_loss = torch.sum(l2_pred_loss)
+                l1_loss = 10 * torch.mean(l1_pred_loss)
+
+                pred_loss = args["l2_weight"] * l2_loss + args["l1_weight"] * l1_loss
+
+                total_loss = pred_loss
+                particle_pred = particle_pred.transpose(0, 1).contiguous()
+
+                particle_gt = src_tar.repeat(ac.model.num_particles, 1, 1)
+                l2_particle_loss = torch.nn.functional.mse_loss(particle_pred, particle_gt, reduction="none") * bpdecay_params
+                l1_particle_loss = torch.nn.functional.l1_loss(particle_pred, particle_gt, reduction="none") * bpdecay_params
+
+                # p(y_t| \tau_{1:t}, x_{1:t}, \theta) is assumed to be a Gaussian with variance = 1.
+                # other more complicated distributions could be used to improve the performance
+                y_prob_l2 = torch.exp(-l2_particle_loss).view(ac.model.num_particles, -1, sl, 2)
+                l2_particle_loss = -y_prob_l2.mean(dim=0).log()
+
+                y_prob_l1 = torch.exp(-l1_particle_loss).view(ac.model.num_particles, -1, sl, 2)
+                l1_particle_loss = -y_prob_l1.mean(dim=0).log()
+
+                xy_l2_particle_loss = torch.mean(l2_particle_loss)
+                l2_particle_loss = xy_l2_particle_loss
+
+                xy_l1_particle_loss = torch.mean(l1_particle_loss)
+                l1_particle_loss = 10 * xy_l1_particle_loss
+
+                belief_loss = args["l2_weight"] * l2_particle_loss + args["l1_weight"] * l1_particle_loss
+                total_loss = total_loss + args["elbo_weight"] * belief_loss
+
+                model_loss_arr[ii] = total_loss
+
+            model_loss = model_loss_arr.mean()
+            optimization.model_optimizer.zero_grad()
+            model_loss.backward()
+
+            # Average gradients across the processes
+            mpi_avg_grads(ac.model)
+            torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
+
+            optimization.model_optimizer.step()
+
+        return model_loss
+
     ac.set_mode("train")
     data, pi_maps, v_maps = buf.get()  # TODO use arrays not dicts for faster processing
 
     # Update function if using the PFGRU, fcn. performs multiple updates per call
-    # ac.model.train()
-    # loss_mod = update_model(data, args, loss=loss_fcn)
-
-    # Update function if using the regression GRU
-    # loss_mod = update_loc_rnn(data,env,loss)
+    if PFGRU:
+        LossModel = update_model(data, bp_args)
+    else:
+        LossModel = 0
 
     sample_indexes = sample(data=data)
     kk = 0
@@ -201,7 +273,7 @@ def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pf
     pi_info = dict(kl=kl, ent=entropy, cf=clip_fraction)  # Just for last step
 
     # Update value function (in cooperative mode, only first agent updates global critic)
-    if mode != 'cooperative' or id == 0:
+    if mode != "cooperative" or id == 0:
         for i in range(train_v_iters):
             if BATCHED_UPDATE:
                 optimization.critic_optimizer.zero_grad()
@@ -238,10 +310,7 @@ def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pf
         pi_info["cf"],
     )
 
-    # TODO implement when PFGRU is up
-    if PFGRU:
-        raise NotImplementedError("PFGRU update not yet implements")
-    LossModel = 0  # loss_mod
+    # TODO implement the LocLoss (see RADA2C). While interesting, not needed for training, not currently implemented.
     LocLoss = 0
     VarExplain = 0
 
@@ -252,7 +321,7 @@ def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pf
 
 def ppo(
     env_fn,
-    mode='cooperative',
+    mode="cooperative",
     actor_critic=CNNBase,
     ac_kwargs=dict(),
     seed=0,
@@ -281,7 +350,11 @@ def ppo(
     model_path=None,
     PFGRU=True,
     number_of_agents=1,
+    save_gif_freq=None
 ):
+    if save_gif_freq == -1:
+        save_gif_freq = epochs // 3
+
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
     setup_pytorch_for_mpi()
 
@@ -314,7 +387,7 @@ def ppo(
     obs_dim = env.observation_space.shape[0]
 
     # Instantiate A2C
-    if mode == 'cooperative':
+    if mode == "cooperative":
         # Initialize Global Critic
         prototype = CNNBase(id=-1, **ac_kwargs)
         GlobalCritic = Critic(
@@ -324,10 +397,10 @@ def ppo(
         )
         ac_kwargs["GlobalCritic"] = GlobalCritic
 
-    elif mode == 'collaborative':
+    elif mode == "collaborative":
         GlobalCritic = None
 
-    elif mode == 'competative':
+    elif mode == "competative":
         raise NotImplementedError("Competative mode not implemented.")
     else:
         raise ValueError("Unknown game mode")
@@ -348,10 +421,7 @@ def ppo(
             pi_optimizer=Adam(agents[id].pi.parameters(), lr=pi_lr),
             model_optimizer=Adam(agents[id].model.parameters(), lr=pfgru_lr),
             MSELoss=torch.nn.MSELoss(reduction="mean"),
-            critic_optimizer=Adam(
-                agents[id].critic.parameters() if not GlobalCritic else GlobalCritic.parameters(),
-                lr=vf_lr
-            ),
+            critic_optimizer=Adam(agents[id].critic.parameters() if not GlobalCritic else GlobalCritic.parameters(), lr=vf_lr),
         )
         for id in range(number_of_agents)
     ]
@@ -361,22 +431,15 @@ def ppo(
         for id in range(number_of_agents):
             assert agents[id].critic is GlobalCritic
 
-    # Sync params across processes
-    # sync_params(ac.pi)
-    # sync_params(ac.critic)
-    # sync_params(ac.model)
-
     # PFGRU args, from Ma et al. 2020
     bp_args = {"bp_decay": 0.1, "l2_weight": 1.0, "l1_weight": 0.0, "elbo_weight": 1.0, "area_scale": env.search_area[2][1]}
 
     # Count variables
     var_counts = tuple(ppo_tools.count_vars(module) for module in [agents[0].pi, agents[0].critic, agents[0].model])
-    logger.log("\nNumber of parameters: \t Actor: %d, Critic: %d Predictor:%d \t" % var_counts)
+    logger.log("\nNumber of parameters: \t Actor: %d, Critic: %d Predictor: %d \t" % var_counts)
 
     # Set up trajectory buffer
     local_steps_per_epoch = int(steps_per_epoch / num_procs())
-    # buf = PPOBuffer(obs_dim, act_dim, local_steps_per_epoch, gamma, lam, ac_kwargs['hidden_sizes_rec'][0])
-    # buf = ppo_tools.PPOBuffer(observation_dimension=obs_dim, max_size=local_steps_per_epoch, max_episode_length=120, number_agents=1)
     buffer = [
         ppo_tools.PPOBuffer(
             observation_dimension=obs_dim,
@@ -387,7 +450,6 @@ def ppo(
         for _ in range(number_of_agents)
     ]
 
-    save_gif_freq = epochs // 3
     if proc_id() == 0:
         print(f"Local steps per epoch: {local_steps_per_epoch}")
 
@@ -436,9 +498,9 @@ def ppo(
             # Parse reward according to mode
             reward = np.zeros(number_of_agents)
             for id in range(number_of_agents):
-                if mode == 'cooperative':
+                if mode == "cooperative":
                     reward[id] = r["team_reward"]
-                elif mode == 'collaborative':
+                elif mode == "collaborative":
                     reward[id] = r["individual_reward"][id]
                 else:
                     raise ValueError("Unsupported game mode.")
@@ -502,8 +564,10 @@ def ppo(
 
                 if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1) == epochs)):
                     # Check agent progress during training
-                    if proc_id() == 0 and epoch != 0:
+                    if proc_id() == 0 and epoch != 0:                        
                         # Check agent progress during training
+                        for id in range(number_of_agents):
+                            agents[id].render(savepath=logger.output_dir)                        
                         # Render gif
                         env.render(
                             path=logger.output_dir,
@@ -519,8 +583,6 @@ def ppo(
                             episode_count=episode_count,
                             silent=False,
                         )
-                        for id in range(number_of_agents):
-                            agents[id].render(savepath=logger.output_dir)
 
                 if not env.epoch_end:
                     # Reset detector position and episode tracking
@@ -564,101 +626,102 @@ def ppo(
         VarExplain = np.zeros(number_of_agents)
         stop_iteration = np.zeros(number_of_agents)
 
-        try:
-            for id in range(number_of_agents):
-                (
-                    actor_loss[id],
-                    critic_loss[id],
-                    model_loss[id],
-                    kl[id],
-                    entropy[id],
-                    clip_frac[id],
-                    loc_loss[id],
-                    VarExplain[id],
-                    stop_iteration[id],
-                ) = update(
-                    ac=agents[id],
-                    buf=buffer[id],
-                    optimization=optimizaters[id],
-                    PFGRU=PFGRU,
-                    train_pi_iters=train_pi_iters,
-                    train_v_iters=train_v_iters,
-                    train_pfgru_iters=0,
-                    target_kl=target_kl,
-                    clip_ratio=clip_ratio,
-                    number_of_agents=number_of_agents,
-                    id=id,
-                    mode=mode,
-                )
-
-            # Get averages
-            loss_pi = actor_loss.mean().item()
-            loss_v = np.nanmean(critic_loss).item()
-            loss_mod = model_loss.mean().item()
-            loc_loss = loc_loss.mean().item()
-            kl = kl.mean().item()
-            ent = entropy.mean().item()
-            cf = clip_frac.mean().item()
-            var_explain = VarExplain.mean().item()
-            stop_iteration = stop_iteration.mean().item()
-
-            logger.store(
-                LossPi=loss_pi,
-                LossV=loss_v,
-                LossModel=loss_mod,  # loss_mod
-                KL=kl,
-                Entropy=ent,
-                ClipFrac=cf,
-                LocLoss=0,
-                VarExplain=var_explain,
-                StopIter=stop_iteration,
+        # try:
+        for id in range(number_of_agents):
+            (
+                actor_loss[id],
+                critic_loss[id],
+                model_loss[id],
+                kl[id],
+                entropy[id],
+                clip_frac[id],
+                loc_loss[id],
+                VarExplain[id],
+                stop_iteration[id],
+            ) = update(
+                ac=agents[id],
+                buf=buffer[id],
+                optimization=optimizaters[id],
+                PFGRU=PFGRU,
+                train_pi_iters=train_pi_iters,
+                train_v_iters=train_v_iters,
+                train_pfgru_iters=train_pfgru_iters,
+                target_kl=target_kl,
+                clip_ratio=clip_ratio,
+                number_of_agents=number_of_agents,
+                id=id,
+                mode=mode,
+                bp_args=bp_args
             )
 
-            # Log info about epoch
-            logger.log_tabular("Epoch", epoch)
-            logger.log_tabular("EpRet", with_min_and_max=True)
-            logger.log_tabular("EpLen", average_only=True)
-            logger.log_tabular("VVals", with_min_and_max=True)
-            logger.log_tabular("TotalEnvInteracts", (epoch + 1) * steps_per_epoch)
-            logger.log_tabular("LossPi", average_only=True)
-            logger.log_tabular("LossV", average_only=True)
-            logger.log_tabular("LossModel", average_only=True)
-            logger.log_tabular("LocLoss", average_only=True)
-            logger.log_tabular("Entropy", average_only=True)
-            logger.log_tabular("KL", average_only=True)
-            logger.log_tabular("ClipFrac", average_only=True)
-            logger.log_tabular("DoneCount", sum_only=True)
-            logger.log_tabular("StopIter", average_only=True)
-            logger.log_tabular("Time", time.time() - start_time)
-            logger.dump_tabular()
-        except Exception as e:
-            print(f"WARNING: Exception encountered: {e}")
-            print(f"Saving latest model to {logger.output_dir}")
-            for id in range(number_of_agents):
-                fpath = f"{id}agent"
-                fpath = os.path.join(logger.output_dir, fpath)
-                os.makedirs(fpath, exist_ok=True)
-                agents[id].save(checkpoint_path=fpath)
-                save_counter += 1            
-            print(f"Saving environment image and episode gif to {logger.output_dir}")            
-            # Render environment image
-            env.render(
-                path=logger.output_dir,
-                epoch_count=epoch,
-                just_env=True,
-                episode_count=episode_count,
-                silent=False,
-            )
-            # Render gif
-            env.render(
-                path=logger.output_dir,
-                epoch_count=epoch,
-                episode_count=episode_count,
-                silent=False,
-            )
-            # Save heatmaps
-            for id in range(number_of_agents):
-                agents[id].render(savepath=logger.output_dir)
+        # Get averages
+        loss_pi = actor_loss.mean().item()
+        loss_v = np.nanmean(critic_loss).item()
+        loss_mod = model_loss.mean().item()
+        loc_loss = loc_loss.mean().item()
+        kl = kl.mean().item()
+        ent = entropy.mean().item()
+        cf = clip_frac.mean().item()
+        var_explain = VarExplain.mean().item()
+        stop_iteration = stop_iteration.mean().item()
+
+        logger.store(
+            LossPi=loss_pi,
+            LossV=loss_v,
+            LossModel=loss_mod,  # loss_mod
+            KL=kl,
+            Entropy=ent,
+            ClipFrac=cf,
+            LocLoss=0,
+            VarExplain=var_explain,
+            StopIter=stop_iteration,
+        )
+
+        # Log info about epoch
+        logger.log_tabular("Epoch", epoch)
+        logger.log_tabular("EpRet", with_min_and_max=True)
+        logger.log_tabular("EpLen", average_only=True)
+        logger.log_tabular("VVals", with_min_and_max=True)
+        logger.log_tabular("TotalEnvInteracts", (epoch + 1) * steps_per_epoch)
+        logger.log_tabular("LossPi", average_only=True)
+        logger.log_tabular("LossV", average_only=True)
+        logger.log_tabular("LossModel", average_only=True)
+        logger.log_tabular("LocLoss", average_only=True)
+        logger.log_tabular("Entropy", average_only=True)
+        logger.log_tabular("KL", average_only=True)
+        logger.log_tabular("ClipFrac", average_only=True)
+        logger.log_tabular("DoneCount", sum_only=True)
+        logger.log_tabular("StopIter", average_only=True)
+        logger.log_tabular("Time", time.time() - start_time)
+        logger.dump_tabular()
+        # except Exception as e:
+        #     print(f"WARNING: Exception encountered: {e}")
+        #     print(f"Saving latest model to {logger.output_dir}")
+        #     for id in range(number_of_agents):
+        #         fpath = f"{id}agent"
+        #         fpath = os.path.join(logger.output_dir, fpath)
+        #         os.makedirs(fpath, exist_ok=True)
+        #         agents[id].save(checkpoint_path=fpath)
+        #         save_counter += 1
+        #     print(f"Saving environment image and episode gif to {logger.output_dir}")
+        #     # Render environment image
+        #     env.render(
+        #         path=logger.output_dir,
+        #         epoch_count=epoch,
+        #         just_env=True,
+        #         episode_count=episode_count,
+        #         silent=False,
+        #     )
+        #     # Render gif
+        #     env.render(
+        #         path=logger.output_dir,
+        #         epoch_count=epoch,
+        #         episode_count=episode_count,
+        #         silent=False,
+        #     )
+        #     # Save heatmaps
+        #     for id in range(number_of_agents):
+        #         agents[id].render(savepath=logger.output_dir)
 
 
 if __name__ == "__main__":
@@ -693,7 +756,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--exp_name",
         type=str,
-        default="alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh",
+        default="run",
         help="Name of experiment for saving",
     )
     parser.add_argument(
@@ -713,20 +776,30 @@ if __name__ == "__main__":
     parser.add_argument("--alpha", type=float, default=0.1, help="Entropy reward term scaling")
     parser.add_argument("--load_model", type=int, default=0, help="Load parameters from saved model. 0 is false, 1 is true")
     parser.add_argument("--agents", type=int, default=1, help="Number of agents")
-    parser.add_argument("--mode", type=str, default="cooperative",
-                        help="Game mode: Cooperative is global critic and team reward, Collaborative is individual critic and inv reward, Competative\
-                              is individual zero-sum game"
-                        )
+    parser.add_argument("--save_gif_freq", type=int, default=-1, help="Gif frequency to Save")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default="cooperative",
+        help="Game mode: Cooperative is global critic and team reward, Collaborative is individual critic and inv reward, Competative\
+                              is individual zero-sum game",
+    )
     parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
+    parser.add_argument(
+        "--render",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Whether RADTEAM should use the particle filter module for source location prediction or not.",
+    )    
     parser.add_argument(
         "--PFGRU",
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Whether RADTEAM should use the particle filter module for source location prediction or not.",
-    )    
+    )
     args = parser.parse_args()
 
-    if args.mode == 'competative':
+    if args.mode == "competative":
         raise NotImplementedError("Competative mode not implemented yet")
 
     # Change mini-batch size, only been tested with size of 1
@@ -746,7 +819,7 @@ if __name__ == "__main__":
         "obstruction_count": args.obstruct,
         "number_agents": args.agents,
         "enforce_grid_boundaries": True,
-        "TEST": args.test
+        "TEST": args.test,
     }
 
     if args.cpu > 1:
@@ -782,11 +855,12 @@ if __name__ == "__main__":
         epochs=args.epochs,
         dims=init_dims,
         logger_kwargs=logger_kwargs,
-        render=False,
-        save_gif=False,
+        render=args.render,
+        save_gif=args.render,
         load_model=args.load_model,
         PFGRU=PFGRU,
         number_of_agents=args.agents,
         mode=args.mode,
-        save_freq=save_freq
+        save_freq=save_freq,
+        save_gif_freq=args.save_gif_freq
     )

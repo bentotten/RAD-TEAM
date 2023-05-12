@@ -2004,8 +2004,12 @@ class CNNBase:
         readings_transposed: npt.NDArray = self.maps.readings_map.T
         visits_transposed: npt.NDArray = self.maps.visit_counts_map.T
         obstacles_transposed: npt.NDArray = self.maps.obstacles_map.T
+        prediction_transposed: npt.NDArray = self.maps.prediction_map.T
 
-        fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax) = plt.subplots(nrows=1, ncols=5, figsize=(30, 10), tight_layout=True)
+        if self.PFGRU:
+            fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax, pfgru_ax) = plt.subplots(nrows=1, ncols=6, figsize=(30, 10), tight_layout=True)    
+        else:
+            fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax) = plt.subplots(nrows=1, ncols=5, figsize=(30, 10), tight_layout=True)
 
         loc_ax.imshow(loc_transposed, cmap="viridis", interpolation=interpolation_method)
         loc_ax.set_title("Agent Location")
@@ -2026,6 +2030,11 @@ class CNNBase:
         obs_ax.imshow(obstacles_transposed, cmap="viridis", interpolation=interpolation_method)
         obs_ax.set_title("Obstacles Detected")
         obs_ax.invert_yaxis()
+
+        if self.PFGRU:
+            pfgru_ax.imshow(prediction_transposed, cmap="viridis", interpolation=interpolation_method)
+            pfgru_ax.set_title("Source Prediction")
+            pfgru_ax.invert_yaxis()            
 
         # Add values to gridsquares if value is greater than 0 #TODO if large grid, this will be slow
         if add_value_text:
@@ -2081,6 +2090,16 @@ class CNNBase:
                             color="black",
                             size=6,
                         )
+                    if self.PFGRU and prediction_transposed[i, j] > 0:
+                        pfgru_ax.text(
+                            j,
+                            i,
+                            prediction_transposed[i, j].astype(float).round(2),
+                            ha="center",
+                            va="center",
+                            color="black",
+                            size=6,
+                        )                    
 
         fig.savefig(
             f"{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{episode_count}({self.render_counter}).png",
