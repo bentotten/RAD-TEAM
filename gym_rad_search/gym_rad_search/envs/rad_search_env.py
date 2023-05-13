@@ -976,7 +976,8 @@ class RadSearch(gym.Env):
             assert env.world.is_valid(EPSILON), "Environment is not valid"
             env.vis_graph = vis.Visibility_Graph(env.world, EPSILON)
 
-        o, _, _, _ = env.step(-1)
+        blank_actions = {i: 8 for i in self.agents}  # Idle action
+        o, _, _, _ = env.step(blank_actions)
         for id, agent in env.agents.items():
             agent.det_sto = [env_dict[key][1]]
             agent.meas_sto = [o[id][0]]
