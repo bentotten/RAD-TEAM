@@ -1034,6 +1034,12 @@ if __name__ == "__main__":
         action=argparse.BooleanOptionalAction,
         default=False,
         help="Whether RADTEAM should use the particle filter module for source location prediction or not.",
+    )
+    parser.add_argument(
+        "--silent",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="For environment output",
     )    
     args = parser.parse_args()
 
@@ -1072,6 +1078,7 @@ if __name__ == "__main__":
         "enforce_grid_boundaries": True,
         "np_random": rng,
         "TEST": args.test,
+        "silent": args.silent
     }
 
     # Set eval parameters according to which version we're running

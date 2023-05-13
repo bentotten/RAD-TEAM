@@ -60,7 +60,7 @@ def get_paths(logdir, condition=None):
     return paths
 
 
-def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extra, RADTEAM):
+def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extra, RADTEAM, condition):
     # Calcuate slice to process
     start_index = id * job_length
     stop_index = start_index + job_length
@@ -77,9 +77,14 @@ def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extr
         if not excluded and (not comp or not test):
             print(f"WARNING: Component or Test not in saved path name and not excluded:\n{path}")
         elif test and comp:
-            test = test[-1]  # Get just test digit
-
             # Set up launch command
+            if condition == "full":
+                test = 'FULL'
+            elif condition == 'zero':
+                test = "ZERO"
+            else:
+                test = test[-1]  # Get just test digit
+
             if RADTEAM:
                 launch = [PYTHON_PATH, "evaluate.py", "--test", test]
             else:
@@ -119,19 +124,21 @@ def main(args):
     args.data_dir = args.data_dir + "/" if args.data_dir[-1] != "/" else args.data_dir  # noqa
 
     # Set up name parsing
-    groups = ["test1", "test2", "test3", "test4", "test5"]
+    groups = ["1agent", "2agents", "4agents"]
 
     # Groups to represent in each x tick group
     # components = ["env", "PPO", "Optimizer", "StatBuf", "CNN"]
-    components = ["RADMARL"]
+    components = ["collab", "coop", "control"]
 
     # Results to exclude from plotting
-    exclude = ["RADTEAM", "2agent"]
+    exclude = []
+
+    condition = 'zero'
 
     RADTEAM = False if "RADTEAM" in exclude else True
 
     # Get paths
-    paths = get_paths(logdir=args.data_dir)
+    paths = get_paths(logdir=args.data_dir, condition=condition)
 
     overwrite_flag = OVERWRITE  # Flag to ensure overwrite of local copy of files happens every time
 
@@ -143,6 +150,19 @@ def main(args):
 
     limit = cpu_count if cpu_count < len(paths) else len(paths)
 
+    run(
+        id=0,
+        paths=paths,
+        components=components,
+        groups=groups,
+        exclude=exclude,
+        overwrite_flag=overwrite_flag,
+        job_length=job_length,
+        extra=extra,
+        RADTEAM=RADTEAM,
+        condition=condition
+    )
+
     thread_it = partial(
         run,
         paths=paths,
@@ -153,6 +173,7 @@ def main(args):
         job_length=job_length,
         extra=extra,
         RADTEAM=RADTEAM,
+        condition=condition
     )
 
     # Start processes
