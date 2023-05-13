@@ -550,12 +550,7 @@ class MapsBuffer:
                         last_prediction=last_prediction,
                     )
                     # Update last prediction
-                    self.tools.last_prediction = inflated_prediction                    
-                else:
-                    self._update_prediction_map(
-                        current_prediction=last_prediction,
-                        last_prediction=last_prediction,
-                    )                    
+                    self.tools.last_prediction = inflated_prediction                                     
             # Update Locations maps
             if id == agent_id:
                 self._update_current_agent_location_map(
