@@ -60,7 +60,7 @@ def get_paths(logdir, condition=None):
     return paths
 
 
-def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extra, RADTEAM, condition):
+def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extra, RADTEAM, condition, obstructions=0):
     # Calcuate slice to process
     start_index = id * job_length
     stop_index = start_index + job_length
@@ -79,21 +79,24 @@ def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extr
         elif test and comp:
             # Set up launch command
             if condition == "full":
+                agents = test
                 test = 'FULL'
             elif condition == 'zero':
+                agents = test
                 test = "ZERO"
             else:
                 test = test[-1]  # Get just test digit
+                agents = 1
 
             if RADTEAM:
-                launch = [PYTHON_PATH, "evaluate.py", "--test", test]
+                launch = [PYTHON_PATH, "evaluate.py", "--test", test, "--agents", agents[0], "--obstacles", str(obstructions), "--silent"]
             else:
-                launch = [PYTHON_PATH, "evaluate.py", "--test", test, "--rada2c"]
+                launch = [PYTHON_PATH, "evaluate.py", "--test", test, "--rada2c",  "--agents", agents[0], "--silent",  "--obstacles", str(obstructions)]
 
             # Copy evaluate and saved_envs into test folder
             cwd = os.getcwd()
-            if not os.path.isfile(path + "/evaluate.py") or overwrite_flag:
-                shutil.copy(cwd + "/evaluate.py", path + "/evaluate.py")
+            # if not os.path.isfile(path + "/evaluate.py") or overwrite_flag:
+            shutil.copy(cwd + "/evaluate.py", path + "/evaluate.py")
 
             if not os.path.isfile(path + "/RADTEAM_core.py") or overwrite_flag:
                 shutil.copy(cwd + "/RADTEAM_core.py", path + "/RADTEAM_core.py")
@@ -109,10 +112,10 @@ def run(id, paths, components, groups, exclude, overwrite_flag, job_length, extr
             og_dir = os.getcwd()
             os.chdir(path)
 
-            try:
-                subprocess.run(launch)
-            except Exception as e:
-                print(e)
+            # try:
+            subprocess.run(launch)
+            # except Exception as e:
+            #     print(e)
 
             os.chdir(og_dir)
 
@@ -124,16 +127,18 @@ def main(args):
     args.data_dir = args.data_dir + "/" if args.data_dir[-1] != "/" else args.data_dir  # noqa
 
     # Set up name parsing
-    groups = ["1agent", "2agents", "4agents"]
+    groups = ["1agent", "2agents", "4agent"]
 
     # Groups to represent in each x tick group
     # components = ["env", "PPO", "Optimizer", "StatBuf", "CNN"]
     components = ["collab", "coop", "control"]
 
     # Results to exclude from plotting
-    exclude = []
+    exclude = ["control"]
 
-    condition = 'zero'
+    condition = 'full'
+
+    obstructions = 3
 
     RADTEAM = False if "RADTEAM" in exclude else True
 
@@ -150,18 +155,19 @@ def main(args):
 
     limit = cpu_count if cpu_count < len(paths) else len(paths)
 
-    run(
-        id=0,
-        paths=paths,
-        components=components,
-        groups=groups,
-        exclude=exclude,
-        overwrite_flag=overwrite_flag,
-        job_length=job_length,
-        extra=extra,
-        RADTEAM=RADTEAM,
-        condition=condition
-    )
+    # run(
+    #     id=0,
+    #     paths=paths,
+    #     components=components,
+    #     groups=groups,
+    #     exclude=exclude,
+    #     overwrite_flag=overwrite_flag,
+    #     job_length=job_length,
+    #     extra=extra,
+    #     RADTEAM=RADTEAM,
+    #     condition=condition,
+    #     obstructions=obstructions
+    # )
 
     thread_it = partial(
         run,
@@ -173,7 +179,8 @@ def main(args):
         job_length=job_length,
         extra=extra,
         RADTEAM=RADTEAM,
-        condition=condition
+        condition=condition,
+        obstructions=obstructions
     )
 
     # Start processes
@@ -197,5 +204,10 @@ if __name__ == "__main__":
         default=".",  # noqa
     )
     args = parser.parse_args()
+
+    # Go to data directory
+    if args.data_dir == ".":
+        args.data_dir = os.getcwd() + "/"
+    args.data_dir = args.data_dir + "/" if args.data_dir[-1] != "/" else args.data_dir
 
     main(args)

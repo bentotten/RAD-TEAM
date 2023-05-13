@@ -649,10 +649,7 @@ class RadSearch(gym.Env):
                         agent.terminal_sto.append(False)
                     else:
                         agent.terminal_sto.append(False)
-                        if action == max(get_args(Action)):
-                            reward = -1.0 * agent.sp_dist / self.max_dist  # If idle, extra penalty
-                        else:
-                            reward = -0.5 * agent.sp_dist / self.max_dist
+                        reward = -0.5 * agent.sp_dist / self.max_dist
                 else:
                     raise ValueError("Reward scheme error.")
 
