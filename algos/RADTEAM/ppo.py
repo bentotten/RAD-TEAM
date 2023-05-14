@@ -240,9 +240,9 @@ def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pf
     kk = 0
     kl_bound_flag = False
     while kk < train_pi_iters and not kl_bound_flag:
+        # NOTE: agent is reset inside batched update
         if BATCHED_UPDATE:
             optimization.pi_optimizer.zero_grad()
-
             loss_pi, kl, entropy, clip_fraction = compute_batched_losses_pi(agent=ac, data=data, sample=sample_indexes, mapstacks_buffer=pi_maps)
 
             if kl < 1.5 * target_kl:
@@ -275,6 +275,7 @@ def update(ac, buf, optimization, PFGRU, train_pi_iters, train_v_iters, train_pf
     # Update value function (in cooperative mode, only first agent updates global critic)
     if mode != "cooperative" or id == 0:
         for i in range(train_v_iters):
+            # NOTE: agent is reset inside batched update
             if BATCHED_UPDATE:
                 optimization.critic_optimizer.zero_grad()
                 loss_v = compute_batched_losses_critic(agent=ac, data=data, sample=sample_indexes, map_buffer_maps=v_maps)

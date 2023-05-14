@@ -410,11 +410,7 @@ class RADTEAM_EpisodeRunner:
         return results
 
     def create_environment(self) -> RadSearch:
-        if USE_RAY:
-            silent = True
-        else:
-            silent = False
-        env = gym.make(self.env_name, silent=silent, **self.env_kwargs)
+        env = gym.make(self.env_name, **self.env_kwargs)
         env.reset()
         return env
 
@@ -445,6 +441,9 @@ class RADTEAM_EpisodeRunner:
                 episode_count=id,
                 silent=silent,
             )
+            # Check agent progress during training
+            for id in range(number_of_agents):
+                self.agents[id].render(savepath=self.render_path)                
 
         # Always render first episode
         elif self.render and run_counter == 0 and self.render_first_episode:
@@ -464,6 +463,9 @@ class RADTEAM_EpisodeRunner:
                 episode_count=id,
                 silent=silent,
             )
+            # Check agent progress during training
+            for id in range(number_of_agents):
+                self.agents[id].render(savepath=self.render_path)                    
 
         # Always render last episode
         elif self.render and run_counter == self.montecarlo_runs - 1:
@@ -482,6 +484,9 @@ class RADTEAM_EpisodeRunner:
                 episode_count=id,
                 silent=silent,
             )
+            # Check agent progress during training
+            for id in range(number_of_agents):
+                self.agents[id].render(savepath=self.render_path)                    
 
 
 # Uncomment when ready to run with Ray
