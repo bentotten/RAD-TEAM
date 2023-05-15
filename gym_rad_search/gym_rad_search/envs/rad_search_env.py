@@ -321,7 +321,7 @@ class RadSearch(gym.Env):
     bbox: BBox = field(
         default_factory=lambda: BBox(tuple((Point((0.0, 0.0)), Point((2700.0, 0.0)), Point((2700.0, 2700.0)), Point((0.0, 2700.0)))))  # type: ignore
     )
-    observation_area: Interval = field(default_factory=lambda: Interval((200.0, 500.0)))
+    observation_area: Interval = field(default_factory=lambda: Interval((200.0, 500.0)))  # Size of obstructions
     np_random: npr.Generator = field(default_factory=lambda: npr.default_rng(0))
     obstruction_count: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
     obstruction_max: int = field(default=7)
@@ -474,7 +474,7 @@ class RadSearch(gym.Env):
             if not self.silent: 
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   FULL RUN MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
-            self.observation_area = Interval((100.0, 200.0))
+            self.observation_area = Interval((100.0, 200.0)) # Size of obstructions
             self.obstruction_count = -1
             self.DEBUG = False
             self.MIN_STARTING_DISTANCE = 500  # cm
