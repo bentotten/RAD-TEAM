@@ -1434,6 +1434,7 @@ class RadSearch(gym.Env):
             src: Point,
             area_dim: BBox,
             flattened_rewards: List,
+            max_frames: int
         ) -> None:
             """
             Renders each frame
@@ -1453,6 +1454,9 @@ class RadSearch(gym.Env):
 
             if self.iter_count == 0:
                 print("Agent must take more than one step to render")
+                return
+
+            if frame_number == max_frames:
                 return
 
             current_index = frame_number % (self.iter_count)
@@ -1756,7 +1760,7 @@ class RadSearch(gym.Env):
             ax1.set_ylim(0, self.search_area[2][1] / 100)
             ax1.set_xlabel("X[m]")
             ax1.set_ylabel("Y[m]")
-            ax1.legend(loc="lower right", fontsize=8)  # TODO get agent labels to stay put
+            ax1.legend(loc="lower left", fontsize=8)  # TODO get agent labels to stay put
 
             # Save
             if self.save_gif or save_gif:
@@ -1797,6 +1801,7 @@ class RadSearch(gym.Env):
                         self.src_coords,
                         self.bbox,
                         flattened_rewards,
+                        data_length+1  # Additional frame for gif extraction of last step
                     ),
                 )
                 if self.save_gif or save_gif:
