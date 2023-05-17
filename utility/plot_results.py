@@ -300,7 +300,7 @@ def plot(graphname, datasets, groups, tests, y_label, path=None, inverty=False, 
     if path:
         plt.savefig(str(path) + f"/{graphname}_result.png", format="png")
         print(f"Saved to {path}/{graphname}_result.png")
-        # plt.savefig(str(path) + "/evaluation_result.eps", format="eps")
+        plt.savefig(str(path) + f"/{graphname}_result.eps", format="eps")
     else:
         plt.show()
 
@@ -328,10 +328,10 @@ if __name__ == "__main__":
 
     # Groups to represent in each x tick group
     # components = ["env", "PPO", "Optimizer", "StatBuf", "CNN"]
-    components = ["collab", "coop"]
+    components = ["collab", "coop", "control"]
 
     # Results to exclude from plotting
-    exclude = ["control"]
+    exclude = [""]
 
     condition = None
 
@@ -344,6 +344,7 @@ if __name__ == "__main__":
     modes = {
         "collab": "BTBE",
         "coop": "CTDE",
+        "control": "RAD-A2C"
     }    
 
     data = get_data(logdir=args.data_dir, condition=condition)
