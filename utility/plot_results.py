@@ -9,7 +9,7 @@ import pandas as pd
 from typing import NewType, List
 import numpy.typing as npt
 import matplotlib.ticker as mticker
-
+import string
 
 # Global vars for tracking and labeling data at load time.
 exp_idx = 0
@@ -139,9 +139,10 @@ def parse_data(data, components, groups, exclude, performance_markers):
     # Rearrange in specified order
     for ci, component in enumerate(components):
         for ti, test in enumerate(groups):
-            accuracy_datasets[ci][ti] = accuracy_sorted[component][test]
-            speed_datasets[ci][ti] = speed_sorted[component][test]
-            score_datasets[ci][ti] = score_sorted[component][test]
+            if test in accuracy_sorted[component]:
+                accuracy_datasets[ci][ti] = accuracy_sorted[component][test]
+                speed_datasets[ci][ti] = speed_sorted[component][test]
+                score_datasets[ci][ti] = score_sorted[component][test]
 
     return accuracy_datasets, speed_datasets, score_datasets
 
@@ -214,7 +215,7 @@ def mock_data(small):
     return [athens]
 
 
-def plot(graphname, datasets, groups, tests, y_label, path=None, inverty=False):
+def plot(graphname, datasets, groups, tests, y_label, path=None, inverty=False, modes=None):
     # Datasets correspond to components. Groups correspond to tests
 
     # Make figures A6 in size
@@ -236,6 +237,9 @@ def plot(graphname, datasets, groups, tests, y_label, path=None, inverty=False):
     _, ax = plt.subplots()
 
     # Set labels
+    for i in range(len(tests)):
+        tests[i] = string.capwords(tests[i][0] + ' ' + tests[i][1:])
+
     ax.set_xticklabels(tests)
 
     # Plot each component
@@ -290,11 +294,12 @@ def plot(graphname, datasets, groups, tests, y_label, path=None, inverty=False):
     for i in range(len(datasets)):
         j = i % len(groups)
         k = i % len(colors)
-        legend_elements.append(Patch(facecolor=colors[k], label=groups[j]))
+        legend_elements.append(Patch(facecolor=colors[k], label=modes[groups[j]]))
     plt.legend(handles=legend_elements, fontsize=8)
 
     if path:
         plt.savefig(str(path) + f"/{graphname}_result.png", format="png")
+        print(f"Saved to {path}/{graphname}_result.png")
         # plt.savefig(str(path) + "/evaluation_result.eps", format="eps")
     else:
         plt.show()
@@ -317,28 +322,29 @@ if __name__ == "__main__":
         args.data_dir = os.getcwd() + "/"
     args.data_dir = args.data_dir + "/" if args.data_dir[-1] != "/" else args.data_dir
 
-    # Groups to sort by
-    tests = ["zero", "full"]  # 'test3', 'test4']
-    # agent_counts = ['1agent', '2agent', '4agent']
-    # modes = ['collab', 'coop', 'control']
 
-    groups = tests
+    # Set up name parsing
+    groups = ["1agent", "2agent", "4agent"]
 
     # Groups to represent in each x tick group
-    components = ["control"]
-    # components = ['1agent', '2agent', '4agent']
+    # components = ["env", "PPO", "Optimizer", "StatBuf", "CNN"]
+    components = ["collab", "coop"]
 
     # Results to exclude from plotting
-    exclude = ["agent"]
+    exclude = ["control"]
 
-    # Conditions for file read-in
-    condition = "10k"
+    condition = None
 
     performance_markers = {
-        "accuracy": "Objective Completion %",
-        "score": "Episode Cumulative Return [raw]",
-        "speed": "Successful Episode Length [samples]",
+        "accuracy": "Accuracy [percentage]",
+        "score": "Cumulative Return [raw]",
+        "speed": "Speed [steps]",
     }
+
+    modes = {
+        "collab": "BTBE",
+        "coop": "CTDE",
+    }    
 
     data = get_data(logdir=args.data_dir, condition=condition)
 
@@ -346,18 +352,14 @@ if __name__ == "__main__":
         data=data, components=components, groups=groups, exclude=exclude, performance_markers=performance_markers
     )
 
-    print(accuracy_datasets)
-    print(mock_data(True))
-    # accuracy_datasets, speed_datasets, score_datasets = mock_data(True), mock_data(True), mock_data(True)
-
     for graphname, graph in zip(
         [performance_markers["accuracy"], performance_markers["speed"], performance_markers["score"]],
         [accuracy_datasets, speed_datasets, score_datasets],
     ):
         inverty = True if graphname in performance_markers["speed"] else False
-        try:
-            plot(graphname=graphname, datasets=graph, groups=components, tests=groups, y_label=graphname, path=os.getcwd(), inverty=inverty)
-        except Exception as e:
-            print(e)
+        # try:
+        plot(graphname=graphname, datasets=graph, groups=components, tests=groups, y_label=graphname, path=os.getcwd(), inverty=inverty, modes=modes)
+        # except Exception as e:
+        #     print(e)
 
     print("Done with plot")
