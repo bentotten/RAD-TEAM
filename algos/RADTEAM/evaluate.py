@@ -612,7 +612,7 @@ class RADA2C_EpisodeRunner:
         # Initialize agents and load agent models
         for i in range(self.number_of_agents):
             self.agents[i] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
-            self.agents[i].load(checkpoint_path=agent_models[i])        
+            self.agents[i].load_state_dict(torch.load("pyt_save/model.pt"))
 
     def run(self) -> MonteCarloResults:
         # Prepare tracking buffers and counters
@@ -644,7 +644,7 @@ class RADA2C_EpisodeRunner:
 
             self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4])
 
-        for id in self.number_of_agents:
+        for id in range(self.number_of_agents):
             self.agents[id].pi.eval()
             self.agents[id].model.eval()
 
@@ -666,7 +666,8 @@ class RADA2C_EpisodeRunner:
         while run_counter < self.montecarlo_runs:
             # Get agent thoughts on current state. Actor: Compute action and logp (log probability); Critic: compute state-value
             agent_thoughts.clear()
-            agent_thoughts[id] = {}
+            for id in range(self.number_of_agents):
+                agent_thoughts[id] = {}
             for id, ac in self.agents.items():
                 with torch.no_grad():
                     a, v, logp, hidden, out_pred = ac.step(observations[id], hiddens[id])
@@ -741,12 +742,12 @@ class RADA2C_EpisodeRunner:
                 if terminal_reached_flag:
                     results.success_counter += 1
                     results.successful.episode_length.append(steps_in_episode)
-                    results.successful.episode_return.append(episode_return[0])  # TODO change for individual mode
+                    results.successful.episode_return.append(episode_return)  
                 else:
                     results.unsuccessful.episode_length.append(steps_in_episode)
-                    results.unsuccessful.episode_return.append(episode_return[0])  # TODO change for individual mode
+                    results.unsuccessful.episode_return.append(episode_return)  
 
-                results.total_episode_return.append(episode_return[0])  # TODO change for individual mode
+                results.total_episode_return.append(episode_return) 
 
                 # Incremenet run counter
                 run_counter += 1
@@ -1131,7 +1132,7 @@ if __name__ == "__main__":
             snr=args.snr,  # signal to noise ratio [none, low, medium, high]
             obstruction_count=obstruction_count,  # number of obstacles [0 - 7] (num_obs)
             steps_per_episode=120,
-            number_of_agents=1,
+            number_of_agents=number_of_agents,
             enforce_boundaries=True,
             resolution_multiplier=0.01,
             team_mode="individual",
