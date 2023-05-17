@@ -1466,7 +1466,7 @@ class RadSearch(gym.Env):
             if current_index == 0:
                 intensity_sci = "{:.2e}".format(self.intensity)
                 ax1.cla()
-                ax1.set_title("Activity: " + intensity_sci + " [gps] Bkg: " + str(self.bkg_intensity) + " [cps]")
+                ax1.set_title("Activity: " + intensity_sci + " [cps] Bkg: " + str(self.bkg_intensity) + " [cps]")
 
                 # Plot source
                 ax1.scatter(
