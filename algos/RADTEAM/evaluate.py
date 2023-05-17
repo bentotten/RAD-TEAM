@@ -554,11 +554,13 @@ class RADA2C_EpisodeRunner:
             if child.is_dir() and "general" in child.name:
                 general_config_path = child.path
 
-        obj = json.load(open(f"{self.model_path}/config.json"))
-        if "self" in obj.keys():
-            original_configs = list(obj["self"].values())[0]["ppo_kwargs"]["actor_critic_args"]
-        else:
-            original_configs = obj["ac_kwargs"]  # Original project save format
+
+        if CHECK_CONFIGS:
+            obj = json.load(open(f"{self.model_path}/config.json"))
+            if "self" in obj.keys():
+                original_configs = list(obj["self"].values())[0]["ppo_kwargs"]["actor_critic_args"]
+            else:
+                original_configs = obj["ac_kwargs"]  # Original project save format
 
         # Set up static A2C actor-critic args
         actor_critic_args = dict(
@@ -573,29 +575,31 @@ class RADA2C_EpisodeRunner:
         if self.actor_critic_architecture != "cnn":
             assert self.team_mode == "individual"  # No global critic for RAD-A2C
 
-        # Check current important parameters match parameters read in
-        for arg in actor_critic_args:
-            if arg != "no_critic" and arg != "GlobalCritic" and arg != "save_path":
-                if type(original_configs[arg]) == int or type(original_configs[arg]) == float or type(original_configs[arg]) == bool:
-                    assert (
-                        actor_critic_args[arg] == original_configs[arg]
-                    ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
-                elif type(original_configs[arg]) is str:
-                    if arg == "net_type":
-                        assert actor_critic_args[arg] == original_configs[arg]
-                    else:
-                        to_list = original_configs[arg].strip("][").split(" ")
-                        config = np.array([float(x) for x in to_list], dtype=np.float32)
-                        assert np.array_equal(
-                            config, actor_critic_args[arg]
+
+        if CHECK_CONFIGS:
+            # Check current important parameters match parameters read in
+            for arg in actor_critic_args:
+                if arg != "no_critic" and arg != "GlobalCritic" and arg != "save_path":
+                    if type(original_configs[arg]) == int or type(original_configs[arg]) == float or type(original_configs[arg]) == bool:
+                        assert (
+                            actor_critic_args[arg] == original_configs[arg]
                         ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
-                elif type(original_configs[arg]) is list:
-                    for a, b in zip(original_configs[arg], actor_critic_args[arg]):
-                        assert a == b, f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
-                else:
-                    assert (
-                        actor_critic_args[arg] == original_configs[arg]
-                    ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                    elif type(original_configs[arg]) is str:
+                        if arg == "net_type":
+                            assert actor_critic_args[arg] == original_configs[arg]
+                        else:
+                            to_list = original_configs[arg].strip("][").split(" ")
+                            config = np.array([float(x) for x in to_list], dtype=np.float32)
+                            assert np.array_equal(
+                                config, actor_critic_args[arg]
+                            ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                    elif type(original_configs[arg]) is list:
+                        for a, b in zip(original_configs[arg], actor_critic_args[arg]):
+                            assert a == b, f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                    else:
+                        assert (
+                            actor_critic_args[arg] == original_configs[arg]
+                        ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
 
         # Initialize agents and load agent models
         actor_critic_args["observation_space"] = self.env.observation_space
@@ -603,12 +607,16 @@ class RADA2C_EpisodeRunner:
         actor_critic_args["seed"] = self.seed
         actor_critic_args["pad_dim"] = 2
 
-        self.agents[0] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
-        self.agents[0].load_state_dict(torch.load("pyt_save/model.pt"))
+        # self.agents[0] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
+        # self.agents[0].load_state_dict(torch.load("pyt_save/model.pt"))
+        # Initialize agents and load agent models
+        for i in range(self.number_of_agents):
+            self.agents[i] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
+            self.agents[i].load(checkpoint_path=agent_models[i])        
 
     def run(self) -> MonteCarloResults:
         # Prepare tracking buffers and counters
-        episode_return: Dict[int, float] = {id: 0.0 for id in self.agents}
+        episode_return = 0
         steps_in_episode: int = 0
         terminal_counter: Dict[int, int] = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
         run_counter = 0
@@ -636,8 +644,9 @@ class RADA2C_EpisodeRunner:
 
             self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4])
 
-        self.agents[0].pi.eval()
-        self.agents[0].model.eval()
+        for id in self.number_of_agents:
+            self.agents[id].pi.eval()
+            self.agents[id].model.eval()
 
         # Prepare episode variables
         agent_thoughts: Dict = dict()
@@ -662,8 +671,8 @@ class RADA2C_EpisodeRunner:
                 with torch.no_grad():
                     a, v, logp, hidden, out_pred = ac.step(observations[id], hiddens[id])
                     agent_thoughts[id]["action"] = a
-
                 hiddens[id] = hidden
+
             # Create action list to send to environment
             agent_action_decisions = {id: int(agent_thoughts[id]["action"]) for id in agent_thoughts}
             for action in agent_action_decisions.values():
@@ -672,7 +681,7 @@ class RADA2C_EpisodeRunner:
             # Take step in environment - Note: will be missing last reward, rewards link to previous observation in env
             observations, rewards, terminals, _ = self.env.step(action=agent_action_decisions)
 
-            for id, ac in self.agents.items():
+            for id, _ in self.agents.items():
                 stat_buffers[id].update(observations[id][0])
                 observations[id][0] = np.clip(
                     (observations[id][0] - stat_buffers[id].mu) / stat_buffers[id].sig_obs,
@@ -681,9 +690,7 @@ class RADA2C_EpisodeRunner:
                 )
 
             # Incremement Counters and save new (individual) cumulative returns
-            for id in range(self.number_of_agents):
-                episode_return[id] += np.array(rewards["individual_reward"][id], dtype="float32").item()
-
+            episode_return += rewards["team_reward"]
             steps_in_episode += 1
 
             # Tally up ending conditions
@@ -745,7 +752,7 @@ class RADA2C_EpisodeRunner:
                 run_counter += 1
 
                 # Reset environment without performing an env.reset()
-                episode_return = {id: 0.0 for id in self.agents}
+                episode_return = 0
                 steps_in_episode = 0
                 terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
 
