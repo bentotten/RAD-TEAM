@@ -212,8 +212,9 @@ class RADTEAM_EpisodeRunner:
 
         # Get agent model paths and saved agent configurations
         agent_models = {}
+        print("Checking: " + os.getcwd())
         for child in os.scandir(self.model_path):
-            if child.is_dir() and ("agent" in child.name or "pyt_save" in child.name):
+            if child.is_dir() and ("agent" in child.name): # or "pyt_save" in child.name):
                 agent_models[
                     int(child.name[0])
                 ] = child.path  # Read in model path by id number. NOTE: Important that ID number is the first element of file name
@@ -290,7 +291,7 @@ class RADTEAM_EpisodeRunner:
         # Reset environment and save test env parameters
         if self.load_env:
             #observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
-            self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4])
+            self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4]) if len(self.env_sets[f"env_{self.id}"]) == 5 else 0
             observations = self.env.refresh_environment(env_dict=self.env_sets, n=self.id, num_obs=self.obstruction_count)
         else:
             observations, _, _, _ = self.env.reset()
@@ -303,7 +304,7 @@ class RADTEAM_EpisodeRunner:
             self.env_sets[f"env_{self.id}"][3] = self.env.bkg_intensity
             self.env_sets[f"env_{self.id}"][4] = self.env.obs_coord.copy()
 
-            self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4])
+            self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4]) if len(self.env_sets[f"env_{self.id}"]) == 5 else 0
 
         for agent in self.agents.values():
             agent.set_mode("eval")
@@ -629,7 +630,7 @@ class RADA2C_EpisodeRunner:
         # Reset environment and save test env parameters
         if self.load_env:
             #observations = self.env.refresh_environment(env_dict=self.env_sets, id=self.id)
-            self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4])
+            self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4]) if len(self.env_sets[f"env_{self.id}"]) == 5 else 0
             observations = self.env.refresh_environment(env_dict=self.env_sets, n=self.id, num_obs=self.obstruction_count)
         else:
             observations, _, _, _ = self.env.reset()
@@ -642,7 +643,7 @@ class RADA2C_EpisodeRunner:
             self.env_sets[f"env_{self.id}"][3] = self.env.bkg_intensity
             self.env_sets[f"env_{self.id}"][4] = self.env.obs_coord.copy()
 
-            self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4])
+            self.obstruction_count = len(self.env_sets[f"env_{self.id}"][4]) if len(self.env_sets[f"env_{self.id}"]) == 5 else 0
 
         for id in range(self.number_of_agents):
             self.agents[id].pi.eval()
