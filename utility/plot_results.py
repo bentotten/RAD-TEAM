@@ -21,10 +21,10 @@ COLOR_FACTOR = 0.75  # How much to lighten previous color by
 COLORS = [
     Colorcode([75, 0, 130]),  # Indigo
     Colorcode([0, 0, 255]),  # Blue
-    Colorcode([255, 105, 180]),  # Pink
+    # Colorcode([255, 105, 180]),  # Pink (Removed due to being too similar to the red median line)
     Colorcode([0, 255, 0]),  # Green
     Colorcode([255, 127, 0]),  # Orange
-    Colorcode([148, 0, 211]),  # Violet (Removed due to being too similar to indigo)
+    #Colorcode([148, 0, 211]),  # Violet (Removed due to being too similar to indigo)
 ]
 
 
