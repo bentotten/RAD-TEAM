@@ -29,7 +29,6 @@ import matplotlib.pyplot as plt  # type: ignore
 import warnings
 
 SMALL_VERSION = False
-# PFGRU = False  # If wanting to use the PFGRU TODO turn this into a parameter
 
 # Maps
 #: [New Type] Array indicies to access a GridSquare (x, y). Type: Tuple[float, float]
@@ -39,7 +38,7 @@ Point = NewType("Point", Tuple[Union[float, int], Union[float, int]])
 Map = NewType("Map", npt.NDArray[np.float32])
 #: [New Type] Mapstack - a Tuple of all existing maps.
 MapStack = NewType("MapStack", Tuple[Map, Map, Map, Map, Map, Map, Map])
-#: [New Type] Tracks last known coordinates of all agents in order to update them on the current-location and others-locations heatmaps. 
+#: [New Type] Tracks last known coordinates of all agents in order to update them on the current-location and others-locations heatmaps.
 #:  Type: Dict[str, Dict[int, Point]]
 CoordinateStorage = NewType("CoordinateStorage", Dict[int, Point])
 
@@ -176,7 +175,9 @@ class IntensityEstimator:
 
     def reset(self):
         """Method to reset class members to defaults"""
-        self.__init__()  # TODO after attributes have settled, write a proper reset function
+        self.readings = dict()
+        self._min = 0.0
+        self._max = 0.0
 
 
 @dataclass
@@ -204,8 +205,8 @@ class StatisticStandardization:
     _min: float = field(default=0.0)  # Minimum radiation reading estimate. This is used for shifting normalization data in the case of a negative.
 
     def update(self, reading: float) -> None:
-        """Method to update estimate running mean and sample variance for standardizing radiation intensity readings. Also updates max standardized value
-        for normalization, if applicable.
+        """Method to update estimate running mean and sample variance for standardizing radiation intensity readings. Also updates max standardized
+        value for normalization, if applicable.
 
         #. The existing mean is subtracted from the new reading to get the initial delta.
         #. This delta is then divided by the number of samples seen so far and added to the existing mean to create a new mean.
@@ -263,7 +264,13 @@ class StatisticStandardization:
 
     def reset(self) -> None:
         """Method to reset class members to defaults"""
-        self.__init__()  # TODO after attributes have settled, write a proper reset function
+        self.mean = 0.0
+        self.square_dist_mean = 0.0
+        self.sample_variance = 0.0
+        self.std = 1.0
+        self.count = 0
+        self._max = field(default=0.0)
+        self._min = field(default=0.0)
 
 
 @dataclass
@@ -408,7 +415,6 @@ class MapsBuffer:
     :param resolution_multiplier: The multiplier used to create the resolution accuracy. Used to indicate how maps should be reset, for efficiency.
     """
 
-    # TODO change env return to a named tuple instead.
     # Inputs
     observation_dimension: int
     steps_per_episode: int  #
@@ -550,7 +556,7 @@ class MapsBuffer:
                         last_prediction=last_prediction,
                     )
                     # Update last prediction
-                    self.tools.last_prediction = inflated_prediction                                     
+                    self.tools.last_prediction = inflated_prediction
             # Update Locations maps
             if id == agent_id:
                 self._update_current_agent_location_map(
@@ -725,7 +731,7 @@ class MapsBuffer:
         last_coordinates: Union[Tuple[int, int], None],
     ) -> None:
         """
-        Method to update the other-agent locations observation map. If prior location exists, this is reset to zero. Note: updates one location at a 
+        Method to update the other-agent locations observation map. If prior location exists, this is reset to zero. Note: updates one location at a
         time, not in a batch.
 
         :param id: (int) ID of current agent being processed
@@ -1052,7 +1058,7 @@ class Actor(nn.Module):
 
         :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be shape [batch_size, # of maps, map width, map height].
         :param action: (Tensor) The the action taken (tensor(1))
-        :return: (Tensor, Tensor) Returns the log-probability for the passed-in action (tensor(1)) and the entropy for the 
+        :return: (Tensor, Tensor) Returns the log-probability for the passed-in action (tensor(1)) and the entropy for the
             action distribution (tensor(1)).
         """
         #: Raw action probabilities for each available action for this particular observation
@@ -1106,7 +1112,7 @@ class Critic(nn.Module):
     Q-value, only the state-value. RAD-Team is set up to work with both a per-agent critic and a global critic. A global critic can still work,
     in spite of the independent agent policies, due to the team-based reward. Learning aims to minimize the mean-squared error. For RAD-TEAM, the
     Critic consists of a convolutional neural Network Architecture that includes two convolution layers, a maxpool layer, and three fully connected
-    layers to distill the previous layers into a single state-value. Following Alagha et al.'s multi-agent CNN architecture, each of the nodes are 
+    layers to distill the previous layers into a single state-value. Following Alagha et al.'s multi-agent CNN architecture, each of the nodes are
     activated with ReLU (to dodge vanishing gradient problems).
 
     The Critic, like the actor takes a stack of observation maps (numerical matrices/tensors) and processes them with the neural network architecture.
@@ -1691,8 +1697,8 @@ class CNNBase:
         self.mseLoss = nn.MSELoss()
 
         self.model = PFGRUCell(
-            input_size=self.observation_space - 8, # TODO This just means "3"; adjust for 3 for arbritrary number of agents
-            obs_size=self.observation_space - 8, # TODO This just means "3"; adjust for 3 for arbritrary number of agents
+            input_size=self.observation_space - 8,  # TODO This just means "3"; adjust for 3 for arbritrary number of agents
+            obs_size=self.observation_space - 8,  # TODO This just means "3"; adjust for 3 for arbritrary number of agents
             activation="tanh",
             hidden_size=self.predictor_hidden_size,  # (bpf_hsize) (hid_rec in cli)
         )
@@ -1820,7 +1826,7 @@ class CNNBase:
                 # obs_list = np.array(
                 #     [state_observation[i][:3] for i in range(self.number_of_agents)]
                 # )  # Create a list of just readings and locations for all agents
-                # Create a list of just readings and locations for current agent                           
+                # Create a list of just readings and locations for current agent
                 obs_list = np.array(
                     [state_observation[id][:3]]
                 )
@@ -2013,7 +2019,7 @@ class CNNBase:
         prediction_transposed: npt.NDArray = self.maps.prediction_map.T
 
         if self.PFGRU:
-            fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax, pfgru_ax) = plt.subplots(nrows=1, ncols=6, figsize=(30, 10), tight_layout=True)    
+            fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax, pfgru_ax) = plt.subplots(nrows=1, ncols=6, figsize=(30, 10), tight_layout=True)
         else:
             fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax) = plt.subplots(nrows=1, ncols=5, figsize=(30, 10), tight_layout=True)
 
@@ -2040,9 +2046,9 @@ class CNNBase:
         if self.PFGRU:
             pfgru_ax.imshow(prediction_transposed, cmap="viridis", interpolation=interpolation_method)
             pfgru_ax.set_title("Source Prediction")
-            pfgru_ax.invert_yaxis()            
+            pfgru_ax.invert_yaxis()
 
-        # Add values to gridsquares if value is greater than 0 #TODO if large grid, this will be slow
+        # Add values to gridsquares if value is greater than 0 NOTE if large grid, this will be slow
         if add_value_text:
             for i in range(loc_transposed.shape[0]):
                 for j in range(loc_transposed.shape[1]):
@@ -2105,7 +2111,7 @@ class CNNBase:
                             va="center",
                             color="black",
                             size=6,
-                        )                    
+                        )
 
         fig.savefig(
             f"{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{episode_count}({self.render_counter}).png",

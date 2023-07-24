@@ -1,3 +1,5 @@
+# type: ignore
+
 from os import stat, path, mkdir, getcwd
 import sys
 from math import sqrt, log
