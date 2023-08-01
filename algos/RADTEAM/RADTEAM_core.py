@@ -2,6 +2,17 @@ from os import path, mkdir, getcwd
 import sys
 from math import sqrt, log
 from statistics import median
+import warnings
+
+import numpy as np
+import numpy.typing as npt
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.distributions import Categorical
+
+import matplotlib.pyplot as plt  # type: ignore
 
 from dataclasses import dataclass, field
 from typing import (
@@ -16,19 +27,6 @@ from typing import (
     NamedTuple,
 )
 
-import numpy as np
-import numpy.typing as npt
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.distributions import Categorical
-
-import matplotlib.pyplot as plt  # type: ignore
-
-import warnings
-
-SMALL_VERSION = False
 
 # Maps
 #: [New Type] Array indicies to access a GridSquare (x, y). Type: Tuple[float, float]
@@ -52,8 +50,23 @@ DIST_TH = 110.0
 SIMPLE_NORMALIZATION = False
 NORMALIZE_RADIATION = False
 
+# TODO Remove small version
+#: [Global] Indicates if a subset of maps should be used for actor-critic in order to improve training time (at the cost of ability). 
+#:  Recommended to only use for simple test-cases to ensure functionality.
+SMALL_VERSION = False
 
-def calculate_map_dimensions(grid_bounds: Tuple, resolution_accuracy: float, offset: float):
+
+def calculate_map_dimensions(grid_bounds: Tuple, offset: float, resolution_accuracy: float):
+    """
+    Calculate scaled x and y bounds for observation maps
+    :param grid_bounds: (Tuple) Non-scaled maximum possible x and y coordinates.
+    :param offset: Amount to pad original coordinates with (will also be scaled).
+    :param resolution_accuracy: (Float) Hyperparameter that indicates the level of accuracy desired. Higher accuracy increases training time. Current environment returnes
+    #:  scaled coordinates for each agent. A resolution_accuracy value of 1 here means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less
+    #:  memory intensive, reduce the resolution multiplier. To return to full inflation and full accuracy, change the multipier to 1.
+
+    :returns: (Tuple) Maximum scaled x and y bounds for observation maps.
+    """
     return (
         int(grid_bounds[0] * resolution_accuracy) + int(offset * resolution_accuracy),
         int(grid_bounds[1] * resolution_accuracy) + int(offset * resolution_accuracy),
@@ -549,8 +562,13 @@ class MapsBuffer:
             # Update Prediction maps
             if self.PFGRU:
                 last_prediction: Tuple = self.tools.last_prediction
+
                 # Check that prediction is within map bounds, else update with last prediction again
-                if inflated_prediction[0] < self.map_dimensions[0] and inflated_prediction[1] < self.map_dimensions[0] and inflated_prediction >= (0, 0):
+                x_bound = inflated_prediction[0] < self.map_dimensions[0]
+                y_bound = inflated_prediction[1] < self.map_dimensions[0]
+                natural_bound = inflated_prediction >= (0, 0)
+
+                if x_bound and y_bound and natural_bound:
                     self._update_prediction_map(
                         current_prediction=inflated_prediction,
                         last_prediction=last_prediction,
