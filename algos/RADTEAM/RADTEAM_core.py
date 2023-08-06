@@ -338,15 +338,24 @@ class StatisticStandardization:
 class Normalizer:
     """Normalization methods"""
 
+    # Private members
+    # First base value that is used for class. The base value represents the maximum possible value (steps per episode multiplied by the number
+    #   of agents).
     _base_check: Any = field(default=None)
+
+    # First increment value that is used for class. The increment value represents the amount that the existing value from shadow table is expected to
+    #   increment by this amount every time.
     _increment_check: Any = field(default=None)
 
     def normalize(self, current_value: Any, max: Any, min: Union[float, None] = None) -> float:
         """
         Method to do min-max normalization to the range [0,1]. If min is below zero, the data will be shifted by the absolute value of the minimum
+
         :param current_value: (Any) value to be normalized
         :param max: (Any) Maximum possible
+        :returns: (float) Normalized value for current_value input via min-max method.
         """
+
         # Check for edge cases and invalid inputs
         if current_value == 0:
             return 0.0
@@ -357,6 +366,7 @@ class Normalizer:
         if min:
             assert current_value >= min, "Value error - current is more than max."
             offset = abs(min) if min < 0 else 0
+
         # If no min provided, assume min == 0 and adjust negative current values
         elif not min:
             min = 0.0
@@ -382,7 +392,10 @@ class Normalizer:
         :param current_value: (Any) value to be normalized
         :param base: (Any) Maximum possible value (steps per episode multiplied by the number of agents)
         :param increment_value (int): Value from shadow table is expected to increment by this amount every time
+
+        :returns: (float) Normalized value for current_value input via log method.
         """
+
         assert current_value >= 0 and base > 0 and increment_value > 0, "Value error - input was negative that should not be"
 
         # Warnings for different scales
@@ -434,25 +447,16 @@ class ConversionTools:
 
 @dataclass()
 class MapsBuffer:
-    """Handles all maps operations. Holds the locations maps, readings map, visit counts maps, and obstacles map.
+    """
+    Handles all maps operations. Holds the locations maps, readings map, visit counts maps, and obstacles map.
     Additionally holds toolbox to convert observations into normalized/standardized values and updates maps with these values.
-
-    6 maps:
-
-    * Location Map: a 2D matrix showing the individual agent's location.
-
-    * Map of Other Locations: a grid showing the number of agents located in each grid element (excluding current agent).
-
-    * Readings map: a grid of the last reading collected in each grid square - unvisited squares are given a reading of 0.
-
-    * Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
-
-    * Obstacles Map: a grid of how far from an obstacle each agent was when they detected it
 
     :param observation_dimension: (int) Shape of state space. This is how many elements are in the observation array that is returned from the
         environment. For Rad-Search, this should be 11.
+
     :param steps_per_episode: (int) Maximum steps per episode. This is used for the base calculation for the log_normalizing for visit counts in
         visits map.
+
     :param number_of_agents: (int) Total number of agents. This is used for the base calculation for the log_normalizing for visit counts in
         visits map.
 
@@ -464,6 +468,8 @@ class MapsBuffer:
         to the appropriate size in order to convert an observation into a map stack. Defaults to 22, where the graph is inflated to
         a 22x22 grid + offset.
 
+    :param resolution_multiplier: The multiplier used to create the resolution accuracy. Used to indicate how maps should be reset, for efficiency.
+
     :param offset: Scaled offset for when boundaries are different than "search area". This parameter increases the number of nodes around the
         "search area" to accomodate possible detector positions in the bounding-box area that are not in the search area.
         Further clarification: In the Rad-Search environment, the bounding box indicates the rendered grid area, however the search area is
@@ -473,13 +479,14 @@ class MapsBuffer:
     :param obstacle_state_offset: Number of initial elements in state return that do not indicate there is an obstacle. First element is intensity,
         second two are x and y coords. Defaults to 3, with the 4th element indicating the beginning of obstacle detections. This defaults to 3.
 
-    :param resolution_multiplier: The multiplier used to create the resolution accuracy. Used to indicate how maps should be reset, for efficiency.
+    :param PFGRU: (bool) NOTE: UNTESTED! True/False indicating whether or not to take into account the particle filter gated recurrent module's
+        source location prediction.
     """
 
     # Inputs
     observation_dimension: int
-    steps_per_episode: int  #
-    number_of_agents: int  # Used for normalizing visists count in visits map
+    steps_per_episode: int
+    number_of_agents: int
 
     # Option Parameters
     grid_bounds: Tuple = field(default_factory=lambda: (1, 1))
@@ -487,9 +494,8 @@ class MapsBuffer:
     resolution_multiplier: float = field(default=0.01)  # If wrong, may just be slow for map resets
     offset: float = field(default=0.22727272727272727)
     obstacle_state_offset: int = field(default=3)
+    PFGRU: bool = field(default=False)
 
-    # Whether to use PFGRU or not
-    PFGRU: bool = field(default=True)
     # Initialized elsewhere
     #: Maximum x bound in observation maps, used to fill observation maps with zeros during initialization. This defaults to 27.
     x_limit_scaled: int = field(init=False)
@@ -502,24 +508,26 @@ class MapsBuffer:
     #:  is the maximum number of steps per episode and n is the number of agents.
     base: int = field(init=False)
 
-    # Blank Maps
     #: Number of maps
     map_count: int = field(init=False, default=6)
-    #: Source prediction map
-    prediction_map: Map = field(init=False)
-    #: Combined Location Map: a 2D matrix showing all agent locations. Used for the critic
-    combined_location_map: Map = field(init=False)
+
+    # Blank Maps
     #: Location Map: a 2D matrix showing the individual agent's location.
     location_map: Map = field(init=False)
     #: Map of Other Locations: a grid showing the number of agents located in each grid element (excluding current agent).
     others_locations_map: Map = field(init=False)
+    #: Combined Location Map: a 2D matrix showing all agent locations. Used for the critic.
+    combined_location_map: Map = field(init=False)
     #: Readings map: a grid of the last estimated reading in each grid square - unvisited squares are given a reading of 0.
     readings_map: Map = field(init=False)
     #: Obstacles Map: a grid of how far from an obstacle each agent was when they detected it
     obstacles_map: Map = field(init=False)
     #: Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
     visit_counts_map: Map = field(init=False)
+    #: Source prediction map from PFGRU. Only used if PFGRU indicator is True.
+    prediction_map: Map = field(init=False)
 
+    # Matrices
     #: Shadow hashtable for visits counts map, increments a counter every time that location is visited. This is used during logrithmic normalization
     #:  to reduce computational complexity and python floating point precision errors, it is "cheaper" to calculate the log on the fly with a second
     #:  sparce matrix than to inflate a log'd number. Stores tuples (x, y, 2(i)) where i increments every hit.
@@ -536,10 +544,10 @@ class MapsBuffer:
     reset_flag: int = field(init=False, default=0)  # TODO switch out for pytest mock
 
     def __post_init__(self) -> None:
-        # Set logrithmic base for visits counts normalization
-        self.base = (
-            self.steps_per_episode + 1
-        ) * self.number_of_agents  # Extra observation is for the "last step" where the next state value is used to bootstrap rewards
+        # Set logrithmic base for visits counts normalization. NOTE: Extra observation (+1) is for the "last step" where the next state value is used
+        #   to bootstrap rewards. This basically predicts what the reward would be if an additional step would be taken after the terminal step. See 
+        #   main training function bootstrap step for further explaination.
+        self.base = (self.steps_per_episode + 1) * self.number_of_agents
 
         # Calculate map x and y bounds for observation maps
         self.map_dimensions = calculate_map_dimensions(
@@ -551,11 +559,11 @@ class MapsBuffer:
         self.y_limit_scaled: int = self.map_dimensions[1]
 
         # Initialize maps and buffer
-        self._reset_maps()  # Initialize maps
+        self._reset_maps()
         self.reset()
 
     def reset(self) -> None:
-        """Method to clear maps and reset matrices. If seeing errors in maps, try a full reset with full_reset()"""
+        """Method to clear maps and reset matrices. Troubleshooting: If seeing errors in maps, try a full reset with full_reset()"""
 
         self._clear_maps()
 
@@ -572,6 +580,7 @@ class MapsBuffer:
         self.locations_matrix.clear()
         self.visit_counts_shadow.clear()
         self.tools.reset()
+        self.reset_flag += 1 if self.reset_flag < 100 else 1
 
     def observation_to_map(
         self,
@@ -585,7 +594,7 @@ class MapsBuffer:
 
         :param observation: (dict) Dictionary of agent IDs and their individual observations from the environment.
         :param id: (int) Current Agent's ID, used to differentiate between the agent location map and the other agents map.
-        :param loc_prediction: (Tuple) PFGRU's guess for source location
+        :param loc_prediction: (Tuple) PFGRU's guess for source location.
 
         :return: Returns a tuple of five 2d map arrays.
         """
