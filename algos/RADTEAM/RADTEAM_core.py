@@ -56,7 +56,7 @@ NORMALIZE_RADIATION = False
 SMALL_VERSION = False
 
 
-def calculate_map_dimensions(grid_bounds: Tuple, offset: float, resolution_accuracy: float):
+def calculate_map_dimensions(grid_bounds: Tuple, offset: float, resolution_accuracy: float) -> Tuple[int]:
     """
     Calculate scaled x and y bounds for observation maps.
 
@@ -80,7 +80,7 @@ def calculate_map_dimensions(grid_bounds: Tuple, offset: float, resolution_accur
     )
 
 
-def calculate_resolution_accuracy(resolution_multiplier: float, scale: int):
+def calculate_resolution_accuracy(resolution_multiplier: float, scale: int) -> float:
     """
     Calculates the resolution accuracy.
 
@@ -96,7 +96,15 @@ def calculate_resolution_accuracy(resolution_multiplier: float, scale: int):
     return resolution_multiplier * 1 / scale
 
 
-def count_vars(module):
+def count_vars(module: nn.Module) -> int:
+    """
+    Count the number of parameters in a neural network.
+    Source: https://github.com/openai/spinningup/blob/038665d62d569055401d91856abb287263096178/spinup/algos/pytorch/sac/core.py#L22
+
+    :param module: (nn.Module) Pytorch neural network
+
+    :returns: (int) total number of parameters in module.
+    """
     return sum([np.prod(p.shape) for p in module.parameters()])
 
 
@@ -146,8 +154,8 @@ class IntensityEstimator:
         Method to add value to radiation hashtable. If key does not exist, creates key and new buffer with value. Also updates running max/min
         estimate, if applicable. Note that the max/min is the ESTIMATE of the true value, not the observed value.
 
-        :param value: (float) Sampled radiation intensity value
         :param key: (Tuple[int, int]) Inflated coordinates where radiation intensity (value) was sampled
+        :param value: (float) Sampled radiation intensity value
         """
         if self.check_key(key=key):
             self.readings[key].append(value)
@@ -161,18 +169,25 @@ class IntensityEstimator:
             self._set_min(estimate)
 
     def _set_max(self, value: float) -> None:
-        """Method to set the maximum radiation reading estimated thus far."""
+        """
+        Method to set the maximum radiation reading estimated thus far.
+        :param value: (float) Sampled radiation intensity value
+        """
         self._max = value
 
     def _set_min(self, value: float) -> None:
-        """Method to set the minimum radiation reading estimated thus far."""
+        """
+        Method to set the minimum radiation reading estimated thus far.
+        :param value: (float) Sampled radiation intensity value
+        """
         self._min = value
 
     def get_buffer(self, key: Tuple[int, int]) -> List:
         """
         Method to return existing buffer for key. Raises exception if key does not exist.
-        :param value: (float) Sampled radiation intensity value
+
         :param key: (Point) Coordinates where radiation intensity (value) was sampled
+        :returns: (List) Buffer containing all radiation observations at this hash key (typically grid coordinates)
         """
         if not self.check_key(key=key):
             raise ValueError("Key does not exist")
@@ -181,7 +196,9 @@ class IntensityEstimator:
     def get_estimate(self, key: Tuple[int, int]) -> float:
         """
         Method to returns radiation estimate for current coordinates. Raises exception if key does not exist.
+
         :param key: (Point) Coordinates for desired radiation intensity estimate
+        :returns: (float) Estimation of true radiation reading at this hash key (typically grid coordinates)
         """
         if not self.check_key(key=key):
             raise ValueError("Key does not exist")
@@ -191,6 +208,8 @@ class IntensityEstimator:
         """
         Method to return the maximum radiation reading estimated thus far. This can be used for normalization in simple normalization mode.
         NOTE: the max/min is the ESTIMATE of the true value, not the observed value.
+
+        :returns: (float) Maximum radiation reading estimated thus far.
         """
         return self._max
 
@@ -198,14 +217,20 @@ class IntensityEstimator:
         """
         Method to return the minimum radiation reading estimated thus far.
         NOTE: the max/min is the ESTIMATE of the true value, not the observed value.
+
+        :returns: (float) Minimum radiation reading estimated thus far.
         """
         return self._min
 
-    def check_key(self, key: Tuple[int, int]):
-        """Method to check if coordinates (key) exist in hashtable"""
+    def check_key(self, key: Tuple[int, int]) -> bool:
+        """
+        Method to check if coordinates (key) exist in hashtable.
+
+        :returns: (Bool) Indication of key's existance in hashtable.
+        """
         return True if key in self.readings else False
 
-    def reset(self):
+    def reset(self) -> None:
         """Method to reset class members to defaults"""
         self.readings = dict()
         self._min = 0.0
@@ -228,7 +253,6 @@ class StatisticStandardization:
     sample_variance: float = 0.0
     #: Standard-deviation, represented by sigma
     std: float = 1.0
-
     #: Count of how many samples have been seen so far
     count: int = 0
 
@@ -247,9 +271,9 @@ class StatisticStandardization:
         #. To get the sample variance, the new existing squared distance from the mean is divided by the number of samples seen so far minus 1.
         #. To get the sample standard deviation, the square root of this value is taken.
 
+        Original: B. Welford, "Note on a method for calculating corrected sums of squares and products"
         Thank you to `Wiki - Algorithms for calculating variance <https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#cite_ref-5>`_
         and `NZMaths - Sample Variance <https://nzmaths.co.nz/category/glossary/sample-variance>`_
-        Original: B. Welford, "Note on a method for calculating corrected sums of squares and products"
 
         :param reading: (float) radiation intensity reading
         """
@@ -283,15 +307,20 @@ class StatisticStandardization:
         :return: (float) Standardized radiation reading (z-score) where all existing samples have a std of 1
         """
         assert reading >= 0
-
         return (reading - self.mean) / self.std
 
     def get_max(self) -> float:
-        """Method to return the current maximum standardized sample (updated during update function)"""
+        """
+        Method to return the current maximum standardized sample (updated during update function).
+        :returns: Current maximum standardized sample.
+        """
         return self._max
 
     def get_min(self) -> float:
-        """Method to return the current minimum standardized sample (updated during update function)"""
+        """
+        Method to return the current minimum standardized sample (updated during update function).
+        :returns: Current minimum standardized sample.
+        """
         return self._min
 
     def reset(self) -> None:
