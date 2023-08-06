@@ -51,19 +51,26 @@ SIMPLE_NORMALIZATION = False
 NORMALIZE_RADIATION = False
 
 # TODO Remove small version
-#: [Global] Indicates if a subset of maps should be used for actor-critic in order to improve training time (at the cost of ability). 
+#: [Global] Indicates if a subset of maps should be used for actor-critic in order to improve training time (at the cost of ability).
 #:  Recommended to only use for simple test-cases to ensure functionality.
 SMALL_VERSION = False
 
 
 def calculate_map_dimensions(grid_bounds: Tuple, offset: float, resolution_accuracy: float):
     """
-    Calculate scaled x and y bounds for observation maps
-    :param grid_bounds: (Tuple) Non-scaled maximum possible x and y coordinates.
-    :param offset: Amount to pad original coordinates with (will also be scaled).
-    :param resolution_accuracy: (Float) Hyperparameter that indicates the level of accuracy desired. Higher accuracy increases training time. Current environment returnes
-    #:  scaled coordinates for each agent. A resolution_accuracy value of 1 here means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less
-    #:  memory intensive, reduce the resolution multiplier. To return to full inflation and full accuracy, change the multipier to 1.
+    Calculate scaled x and y bounds for observation maps.
+
+    :param grid_bounds: (tuple) Initial grid boundaries for the scaled x and y coordinates observed from the environment. For Rad-Search, these
+        are scaled to the range [0, 1], so the default bounds are 1x1. Defaults to (1, 1).
+    :param resolution_accuracy: This is the value to multiply grid bounds and agent coordinates by to inflate them to a more useful size. This
+        is calculated by the CNNBase class and indicates the level of accuracy desired. For this class, its function is to inflate grid coordinates
+        to the appropriate size in order to convert an observation into a map stack. Defaults to 22, where the graph is inflated to
+        a 22x22 grid + offset.
+    :param offset: Scaled offset for when boundaries are different than "search area". This parameter increases the number of nodes around the
+        "search area" to accomodate possible detector positions in the bounding-box area that are not in the search area.
+        Further clarification: In the Rad-Search environment, the bounding box indicates the rendered grid area, however the search area is
+        where agents, sources, and obstacles spawn. Due to limits with the visilibity library and obstacle generation, there needed to be two
+        grids to contain them. Default is 0.22727272727272727 to increase the grid size to 27.
 
     :returns: (Tuple) Maximum scaled x and y bounds for observation maps.
     """
@@ -73,7 +80,19 @@ def calculate_map_dimensions(grid_bounds: Tuple, offset: float, resolution_accur
     )
 
 
-def calculate_resolution_accuracy(resolution_multiplier: float, scale: float):
+def calculate_resolution_accuracy(resolution_multiplier: float, scale: int):
+    """
+    Calculates the resolution accuracy.
+
+    :param resolution_multiplier: The multiplier used to create the resolution accuracy. Used to indicate how maps should be reset, for efficiency.
+    :param scale: (int) Value that is being used to normalize grid coodinates for agent. This is later used to reinflate coordinates for
+        increased accuracy, though increased computation time, for convolutional networks.
+
+    :returns: (float) An adjustable resolution accuracy variable is computed to indicate the level of accuracy desired.
+        Higher accuracy increases training time. Current environment returnes scaled coordinates for each agent. A resolution_accuracy value of 1
+        here means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less memory intensive, reduce the resolution
+        multiplier. To return to full inflation and full accuracy, change the multipier to 1.
+    """
     return resolution_multiplier * 1 / scale
 
 
@@ -1845,9 +1864,7 @@ class CNNBase:
                 #     [state_observation[i][:3] for i in range(self.number_of_agents)]
                 # )  # Create a list of just readings and locations for all agents
                 # Create a list of just readings and locations for current agent
-                obs_list = np.array(
-                    [state_observation[id][:3]]
-                )
+                obs_list = np.array([state_observation[id][:3]])
                 obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)
                 location_prediction, new_hidden = self.model(obs_tensor, hidden)
 
