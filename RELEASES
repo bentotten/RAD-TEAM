@@ -1,0 +1,8 @@
+1.0 Changes:
+- Move setup to main.py
+- Move command line arguments generation to own functions
+
+TODO:
+Update sphinx doc generation
+Update unit tests
+Run unit tests

@@ -5,15 +5,13 @@ A summary of RAD-TEAM components. Click to expand.
 
 High Level Overview
 *********************
-Start points.
+Starting points.
 TODO: Add eval
 
 .. autosummary::
    :toctree: generated
 
-   algos.multiagent.main
-   algos.multiagent.train
-
+   algos.RADTEAM.main
 
 Radiation Simulation Environment Overview
 *******************************************

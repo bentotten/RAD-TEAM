@@ -2,7 +2,8 @@
 In-Depth
 ##################
 
-Code flows from CLI -> Main -> Train -> Radiation Environment, PPO -> Neural Networks. For clarity, this documentation starts at the furthest level (Simulation Environment and Neural Networks) and moves backwards to main.
+Code flows from CLI -> Main -> PPO -> Radiation Environment, PPO -> Neural Networks. 
+For clarity, this documentation starts at the furthest level (Simulation Environment and Neural Networks) and moves backwards to main.
 
 
 *********
@@ -34,7 +35,7 @@ Sample H6
 Command Line Arguments
 ***********************
 
-.. autoclass:: algos.multiagent.main.CliArgs
+.. autoclass:: algos.RADTEAM.main.CliArgs
 
 
 ***********************
@@ -59,7 +60,7 @@ Augmented Actor-Critic Model
 --------------------------------------
 This contains the base class, the actor (policy) class, the critic (value) class, and the particle filter gated recurrent unit class/subclass (location prediction).
 
-.. autoclass:: algos.multiagent.NeuralNetworkCores.RADTEAM_core.CCNBase
+.. autoclass:: algos.RADTEAM.RADTEAM_core.CCNBase
     :members:
 
 
@@ -67,32 +68,32 @@ Map Handling
 ------------------------------
 Storage of maps and conversion from observations to maps.
 
-.. autoclass:: algos.multiagent.NeuralNetworkCores.RADTEAM_core.ConversionTools
+.. autoclass:: algos.RADTEAM.RADTEAM_core.ConversionTools
     :members:
 
 
-.. autoclass:: algos.multiagent.NeuralNetworkCores.RADTEAM_core.MapsBuffer
+.. autoclass:: algos.RADTEAM.RADTEAM_core.MapsBuffer
     :members:
 
 
 Intensity Sampling and Estimation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. autoclass:: algos.multiagent.NeuralNetworkCores.RADTEAM_core.IntensityEstimator
+.. autoclass:: algos.RADTEAM.RADTEAM_core.IntensityEstimator
     :members:
 
 
 Standardizing Intensity Value and Visits Counts
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. autoclass:: algos.multiagent.NeuralNetworkCores.RADTEAM_core.StatisticStandardization
+.. autoclass:: algos.RADTEAM.RADTEAM_core.StatisticStandardization
     :members:
 
 
 Normalizing Intensity Value
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. autoclass:: algos.multiagent.NeuralNetworkCores.RADTEAM_core.Normalizer 
+.. autoclass:: algos.RADTEAM.RADTEAM_core.Normalizer 
     :members:
 
 
@@ -105,7 +106,7 @@ Auxiliary
 
 ActionChoice
 ^^^^^^^^^^^^^^
-.. autoclass:: algos.multiagent.NeuralNetworkCores.RADTEAM_core.ActionChoice
+.. autoclass:: algos.RADTEAM.RADTEAM_core.ActionChoice
     :members:
 
 
@@ -115,17 +116,9 @@ Training
 
 Train Function
 ===============
-.. autoclass::  algos.multiagent.train.train_PPO
+.. autoclass::  algos.RADTEAM.ppo
     :members:
     :inherited-members:
-
-
-Update with Proximal Policy Optimization
-=========================================
-
-.. autoclass:: algos.multiagent.ppo.AgentPPO
-    :members:
-
 
 **********
 Execution
