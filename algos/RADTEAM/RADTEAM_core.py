@@ -2,6 +2,17 @@ from os import path, mkdir, getcwd
 import sys
 from math import sqrt, log
 from statistics import median
+import warnings
+
+import numpy as np
+import numpy.typing as npt
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.distributions import Categorical
+
+import matplotlib.pyplot as plt  # type: ignore
 
 from dataclasses import dataclass, field
 from typing import (
@@ -16,20 +27,6 @@ from typing import (
     NamedTuple,
 )
 
-import numpy as np
-import numpy.typing as npt
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.distributions import Categorical
-
-import matplotlib.pyplot as plt  # type: ignore
-
-import warnings
-
-SMALL_VERSION = False
-# PFGRU = False  # If wanting to use the PFGRU TODO turn this into a parameter
 
 # Maps
 #: [New Type] Array indicies to access a GridSquare (x, y). Type: Tuple[float, float]
@@ -39,7 +36,7 @@ Point = NewType("Point", Tuple[Union[float, int], Union[float, int]])
 Map = NewType("Map", npt.NDArray[np.float32])
 #: [New Type] Mapstack - a Tuple of all existing maps.
 MapStack = NewType("MapStack", Tuple[Map, Map, Map, Map, Map, Map, Map])
-#: [New Type] Tracks last known coordinates of all agents in order to update them on the current-location and others-locations heatmaps. 
+#: [New Type] Tracks last known coordinates of all agents in order to update them on the current-location and others-locations heatmaps.
 #:  Type: Dict[str, Dict[int, Point]]
 CoordinateStorage = NewType("CoordinateStorage", Dict[int, Point])
 
@@ -53,19 +50,61 @@ DIST_TH = 110.0
 SIMPLE_NORMALIZATION = False
 NORMALIZE_RADIATION = False
 
+# TODO Remove small version
+#: [Global] Indicates if a subset of maps should be used for actor-critic in order to improve training time (at the cost of ability).
+#:  Recommended to only use for simple test-cases to ensure functionality.
+SMALL_VERSION = False
 
-def calculate_map_dimensions(grid_bounds: Tuple, resolution_accuracy: float, offset: float):
+
+def calculate_map_dimensions(grid_bounds: Tuple, offset: float, resolution_accuracy: float) -> Tuple[int]:
+    """
+    Calculate scaled x and y bounds for observation maps.
+
+    :param grid_bounds: (tuple) Initial grid boundaries for the scaled x and y coordinates observed from the environment. For Rad-Search, these
+        are scaled to the range [0, 1], so the default bounds are 1x1. Defaults to (1, 1).
+    :param resolution_accuracy: This is the value to multiply grid bounds and agent coordinates by to inflate them to a more useful size. This
+        is calculated by the CNNBase class and indicates the level of accuracy desired. For this class, its function is to inflate grid coordinates
+        to the appropriate size in order to convert an observation into a map stack. Defaults to 22, where the graph is inflated to
+        a 22x22 grid + offset.
+    :param offset: Scaled offset for when boundaries are different than "search area". This parameter increases the number of nodes around the
+        "search area" to accomodate possible detector positions in the bounding-box area that are not in the search area.
+        Further clarification: In the Rad-Search environment, the bounding box indicates the rendered grid area, however the search area is
+        where agents, sources, and obstacles spawn. Due to limits with the visilibity library and obstacle generation, there needed to be two
+        grids to contain them. Default is 0.22727272727272727 to increase the grid size to 27.
+
+    :returns: (Tuple) Maximum scaled x and y bounds for observation maps.
+    """
     return (
         int(grid_bounds[0] * resolution_accuracy) + int(offset * resolution_accuracy),
         int(grid_bounds[1] * resolution_accuracy) + int(offset * resolution_accuracy),
     )
 
 
-def calculate_resolution_accuracy(resolution_multiplier: float, scale: float):
+def calculate_resolution_accuracy(resolution_multiplier: float, scale: int) -> float:
+    """
+    Calculates the resolution accuracy.
+
+    :param resolution_multiplier: The multiplier used to create the resolution accuracy. Used to indicate how maps should be reset, for efficiency.
+    :param scale: (int) Value that is being used to normalize grid coodinates for agent. This is later used to reinflate coordinates for
+        increased accuracy, though increased computation time, for convolutional networks.
+
+    :returns: (float) An adjustable resolution accuracy variable is computed to indicate the level of accuracy desired.
+        Higher accuracy increases training time. Current environment returnes scaled coordinates for each agent. A resolution_accuracy value of 1
+        here means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less memory intensive, reduce the resolution
+        multiplier. To return to full inflation and full accuracy, change the multipier to 1.
+    """
     return resolution_multiplier * 1 / scale
 
 
-def count_vars(module):
+def count_vars(module: nn.Module) -> int:
+    """
+    Count the number of parameters in a neural network.
+    Source: https://github.com/openai/spinningup/blob/038665d62d569055401d91856abb287263096178/spinup/algos/pytorch/sac/core.py#L22
+
+    :param module: (nn.Module) Pytorch neural network
+
+    :returns: (int) total number of parameters in module.
+    """
     return sum([np.prod(p.shape) for p in module.parameters()])
 
 
@@ -115,8 +154,8 @@ class IntensityEstimator:
         Method to add value to radiation hashtable. If key does not exist, creates key and new buffer with value. Also updates running max/min
         estimate, if applicable. Note that the max/min is the ESTIMATE of the true value, not the observed value.
 
-        :param value: (float) Sampled radiation intensity value
         :param key: (Tuple[int, int]) Inflated coordinates where radiation intensity (value) was sampled
+        :param value: (float) Sampled radiation intensity value
         """
         if self.check_key(key=key):
             self.readings[key].append(value)
@@ -130,18 +169,25 @@ class IntensityEstimator:
             self._set_min(estimate)
 
     def _set_max(self, value: float) -> None:
-        """Method to set the maximum radiation reading estimated thus far."""
+        """
+        Method to set the maximum radiation reading estimated thus far.
+        :param value: (float) Sampled radiation intensity value
+        """
         self._max = value
 
     def _set_min(self, value: float) -> None:
-        """Method to set the minimum radiation reading estimated thus far."""
+        """
+        Method to set the minimum radiation reading estimated thus far.
+        :param value: (float) Sampled radiation intensity value
+        """
         self._min = value
 
     def get_buffer(self, key: Tuple[int, int]) -> List:
         """
         Method to return existing buffer for key. Raises exception if key does not exist.
-        :param value: (float) Sampled radiation intensity value
+
         :param key: (Point) Coordinates where radiation intensity (value) was sampled
+        :returns: (List) Buffer containing all radiation observations at this hash key (typically grid coordinates)
         """
         if not self.check_key(key=key):
             raise ValueError("Key does not exist")
@@ -150,7 +196,9 @@ class IntensityEstimator:
     def get_estimate(self, key: Tuple[int, int]) -> float:
         """
         Method to returns radiation estimate for current coordinates. Raises exception if key does not exist.
+
         :param key: (Point) Coordinates for desired radiation intensity estimate
+        :returns: (float) Estimation of true radiation reading at this hash key (typically grid coordinates)
         """
         if not self.check_key(key=key):
             raise ValueError("Key does not exist")
@@ -160,6 +208,8 @@ class IntensityEstimator:
         """
         Method to return the maximum radiation reading estimated thus far. This can be used for normalization in simple normalization mode.
         NOTE: the max/min is the ESTIMATE of the true value, not the observed value.
+
+        :returns: (float) Maximum radiation reading estimated thus far.
         """
         return self._max
 
@@ -167,16 +217,24 @@ class IntensityEstimator:
         """
         Method to return the minimum radiation reading estimated thus far.
         NOTE: the max/min is the ESTIMATE of the true value, not the observed value.
+
+        :returns: (float) Minimum radiation reading estimated thus far.
         """
         return self._min
 
-    def check_key(self, key: Tuple[int, int]):
-        """Method to check if coordinates (key) exist in hashtable"""
+    def check_key(self, key: Tuple[int, int]) -> bool:
+        """
+        Method to check if coordinates (key) exist in hashtable.
+
+        :returns: (Bool) Indication of key's existance in hashtable.
+        """
         return True if key in self.readings else False
 
-    def reset(self):
+    def reset(self) -> None:
         """Method to reset class members to defaults"""
-        self.__init__()  # TODO after attributes have settled, write a proper reset function
+        self.readings = dict()
+        self._min = 0.0
+        self._max = 0.0
 
 
 @dataclass
@@ -195,7 +253,6 @@ class StatisticStandardization:
     sample_variance: float = 0.0
     #: Standard-deviation, represented by sigma
     std: float = 1.0
-
     #: Count of how many samples have been seen so far
     count: int = 0
 
@@ -203,9 +260,12 @@ class StatisticStandardization:
     _max: float = field(default=0.0)  # Maximum radiation reading estimate. This is used for normalization in simple normalization mode.
     _min: float = field(default=0.0)  # Minimum radiation reading estimate. This is used for shifting normalization data in the case of a negative.
 
+    def __post_init__(self) -> None:
+        self._max = 0.0
+
     def update(self, reading: float) -> None:
-        """Method to update estimate running mean and sample variance for standardizing radiation intensity readings. Also updates max standardized value
-        for normalization, if applicable.
+        """Method to update estimate running mean and sample variance for standardizing radiation intensity readings. Also updates max standardized
+        value for normalization, if applicable.
 
         #. The existing mean is subtracted from the new reading to get the initial delta.
         #. This delta is then divided by the number of samples seen so far and added to the existing mean to create a new mean.
@@ -214,9 +274,9 @@ class StatisticStandardization:
         #. To get the sample variance, the new existing squared distance from the mean is divided by the number of samples seen so far minus 1.
         #. To get the sample standard deviation, the square root of this value is taken.
 
+        Original: B. Welford, "Note on a method for calculating corrected sums of squares and products"
         Thank you to `Wiki - Algorithms for calculating variance <https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#cite_ref-5>`_
         and `NZMaths - Sample Variance <https://nzmaths.co.nz/category/glossary/sample-variance>`_
-        Original: B. Welford, "Note on a method for calculating corrected sums of squares and products"
 
         :param reading: (float) radiation intensity reading
         """
@@ -250,35 +310,55 @@ class StatisticStandardization:
         :return: (float) Standardized radiation reading (z-score) where all existing samples have a std of 1
         """
         assert reading >= 0
-
         return (reading - self.mean) / self.std
 
     def get_max(self) -> float:
-        """Method to return the current maximum standardized sample (updated during update function)"""
+        """
+        Method to return the current maximum standardized sample (updated during update function).
+        :returns: Current maximum standardized sample.
+        """
         return self._max
 
     def get_min(self) -> float:
-        """Method to return the current minimum standardized sample (updated during update function)"""
+        """
+        Method to return the current minimum standardized sample (updated during update function).
+        :returns: Current minimum standardized sample.
+        """
         return self._min
 
     def reset(self) -> None:
         """Method to reset class members to defaults"""
-        self.__init__()  # TODO after attributes have settled, write a proper reset function
+        self.mean = 0.0
+        self.square_dist_mean = 0.0
+        self.sample_variance = 0.0
+        self.std = 1.0
+        self.count = 0
+        self._max = field(default=0.0)
+        self._min = field(default=0.0)
 
 
 @dataclass
 class Normalizer:
     """Normalization methods"""
 
+    # Private members
+    # First base value that is used for class. The base value represents the maximum possible value (steps per episode multiplied by the number
+    #   of agents).
     _base_check: Any = field(default=None)
+
+    # First increment value that is used for class. The increment value represents the amount that the existing value from shadow table is expected to
+    #   increment by this amount every time.
     _increment_check: Any = field(default=None)
 
     def normalize(self, current_value: Any, max: Any, min: Union[float, None] = None) -> float:
         """
         Method to do min-max normalization to the range [0,1]. If min is below zero, the data will be shifted by the absolute value of the minimum
+
         :param current_value: (Any) value to be normalized
         :param max: (Any) Maximum possible
+        :returns: (float) Normalized value for current_value input via min-max method.
         """
+
         # Check for edge cases and invalid inputs
         if current_value == 0:
             return 0.0
@@ -289,6 +369,7 @@ class Normalizer:
         if min:
             assert current_value >= min, "Value error - current is more than max."
             offset = abs(min) if min < 0 else 0
+
         # If no min provided, assume min == 0 and adjust negative current values
         elif not min:
             min = 0.0
@@ -314,7 +395,10 @@ class Normalizer:
         :param current_value: (Any) value to be normalized
         :param base: (Any) Maximum possible value (steps per episode multiplied by the number of agents)
         :param increment_value (int): Value from shadow table is expected to increment by this amount every time
+
+        :returns: (float) Normalized value for current_value input via log method.
         """
+
         assert current_value >= 0 and base > 0 and increment_value > 0, "Value error - input was negative that should not be"
 
         # Warnings for different scales
@@ -366,25 +450,16 @@ class ConversionTools:
 
 @dataclass()
 class MapsBuffer:
-    """Handles all maps operations. Holds the locations maps, readings map, visit counts maps, and obstacles map.
+    """
+    Handles all maps operations. Holds the locations maps, readings map, visit counts maps, and obstacles map.
     Additionally holds toolbox to convert observations into normalized/standardized values and updates maps with these values.
-
-    6 maps:
-
-    * Location Map: a 2D matrix showing the individual agent's location.
-
-    * Map of Other Locations: a grid showing the number of agents located in each grid element (excluding current agent).
-
-    * Readings map: a grid of the last reading collected in each grid square - unvisited squares are given a reading of 0.
-
-    * Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
-
-    * Obstacles Map: a grid of how far from an obstacle each agent was when they detected it
 
     :param observation_dimension: (int) Shape of state space. This is how many elements are in the observation array that is returned from the
         environment. For Rad-Search, this should be 11.
+
     :param steps_per_episode: (int) Maximum steps per episode. This is used for the base calculation for the log_normalizing for visit counts in
         visits map.
+
     :param number_of_agents: (int) Total number of agents. This is used for the base calculation for the log_normalizing for visit counts in
         visits map.
 
@@ -396,6 +471,8 @@ class MapsBuffer:
         to the appropriate size in order to convert an observation into a map stack. Defaults to 22, where the graph is inflated to
         a 22x22 grid + offset.
 
+    :param resolution_multiplier: The multiplier used to create the resolution accuracy. Used to indicate how maps should be reset, for efficiency.
+
     :param offset: Scaled offset for when boundaries are different than "search area". This parameter increases the number of nodes around the
         "search area" to accomodate possible detector positions in the bounding-box area that are not in the search area.
         Further clarification: In the Rad-Search environment, the bounding box indicates the rendered grid area, however the search area is
@@ -405,14 +482,14 @@ class MapsBuffer:
     :param obstacle_state_offset: Number of initial elements in state return that do not indicate there is an obstacle. First element is intensity,
         second two are x and y coords. Defaults to 3, with the 4th element indicating the beginning of obstacle detections. This defaults to 3.
 
-    :param resolution_multiplier: The multiplier used to create the resolution accuracy. Used to indicate how maps should be reset, for efficiency.
+    :param PFGRU: (bool) NOTE: UNTESTED! True/False indicating whether or not to take into account the particle filter gated recurrent module's
+        source location prediction.
     """
 
-    # TODO change env return to a named tuple instead.
     # Inputs
     observation_dimension: int
-    steps_per_episode: int  #
-    number_of_agents: int  # Used for normalizing visists count in visits map
+    steps_per_episode: int
+    number_of_agents: int
 
     # Option Parameters
     grid_bounds: Tuple = field(default_factory=lambda: (1, 1))
@@ -420,9 +497,8 @@ class MapsBuffer:
     resolution_multiplier: float = field(default=0.01)  # If wrong, may just be slow for map resets
     offset: float = field(default=0.22727272727272727)
     obstacle_state_offset: int = field(default=3)
+    PFGRU: bool = field(default=False)
 
-    # Whether to use PFGRU or not
-    PFGRU: bool = field(default=True)
     # Initialized elsewhere
     #: Maximum x bound in observation maps, used to fill observation maps with zeros during initialization. This defaults to 27.
     x_limit_scaled: int = field(init=False)
@@ -435,24 +511,26 @@ class MapsBuffer:
     #:  is the maximum number of steps per episode and n is the number of agents.
     base: int = field(init=False)
 
-    # Blank Maps
     #: Number of maps
     map_count: int = field(init=False, default=6)
-    #: Source prediction map
-    prediction_map: Map = field(init=False)
-    #: Combined Location Map: a 2D matrix showing all agent locations. Used for the critic
-    combined_location_map: Map = field(init=False)
+
+    # Blank Maps
     #: Location Map: a 2D matrix showing the individual agent's location.
     location_map: Map = field(init=False)
     #: Map of Other Locations: a grid showing the number of agents located in each grid element (excluding current agent).
     others_locations_map: Map = field(init=False)
+    #: Combined Location Map: a 2D matrix showing all agent locations. Used for the critic.
+    combined_location_map: Map = field(init=False)
     #: Readings map: a grid of the last estimated reading in each grid square - unvisited squares are given a reading of 0.
     readings_map: Map = field(init=False)
     #: Obstacles Map: a grid of how far from an obstacle each agent was when they detected it
     obstacles_map: Map = field(init=False)
     #: Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
     visit_counts_map: Map = field(init=False)
+    #: Source prediction map from PFGRU. Only used if PFGRU indicator is True.
+    prediction_map: Map = field(init=False)
 
+    # Matrices
     #: Shadow hashtable for visits counts map, increments a counter every time that location is visited. This is used during logrithmic normalization
     #:  to reduce computational complexity and python floating point precision errors, it is "cheaper" to calculate the log on the fly with a second
     #:  sparce matrix than to inflate a log'd number. Stores tuples (x, y, 2(i)) where i increments every hit.
@@ -469,10 +547,10 @@ class MapsBuffer:
     reset_flag: int = field(init=False, default=0)  # TODO switch out for pytest mock
 
     def __post_init__(self) -> None:
-        # Set logrithmic base for visits counts normalization
-        self.base = (
-            self.steps_per_episode + 1
-        ) * self.number_of_agents  # Extra observation is for the "last step" where the next state value is used to bootstrap rewards
+        # Set logrithmic base for visits counts normalization. NOTE: Extra observation (+1) is for the "last step" where the next state value is used
+        #   to bootstrap rewards. This basically predicts what the reward would be if an additional step would be taken after the terminal step. See 
+        #   main training function bootstrap step for further explaination.
+        self.base = (self.steps_per_episode + 1) * self.number_of_agents
 
         # Calculate map x and y bounds for observation maps
         self.map_dimensions = calculate_map_dimensions(
@@ -484,11 +562,11 @@ class MapsBuffer:
         self.y_limit_scaled: int = self.map_dimensions[1]
 
         # Initialize maps and buffer
-        self._reset_maps()  # Initialize maps
+        self._reset_maps()
         self.reset()
 
     def reset(self) -> None:
-        """Method to clear maps and reset matrices. If seeing errors in maps, try a full reset with full_reset()"""
+        """Method to clear maps and reset matrices. Troubleshooting: If seeing errors in maps, try a full reset with full_reset()"""
 
         self._clear_maps()
 
@@ -505,6 +583,7 @@ class MapsBuffer:
         self.locations_matrix.clear()
         self.visit_counts_shadow.clear()
         self.tools.reset()
+        self.reset_flag += 1 if self.reset_flag < 100 else 1
 
     def observation_to_map(
         self,
@@ -518,7 +597,7 @@ class MapsBuffer:
 
         :param observation: (dict) Dictionary of agent IDs and their individual observations from the environment.
         :param id: (int) Current Agent's ID, used to differentiate between the agent location map and the other agents map.
-        :param loc_prediction: (Tuple) PFGRU's guess for source location
+        :param loc_prediction: (Tuple) PFGRU's guess for source location.
 
         :return: Returns a tuple of five 2d map arrays.
         """
@@ -543,14 +622,19 @@ class MapsBuffer:
             # Update Prediction maps
             if self.PFGRU:
                 last_prediction: Tuple = self.tools.last_prediction
+
                 # Check that prediction is within map bounds, else update with last prediction again
-                if inflated_prediction[0] < self.map_dimensions[0] and inflated_prediction[1] < self.map_dimensions[0] and inflated_prediction >= (0, 0):
+                x_bound = inflated_prediction[0] < self.map_dimensions[0]
+                y_bound = inflated_prediction[1] < self.map_dimensions[0]
+                natural_bound = inflated_prediction >= (0, 0)
+
+                if x_bound and y_bound and natural_bound:
                     self._update_prediction_map(
                         current_prediction=inflated_prediction,
                         last_prediction=last_prediction,
                     )
                     # Update last prediction
-                    self.tools.last_prediction = inflated_prediction                                     
+                    self.tools.last_prediction = inflated_prediction
             # Update Locations maps
             if id == agent_id:
                 self._update_current_agent_location_map(
@@ -725,7 +809,7 @@ class MapsBuffer:
         last_coordinates: Union[Tuple[int, int], None],
     ) -> None:
         """
-        Method to update the other-agent locations observation map. If prior location exists, this is reset to zero. Note: updates one location at a 
+        Method to update the other-agent locations observation map. If prior location exists, this is reset to zero. Note: updates one location at a
         time, not in a batch.
 
         :param id: (int) ID of current agent being processed
@@ -1052,7 +1136,7 @@ class Actor(nn.Module):
 
         :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be shape [batch_size, # of maps, map width, map height].
         :param action: (Tensor) The the action taken (tensor(1))
-        :return: (Tensor, Tensor) Returns the log-probability for the passed-in action (tensor(1)) and the entropy for the 
+        :return: (Tensor, Tensor) Returns the log-probability for the passed-in action (tensor(1)) and the entropy for the
             action distribution (tensor(1)).
         """
         #: Raw action probabilities for each available action for this particular observation
@@ -1106,7 +1190,7 @@ class Critic(nn.Module):
     Q-value, only the state-value. RAD-Team is set up to work with both a per-agent critic and a global critic. A global critic can still work,
     in spite of the independent agent policies, due to the team-based reward. Learning aims to minimize the mean-squared error. For RAD-TEAM, the
     Critic consists of a convolutional neural Network Architecture that includes two convolution layers, a maxpool layer, and three fully connected
-    layers to distill the previous layers into a single state-value. Following Alagha et al.'s multi-agent CNN architecture, each of the nodes are 
+    layers to distill the previous layers into a single state-value. Following Alagha et al.'s multi-agent CNN architecture, each of the nodes are
     activated with ReLU (to dodge vanishing gradient problems).
 
     The Critic, like the actor takes a stack of observation maps (numerical matrices/tensors) and processes them with the neural network architecture.
@@ -1691,8 +1775,8 @@ class CNNBase:
         self.mseLoss = nn.MSELoss()
 
         self.model = PFGRUCell(
-            input_size=self.observation_space - 8, # TODO This just means "3"; adjust for 3 for arbritrary number of agents
-            obs_size=self.observation_space - 8, # TODO This just means "3"; adjust for 3 for arbritrary number of agents
+            input_size=self.observation_space - 8,  # TODO This just means "3"; adjust for 3 for arbritrary number of agents
+            obs_size=self.observation_space - 8,  # TODO This just means "3"; adjust for 3 for arbritrary number of agents
             activation="tanh",
             hidden_size=self.predictor_hidden_size,  # (bpf_hsize) (hid_rec in cli)
         )
@@ -1820,10 +1904,8 @@ class CNNBase:
                 # obs_list = np.array(
                 #     [state_observation[i][:3] for i in range(self.number_of_agents)]
                 # )  # Create a list of just readings and locations for all agents
-                # Create a list of just readings and locations for current agent                           
-                obs_list = np.array(
-                    [state_observation[id][:3]]
-                )
+                # Create a list of just readings and locations for current agent
+                obs_list = np.array([state_observation[id][:3]])
                 obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)
                 location_prediction, new_hidden = self.model(obs_tensor, hidden)
 
@@ -2013,7 +2095,7 @@ class CNNBase:
         prediction_transposed: npt.NDArray = self.maps.prediction_map.T
 
         if self.PFGRU:
-            fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax, pfgru_ax) = plt.subplots(nrows=1, ncols=6, figsize=(30, 10), tight_layout=True)    
+            fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax, pfgru_ax) = plt.subplots(nrows=1, ncols=6, figsize=(30, 10), tight_layout=True)
         else:
             fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax) = plt.subplots(nrows=1, ncols=5, figsize=(30, 10), tight_layout=True)
 
@@ -2040,9 +2122,9 @@ class CNNBase:
         if self.PFGRU:
             pfgru_ax.imshow(prediction_transposed, cmap="viridis", interpolation=interpolation_method)
             pfgru_ax.set_title("Source Prediction")
-            pfgru_ax.invert_yaxis()            
+            pfgru_ax.invert_yaxis()
 
-        # Add values to gridsquares if value is greater than 0 #TODO if large grid, this will be slow
+        # Add values to gridsquares if value is greater than 0 NOTE if large grid, this will be slow
         if add_value_text:
             for i in range(loc_transposed.shape[0]):
                 for j in range(loc_transposed.shape[1]):
@@ -2105,7 +2187,7 @@ class CNNBase:
                             va="center",
                             color="black",
                             size=6,
-                        )                    
+                        )
 
         fig.savefig(
             f"{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{episode_count}({self.render_counter}).png",
