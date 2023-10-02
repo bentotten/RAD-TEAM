@@ -1,22 +1,20 @@
 import numpy as np
 import torch
 from torch.optim import Adam
-import gym  # type: ignore
 import time
 import os
 import ppo_tools  # type: ignore
-from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
 try:
     from RADTEAM_core import CNNBase, Critic
     from rl_tools.logx import EpochLogger  # type: ignore
     from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, mpi_avg_grads  # type: ignore
-    from rl_tools.mpi_tools import mpi_fork, proc_id, num_procs  # type: ignore
+    from rl_tools.mpi_tools import proc_id, num_procs  # type: ignore
 except ModuleNotFoundError:
     from algos.RADTEAM.RADTEAM_core import CNNBase, Critic
     from algos.RADTEAM.rl_tools.logx import EpochLogger  # type: ignore
     from algos.RADTEAM.rl_tools.mpi_pytorch import setup_pytorch_for_mpi, mpi_avg_grads  # type: ignore
-    from algos.RADTEAM.rl_tools.mpi_tools import mpi_fork, proc_id, num_procs  # type: ignore
+    from algos.RADTEAM.rl_tools.mpi_tools import proc_id, num_procs  # type: ignore
 except:  # noqa
     raise Exception
 
@@ -695,173 +693,3 @@ def ppo(
         logger.log_tabular("StopIter", average_only=True)
         logger.log_tabular("Time", time.time() - start_time)
         logger.dump_tabular()
-        # except Exception as e:
-        #     print(f"WARNING: Exception encountered: {e}")
-        #     print(f"Saving latest model to {logger.output_dir}")
-        #     for id in range(number_of_agents):
-        #         fpath = f"{id}agent"
-        #         fpath = os.path.join(logger.output_dir, fpath)
-        #         os.makedirs(fpath, exist_ok=True)
-        #         agents[id].save(checkpoint_path=fpath)
-        #         save_counter += 1
-        #     print(f"Saving environment image and episode gif to {logger.output_dir}")
-        #     # Render environment image
-        #     env.render(
-        #         path=logger.output_dir,
-        #         epoch_count=epoch,
-        #         just_env=True,
-        #         episode_count=episode_count,
-        #         silent=False,
-        #     )
-        #     # Render gif
-        #     env.render(
-        #         path=logger.output_dir,
-        #         epoch_count=epoch,
-        #         episode_count=episode_count,
-        #         silent=False,
-        #     )
-        #     # Save heatmaps
-        #     for id in range(number_of_agents):
-        #         agents[id].render(savepath=logger.output_dir)
-
-
-if __name__ == "__main__":
-    print("============================================================================================")
-    # set device to cpu or cuda
-    device = torch.device("cpu")
-    if torch.cuda.is_available():
-        device = torch.device("cuda:0")
-        torch.cuda.empty_cache()
-        print("Device set to : " + str(torch.cuda.get_device_name(device)))
-    else:
-        print("Device set to : cpu")
-    print("============================================================================================")
-
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--env", type=str, default="gym_rad_search:RadSearchMulti-v1")
-    parser.add_argument("--hid_gru", type=int, default=[24], help="A2C GRU hidden state size")
-    parser.add_argument("--hid_pol", type=int, default=[32], help="Actor linear layer size")
-    parser.add_argument("--hid_val", type=int, default=[32], help="Critic linear layer size")
-    parser.add_argument("--hid_rec", type=int, default=[24], help="PFGRU hidden state size")
-    parser.add_argument("--l_pol", type=int, default=1, help="Number of layers for Actor MLP")
-    parser.add_argument("--l_val", type=int, default=1, help="Number of layers for Critic MLP")
-    parser.add_argument("--gamma", type=float, default=0.99, help="Reward attribution for advantage estimator")
-    parser.add_argument("--seed", "-s", type=int, default=2, help="Random seed control")
-    parser.add_argument("--cpu", type=int, default=1, help="Number of cores/environments to train the agent with")
-    parser.add_argument(
-        "--steps_per_epoch", type=int, default=480, help="Number of timesteps per epoch per cpu. Default is equal to 4 episodes per cpu per epoch."
-    )
-    parser.add_argument("--epochs", type=int, default=1000, help="Number of epochs to train the agent")
-    parser.add_argument(
-        "--exp_name",
-        type=str,
-        default="run",
-        help="Name of experiment for saving",
-    )
-    parser.add_argument(
-        "--dims",
-        type=list,
-        default=[[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]],
-        help="Dimensions of radiation source search area in cm, decreased by area_obs param. to ensure visilibity graph setup is valid.",
-    )
-    parser.add_argument("--area_obs", type=list, default=[100.0, 100.0], help="Interval for each obstruction area in cm")
-    parser.add_argument(
-        "--obstruct",
-        type=int,
-        default=-1,
-        help="Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7",
-    )
-    parser.add_argument("--net_type", type=str, default="rnn", help="Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp")
-    parser.add_argument("--alpha", type=float, default=0.1, help="Entropy reward term scaling")
-    parser.add_argument("--load_model", type=int, default=0, help="Load parameters from saved model. 0 is false, 1 is true")
-    parser.add_argument("--agents", type=int, default=1, help="Number of agents")
-    parser.add_argument("--save_gif_freq", type=int, default=-1, help="Gif frequency to Save")
-    parser.add_argument(
-        "--mode",
-        type=str,
-        default="cooperative",
-        help="Game mode: Cooperative is global critic and team reward, Collaborative is individual critic and inv reward, Competative\
-                              is individual zero-sum game",
-    )
-    parser.add_argument("--test", type=str, default="FULL", help="Test to run (0 for no test)")
-    parser.add_argument(
-        "--render",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Whether RADTEAM should use the particle filter module for source location prediction or not.",
-    )    
-    parser.add_argument(
-        "--PFGRU",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Whether RADTEAM should use the particle filter module for source location prediction or not.",
-    )
-    args = parser.parse_args()
-
-    if args.mode == "competative":
-        raise NotImplementedError("Competative mode not implemented yet")
-
-    # Change mini-batch size, only been tested with size of 1
-    args.batch = 1
-
-    # To use PFGRU or not
-    PFGRU = args.PFGRU
-
-    # Save directory and experiment name
-    save_freq = 250
-    args.env_name = "results"
-    args.exp_name = f"{args.exp_name}"
-
-    init_dims = {
-        "bbox": args.dims,
-        "observation_area": args.area_obs,
-        "obstruction_count": args.obstruct,
-        "number_agents": args.agents,
-        "enforce_grid_boundaries": True,
-        "TEST": args.test,
-    }
-
-    if args.cpu > 1:
-        # max cpus, steps in batch must be greater than the max eps steps times num. of cpu
-        tot_epoch_steps = args.cpu * args.steps_per_epoch
-        args.steps_per_epoch = tot_epoch_steps if tot_epoch_steps > args.steps_per_epoch else args.steps_per_epoch
-        print(f"Sys cpus (avail, using): ({os.cpu_count()},{args.cpu}), Steps set to {args.steps_per_epoch}")
-        mpi_fork(args.cpu)  # run parallel code with mpi
-
-    # Generate a large random seed and random generator object for reproducibility
-    robust_seed = _int_list_from_bigint(hash_seed((1 + proc_id()) * args.seed))[0]
-    rng = np.random.default_rng(robust_seed)
-    init_dims["np_random"] = rng
-
-    # Setup logger for tracking training metrics
-    from rl_tools.run_utils import setup_logger_kwargs  # type: ignore
-
-    logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed, data_dir="../../models/train", env_name=args.env_name)
-
-    ac_kwargs = dict(
-        predictor_hidden_size=args.hid_rec[0],
-    )
-
-    # Run ppo training function
-    ppo(
-        lambda: gym.make(args.env, **init_dims),
-        actor_critic=CNNBase,
-        ac_kwargs=ac_kwargs,
-        gamma=args.gamma,
-        alpha=args.alpha,
-        seed=robust_seed,
-        steps_per_epoch=args.steps_per_epoch,
-        epochs=args.epochs,
-        dims=init_dims,
-        logger_kwargs=logger_kwargs,
-        render=args.render,
-        save_gif=args.render,
-        load_model=args.load_model,
-        PFGRU=PFGRU,
-        number_of_agents=args.agents,
-        mode=args.mode,
-        save_freq=save_freq,
-        save_gif_freq=args.save_gif_freq
-    )
