@@ -7,19 +7,11 @@ This contains the multi-agent radiation localization prototype architecture crea
 
 This also contains an adapted form of the single-agent radiation source search architecture (RAD-A2C) created by Proctor et al. that can be run with multiple independent learners.
 
-# Algorithms
-
-TBD
-
-## Files
-
-TBD
-
 ## Documentation
 
-Documentation generated with [Sphinx](https://www.sphinx-doc.org/en/master/usage/quickstart.html).
+Some documentation can be generated with [Sphinx](https://www.sphinx-doc.org/en/master/usage/quickstart.html).
 
-Generate documentation with `sphinx-build -b html docs doc_build` from root directory
+Generate documentation with `sphinx-build -b html docs doc_build` from root directory.
 
 ## Quick-Start Installation
 

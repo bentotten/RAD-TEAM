@@ -260,6 +260,9 @@ class StatisticStandardization:
     _max: float = field(default=0.0)  # Maximum radiation reading estimate. This is used for normalization in simple normalization mode.
     _min: float = field(default=0.0)  # Minimum radiation reading estimate. This is used for shifting normalization data in the case of a negative.
 
+    def __post_init__(self) -> None:
+        self._max = 0.0
+
     def update(self, reading: float) -> None:
         """Method to update estimate running mean and sample variance for standardizing radiation intensity readings. Also updates max standardized
         value for normalization, if applicable.
