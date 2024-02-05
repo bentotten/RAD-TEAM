@@ -1326,180 +1326,681 @@ class RadSearch(gym.Env):
                     dists[ii + 1] = 1.0
         return dists
 
+    def refresh_environment(self, env_dict, n, num_obs=0):
+        """
+        Load saved test environment parameters from dictionary
+        into the current instantiation of environment
+        """
+        def to_vis_p(p) -> vis.Point:
+            """
+            Return a visilibity Point from a Point.
+            """
+            return vis.Point(p[0], p[1])
+
+        def to_vis_poly(poly) -> vis.Polygon:
+            """
+            Return a visilibity Polygon from a Polygon.
+            """
+            return vis.Polygon(list(map(to_vis_p, poly)))
+
+        def set_vis_coord(point, coords):
+            point.set_x(coords[0])
+            point.set_y(coords[1])
+            return point
+
+        env = self
+        env.reset()
+
+        # Get correct obstacle number
+        env.obstruction_count = num_obs
+
+        key = "env_" + str(n)
+        env.src_coords = env_dict[key][0]
+        env.intensity = env_dict[key][2]
+        env.bkg_intensity = env_dict[key][3]
+        env.source = set_vis_coord(env.source, env.src_coords)
+
+        for agent in env.agents.values():
+            agent.reset()
+            agent.det_coords = env_dict[key][1]
+            agent.detector = set_vis_coord(agent.detector, agent.det_coords)
+
+        self.obs_coord: List[List[Point]] = [[] for _ in range(self.obstruction_count)]
+        self.poly: List[Polygon] = []
+        self.line_segs: List[List[vis.Line_Segment]] = []
+
+        if num_obs > 0:
+            env.obs_coord = env_dict[key][4]
+            env.obstruction_count = len(env_dict[key][4])
+            for obs in env.obs_coord:
+                geom = [vis.Point(float(obs[jj][0]), float(obs[jj][1])) for jj in range(len(obs))]
+                # poly = vis.Polygon(geom)
+                poly = [(float(obs[jj][0]), float(obs[jj][1])) for jj in range(len(obs))]
+                env.poly.append(poly)
+                env.line_segs.append(
+                    [
+                        vis.Line_Segment(geom[0], geom[1]),
+                        vis.Line_Segment(geom[0], geom[3]),
+                        vis.Line_Segment(geom[2], geom[1]),
+                        vis.Line_Segment(geom[2], geom[3]),
+                    ]
+                )
+
+            env.env_ls = [solid for solid in env.poly]
+            env.env_ls.insert(0, env.walls)
+            # env.world = vis.Environment(env.env_ls)
+            self.world = vis.Environment(list(map(to_vis_poly, env.env_ls)))
+
+            # Check if the environment is valid
+            assert env.world.is_valid(EPSILON), "Environment is not valid"
+            env.vis_graph = vis.Visibility_Graph(env.world, EPSILON)
+
+        blank_actions = {i: 8 for i in self.agents}  # Idle action
+        o, _, _, _ = env.step(blank_actions)
+        for id, agent in env.agents.items():
+            agent.det_sto = [env_dict[key][1]]
+            agent.meas_sto = [o[id][0]]
+            agent.prev_det_dist = env.world.shortest_path(env.source, agent.detector, env.vis_graph, EPSILON).length()
+
+        env.iter_count = 1
+        return o
+
     def render(
         self,
-        save_gif=False,
-        path=None,
-        epoch_count=None,
-        just_env=False,
-        obs=None,
-        ep_rew=None,
-        data=None,
-        meas=None,
-        params=None,
-        loc_est=None,
-    ):
+        save_gif: bool = True,
+        path: Optional[str] = None,
+        epoch_count: Optional[int] = None,
+        episode_count: Optional[int] = None,
+        just_env: Optional[bool] = False,
+        obstacles=[],
+        episode_rewards={},
+        data=[],
+        measurements: Optional[List[float]] = None,
+        location_estimate=None,
+        silent: bool = False,
+    ) -> None:
         """
-        Method that produces a gif of the agent interacting in the environment.
+        Method that produces a gif of the agent interacting in the environment. Only renders one episode at a time.
         """
-        if data and meas:
-            self.intensity = params[0]
-            self.bkg_intensity = params[1]
-            self.src_coords = params[2]
-            self.iter_count = len(meas)
-            data = np.array(data) / 100
-        else:
-            data = np.array(self.det_sto) / 100
-            meas = self.meas_sto
+        reward_length = field(init=False)  # Prevent from being unbound
+        # Set up global saver (for changing colors of last graph's agents)
+        self.plot_saver = {i: field(init=False) for i in range(self.number_agents)}
+        self.silent = silent
 
+        # global location_estimate
+        # location_estimate = None # TODO Trying to get out of global scope; this is for source prediction
+
+        def update(
+            frame_number: int,
+            ax1: plt.Axes,
+            ax2: plt.Axes,
+            ax3: plt.Axes,
+            src: Point,
+            area_dim: BBox,
+            flattened_rewards: List,
+            max_frames: int
+        ) -> None:
+            """
+            Renders each frame
+
+            :param ax1: Actual grid
+            :param ax2: Radiation counts
+            :param ax3: Rewards
+            :param src: Source coordinates
+            :param area_dim:
+            :param area_dim: BBox - size of grid
+            :param flattened_rewards: flattened rewards between all agents
+            :param silent: Indicate if print frame to render
+
+            """
+            if not silent:
+                print(f"Current Frame: {frame_number}", end="\r")  # Acts as a progress bar
+
+            if self.iter_count == 0:
+                print("Agent must take more than one step to render")
+                return
+
+            if frame_number == max_frames:
+                return
+
+            current_index = frame_number % (self.iter_count)
+            # global location_estimate # TODO Trying to get out of global scope; this is for source prediction
+
+            # Set up graphs for first frame
+            if current_index == 0:
+                intensity_sci = "{:.2e}".format(self.intensity)
+                ax1.cla()
+                ax1.set_title("Activity: " + intensity_sci + " [gps] Bkg: " + str(self.bkg_intensity) + " [cps]")
+
+                # Plot source
+                ax1.scatter(
+                    src[0] / 100,
+                    src[1] / 100,
+                    marker_size,
+                    c="red",
+                    marker=MarkerStyle("*"),
+                    label="Source",
+                )
+
+                for agent_id, agent in self.agents.items():
+                    data = np.array(agent.det_sto[current_index]) / 100
+                    data_sub = (np.array(agent.det_sto[current_index + 1]) / 100) - (np.array(agent.det_sto[current_index]) / 100)
+                    orient = math.degrees(math.atan2(data_sub[1], data_sub[0]))
+                    self.plot_saver[agent_id] = ax1.scatter(
+                        data[0],
+                        data[1],
+                        marker_size,
+                        c=[agent.marker_color],
+                        marker=MarkerStyle((3, 0, orient - 90)),
+                    )
+
+                # Plot Obstacles
+                ax1.grid()
+                if not (obstacles == []) and obstacles is not None:
+                    for coord in obstacles:
+                        # p_disp = PolygonPatches(coord[0] / 100, color="gray")
+                        p_disp = PolygonPatches(np.array(coord) / 100, color="gray")
+                        ax1.add_patch(p_disp)
+
+                # Plot location prediction
+                # TODO make multi-agent and fix
+                # if not (location_estimate is None):
+                #     location_estimate = ax1.scatter(
+                #         location_estimate[0][current_index][1] / 100,
+                #         location_estimate[0][current_index][2] / 100,
+                #         marker_size,
+                #         c="magenta",
+                #         label="Loc. Pred.",
+                #     )
+
+                # Finish setting up grids
+                ax1.set_xlim(0, area_dim[1][0] / 100)
+                ax1.set_ylim(0, area_dim[2][1] / 100)
+                ax1.set_xticks(np.linspace(0, area_dim[1][0] / 100 - 2, 5))
+                ax1.set_yticks(np.linspace(0, area_dim[1][0] / 100 - 2, 5))
+                ax1.xaxis.set_major_formatter(FormatStrFormatter("%d"))
+                ax1.yaxis.set_major_formatter(FormatStrFormatter("%d"))
+                ax1.set_xlabel("X[m]")
+                ax1.set_ylabel("Y[m]")
+                ax1.legend(loc="lower right", fontsize=8)  # TODO get agent labels to stay put
+
+                # Set up radiation graph
+                # TODO make this less terrible
+                for agent in self.agents.values():
+                    count_max: float = max(agent.meas_sto)
+                    if count_max > self.all_agent_max_count:
+                        self.all_agent_max_count = count_max
+                # count_max: float = 0.0
+                # for agent in self.agents.values():
+                #     for measurement in agent.meas_sto:
+                #         if count_max < measurement:
+                #             count_max = measurement
+                ax2.cla()
+                ax2.set_xlim(0, self.iter_count)
+                ax2.xaxis.set_major_formatter(FormatStrFormatter("%d"))
+                ax2.set_ylim(0, (self.all_agent_max_count + 50))
+                # ax2.set_ylim(0, self.intensity)
+                ax2.set_xlabel("n")
+                ax2.set_ylabel("Counts")
+                for agent_id, agent in self.agents.items():
+                    markerline, _, _ = ax2.stem(
+                        [0],
+                        [agent.meas_sto[0]],
+                        use_line_collection=True,
+                        label=f"Detector {agent_id}",
+                    )
+                    current_color = tuple(agent.marker_color)
+                    markerline.set_markerfacecolor(current_color)
+                    markerline.set_markeredgecolor(current_color)
+                if self.number_agents > 5:
+                    ax2.legend(
+                        loc="lower center",
+                        fontsize=8,
+                        bbox_to_anchor=(0.5, -0.25),
+                        ncol=5,
+                        fancybox=True,
+                        shadow=True,
+                    )
+                else:
+                    ax2.legend(
+                        loc="lower center",
+                        fontsize=8,
+                        bbox_to_anchor=(0.5, -0.15),
+                        ncol=5,
+                        fancybox=True,
+                        shadow=True,
+                    )
+
+                # Set up rewards graph
+                # flattened_rewards = [x for v in episode_rewards.values() for x in v]
+                ax3.cla()
+                ax3.set_xlim(0, self.iter_count)
+                ax3.xaxis.set_major_formatter(FormatStrFormatter("%d"))
+                ax3.set_ylim(min(flattened_rewards) - 0.5, max(flattened_rewards) + 0.5)
+                ax3.set_xlabel("n")
+                ax3.set_ylabel("Cumulative Reward")
+                ax3.plot()
+
+                # Add movement to bottom of figure
+                if self.DEBUG:
+                    fig.supxlabel("Start")
+
+            else:  # If not first frame
+                # TODO add this back now that multi-agent radppo is up
+                # if location_estimate:
+                #     location_estimate.remove()
+
+                for agent_id, agent in self.agents.items():
+                    data = np.array(agent.det_sto[current_index]) / 100
+                    # If not last step, adjust orientation
+                    if current_index != len(agent.det_sto) - 1:
+                        data_sub = (np.array(agent.det_sto[current_index + 1]) / 100) - (np.array(agent.det_sto[current_index]) / 100)
+                        orient = math.degrees(math.atan2(data_sub[1], data_sub[0]))
+
+                        # Change last detector color to lighter version of itself
+                        self.plot_saver[agent_id].set_color(lighten_color(agent.marker_color, factor=COLOR_FACTOR))
+
+                        # Plot detector
+                        self.plot_saver[agent_id] = ax1.scatter(
+                            data[0],
+                            data[1],
+                            marker_size,
+                            c=[agent.marker_color],
+                            marker=MarkerStyle((3, 0, orient - 90)),
+                        )
+                    else:
+                        # Change last detector color to lighter version of itself
+                        self.plot_saver[agent_id].set_color(lighten_color(agent.marker_color, factor=COLOR_FACTOR))
+                        self.plot_saver[agent_id] = ax1.scatter(
+                            data[0],
+                            data[1],
+                            marker_size,
+                            c=[agent.marker_color],
+                            marker=MarkerStyle((3, 0)),
+                        )
+
+                    # Plot detector path if not last step
+                    if current_index != len(agent.det_sto) - 1:
+                        data_prev: npt.NDArray[np.float64] = np.array(agent.det_sto[current_index - 1]) / 100
+                        data_current: npt.NDArray[np.float64] = np.array(agent.det_sto[current_index]) / 100
+                        data_next: npt.NDArray[np.float64] = np.array(agent.det_sto[current_index + 1]) / 100
+                        line_data: npt.NDArray[np.float64] = np.array([data_prev, data_current, data_next])
+                        ax1.plot(
+                            line_data[0:2, 0],
+                            line_data[0:2, 1],
+                            3,
+                            c=agent.marker_color,
+                            alpha=0.3,
+                            ls="--",
+                        )
+
+                    # Plot radiation counts - stem graph
+                    assert agent.meas_sto[current_index] >= 0
+                    current_color = tuple(agent.marker_color)
+                    markerline, _, _ = ax2.stem(
+                        [current_index],
+                        [agent.meas_sto[current_index]],
+                        use_line_collection=True,
+                        label=f"Detector {agent_id}",
+                    )
+                    markerline.set_markerfacecolor(current_color)
+                    markerline.set_markeredgecolor(current_color)
+
+                    # Plot rewards graph - line graph, previous reading connects to current reading
+                    # ax3.scatter(current_index, agent.team_reward_sto[current_index], marker=',', c=[agent.marker_color], s=2, label=f"{agent_id}_Detector") # Current team reward
+                    # Plots individual rewards
+                    # ax3.plot([current_index-1, current_index], agent.cum_reward_sto[current_index-1:current_index+1], c=agent.marker_color, label=f"Detector {agent_id}")  # Cumulative line graph
+                    # Plots cumulative rewards
+                    ax3.plot(
+                        [current_index - 1, current_index],
+                        agent.team_reward_sto[current_index - 1: current_index + 1],
+                        c=agent.marker_color,
+                        label=f"Detector {agent_id}",
+                    )  # Cumulative line graph
+
+                # TODO make multi-agent and fix
+                # if not (location_estimate is None):
+                #     location_estimate = ax1.scatter(
+                #         location_estimate[0][current_index][1] / 100,
+                #         location_estimate[0][current_index][2] / 100,
+                #         marker_size * 0.8,
+                #         c="magenta",
+                #         label="Loc. Pred.",
+                #     )
+
+                # Add movement to bottom of figure
+                action_label = f"Step {current_index}:\n"
+                for id, agent in self.agents.items():
+                    action_label += f"A{id}: {ACTION_MAPPING[agent.action_sto[current_index]]} - {agent.det_sto[current_index]} \n"
+                fig.supxlabel(action_label, fontsize=8)
+                # If last step, indicate if terminal or not
+                if current_index == len(agent.det_sto) - 2:
+                    for agent_id, agent in self.agents.items():
+                        if agent.terminal_sto[current_index]:
+                            fig.supxlabel(f"Success! Agent {agent_id} found the source!")
+
+        # Initialize render environment
+        if data or measurements:
+            print("Error: Not implemented for upgraded multi-agent version. TBD")
+            return
+            # TODO Dont overwrite! Make local var instead
+            # TODO update to work with new mulit-agent framework
+            # self.intensity = params[0]
+            # self.bkg_intensity = params[1]
+            # self.src_coords = params[2]
+            # self.iter_count = len(measurements)
+            # data = np.array(data) / 100
+        # else:
+        # TODO change to multi-agent
+        # data = np.array(agent.det_sto) / 100  # Detector stored locations in an array?
+        # measurements = agent.meas_sto # Unneeded?
+
+        # Check only rendering one episode aka data readings available match number of rewards (+1 as rewards dont include the first position).
+        # if data.shape[0] != len(episode_rewards)+1:
+
+        # TODO make multiagent
+        if episode_rewards:
+            print("Error: Episode rewards are deprecated. Rendering plots from existing agent storage.")
+
+        cum_episode_rewards = [a.cum_reward_sto for a in self.agents.values()]
+        flattened_rewards = [x for v in cum_episode_rewards for x in v]
+        data_length = len(self.agents[0].det_sto)
+        reward_length = len(cum_episode_rewards[0]) if len(cum_episode_rewards) > 0 else 0
+        if data_length != reward_length and not just_env:
+            print(
+                f"Error: episode reward array length: {reward_length} does not match existing detector locations array length {data_length}. \
+            Check: Are you trying to render more than one episode?"
+            )
+            return
+
+        if obstacles == []:
+            obstacles = self.obs_coord
         if just_env:
-            current_index = 0
-            plt.rc("font", size=14)
+            # Setup Graph
+            plt.rc("font", size=12)
             fig, ax1 = plt.subplots(1, 1, figsize=(7, 7), tight_layout=True)
+
+            # Plot source
             ax1.scatter(
                 self.src_coords[0] / 100,
                 self.src_coords[1] / 100,
                 60,
                 c="red",
-                marker="*",
+                marker=MarkerStyle("*"),
                 label="Source",
             )
-            ax1.scatter(
-                data[current_index, 0],
-                data[current_index, 1],
-                42,
-                c="black",
-                marker="^",
-                label="Detector",
-            )
-            ax1.grid()
-            if not (obs == []):
-                for coord in obs:
-                    p_disp = Polygon(coord[0] / 100, color="gray")
-                    ax1.add_patch(p_disp)
-            if not (loc_est is None):
+            # Plot Agents
+            for agent_id, agent in self.agents.items():
+                data = np.array(agent.det_sto[0]) / 100
                 ax1.scatter(
-                    loc_est[0][current_index][1] / 100,
-                    loc_est[0][current_index][2] / 100,
+                    data[0],
+                    data[1],
                     42,
-                    c="magenta",
-                    label="Loc. Pred.",
+                    c=[agent.marker_color],
+                    # c="black",
+                    marker=MarkerStyle("^"),
+                    label=f"Detector {agent_id}",
                 )
+            # Plot Obstacles
+            ax1.grid()
+            if not (obstacles == []):
+                for coord in obstacles:
+                    p_disp = PolygonPatches((np.array(coord) / 100), color="gray")
+                    ax1.add_patch(p_disp)
+
+            # TODO Make multi-agent and fix
+            # if not (location_estimate is None):
+            #     ax1.scatter(
+            #         # location_estimate[0][current_index][1] / 100,
+            #         # location_estimate[0][current_index][2] / 100,
+            #         location_estimate[0][0][1] / 100,
+            #         location_estimate[0][0][2] / 100,
+            #         42,
+            #         c="magenta",
+            #         label="Loc. Pred.",
+            #     )
+            # Finish Graph
             ax1.set_xlim(0, self.search_area[1][0] / 100)
             ax1.set_ylim(0, self.search_area[2][1] / 100)
             ax1.set_xlabel("X[m]")
             ax1.set_ylabel("Y[m]")
-            ax1.legend(loc="lower left")
-        else:
-            plt.rc("font", size=12)
-            fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5), tight_layout=True)
-            m_size = 25
+            ax1.legend(loc="lower left", fontsize=8)  # TODO get agent labels to stay put
 
-            def update(frame_number, data, ax1, ax2, ax3, src, area_dim, meas):
-                current_index = frame_number % (self.iter_count)
-                global loc
-                if current_index == 0:
-                    intensity_sci = "{:.2e}".format(self.intensity)
-                    ax1.cla()
-                    ax1.set_title("Activity: " + intensity_sci + " [gps] Bkg: " + str(self.bkg_intensity) + " [cps]")
-                    data_sub = data[current_index + 1] - data[current_index]
-                    orient = math.degrees(math.atan2(data_sub[1], data_sub[0]))
-                    ax1.scatter(
-                        src[0] / 100,
-                        src[1] / 100,
-                        m_size,
-                        c="red",
-                        marker="*",
-                        label="Source",
-                    )
-                    ax1.scatter(
-                        data[current_index, 0],
-                        data[current_index, 1],
-                        m_size,
-                        c="black",
-                        marker=(3, 0, orient - 90),
-                    )
-                    ax1.scatter(-1000, -1000, m_size, c="black", marker="^", label="Detector")
-                    ax1.grid()
-                    if not (obs == []):
-                        for coord in obs:
-                            p_disp = Polygon(coord[0] / 100, color="gray")
-                            ax1.add_patch(p_disp)
-                    if not (loc_est is None):
-                        loc = ax1.scatter(
-                            loc_est[0][current_index][1] / 100,
-                            loc_est[0][current_index][2] / 100,
-                            m_size,
-                            c="magenta",
-                            label="Loc. Pred.",
-                        )
-                    ax1.set_xlim(0, area_dim[1][0] / 100)
-                    ax1.set_ylim(0, area_dim[2][1] / 100)
-                    ax1.set_xticks(np.linspace(0, area_dim[1][0] / 100 - 2, 5))
-                    ax1.set_yticks(np.linspace(0, area_dim[1][0] / 100 - 2, 5))
-                    ax1.xaxis.set_major_formatter(FormatStrFormatter("%d"))
-                    ax1.yaxis.set_major_formatter(FormatStrFormatter("%d"))
-                    ax1.set_xlabel("X[m]")
-                    ax1.set_ylabel("Y[m]")
-                    ax2.cla()
-                    ax2.set_xlim(0, self.iter_count)
-                    ax2.xaxis.set_major_formatter(FormatStrFormatter("%d"))
-                    ax2.set_ylim(0, max(meas) + 1e-6)
-                    ax2.stem([current_index], [meas[current_index]], use_line_collection=True)
-                    ax2.set_xlabel("n")
-                    ax2.set_ylabel("Counts")
-                    ax3.cla()
-                    ax3.set_xlim(0, self.iter_count)
-                    ax3.xaxis.set_major_formatter(FormatStrFormatter("%d"))
-                    ax3.set_ylim(min(ep_rew) - 2, max(ep_rew) + 2)
-                    ax3.set_xlabel("n")
-                    ax3.set_ylabel("Cumulative Reward")
-                    ax1.legend(loc="lower right")
+            # Save
+            if self.save_gif or save_gif:
+                if os.path.isdir(str(path) + "/gifs/"):
+                    fig.savefig(str(path) + "/gifs/environment.png")
                 else:
-                    loc.remove()
-                    data_sub = data[current_index + 1] - data[current_index]
-                    orient = math.degrees(math.atan2(data_sub[1], data_sub[0]))
-                    ax1.scatter(
-                        data[current_index, 0],
-                        data[current_index, 1],
-                        m_size,
-                        marker=(3, 0, orient - 90),
-                        c="black",
-                    )
-                    ax1.plot(
-                        data[current_index - 1 : current_index + 1, 0],
-                        data[current_index - 1 : current_index + 1, 1],
-                        3,
-                        c="black",
-                        alpha=0.3,
-                        ls="--",
-                    )
-                    ax2.stem([current_index], [meas[current_index]], use_line_collection=True)
-                    ax3.plot(range(current_index), ep_rew[:current_index], c="black")
-                    if not (loc_est is None):
-                        loc = ax1.scatter(
-                            loc_est[0][current_index][1] / 100,
-                            loc_est[0][current_index][2] / 100,
-                            m_size * 0.8,
-                            c="magenta",
-                            label="Loc. Pred.",
-                        )
-
-            ani = animation.FuncAnimation(
-                fig,
-                update,
-                frames=len(ep_rew),
-                fargs=(data, ax1, ax2, ax3, self.src_coords, self.search_area, meas),
-            )
-            if save_gif:
-                writer = PillowWriter(fps=5)
-                if os.path.isdir(path + "/gifs/"):
-                    ani.save(path + f"/gifs/test_{epoch_count}.gif", writer=writer)
-                else:
-                    os.mkdir(path + "/gifs/")
-                    ani.save(path + f"/gifs/test_{epoch_count}.gif", writer=writer)
+                    os.mkdir(str(path) + "/gifs/")
+                    fig.savefig(str(path) + "/gifs/environment.png")
             else:
                 plt.show()
+            # Figure is not reused, ok to close
+            plt.close('all')
+            return
+
+        else:
+            # Setup Graph for gif
+            plt.rc("font", size=12)
+            fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5), tight_layout=True)
+            marker_size = 25
+            # fig.suptitle(
+            #     'Multi-Agent Radiation Localization', fontsize=16)
+
+            # Setup animation
+            if not self.silent:
+                print(f"Rendering in {str(path)}/gifs/")
+                print("Frames to render: ", reward_length - 1)
+
+            if data_length > 1:
+                ani = animation.FuncAnimation(
+                    fig,
+                    update,
+                    # frames=reward_length,
+                    frames=data_length,
+                    fargs=(
+                        ax1,
+                        ax2,
+                        ax3,
+                        self.src_coords,
+                        self.bbox,
+                        flattened_rewards,
+                        data_length+1  # Additional frame for gif extraction of last step
+                    ),
+                )
+                if self.save_gif or save_gif:
+                    if self.DEBUG:
+                        fps = 1
+                    else:
+                        fps = FPS
+                    writer = PillowWriter(fps=fps)
+                    if not os.path.isdir(str(path) + "/gifs/"):
+                        os.mkdir(str(path) + "/gifs/")
+                    # ani.save(str(path) + f"/gifs/test_epoch{epoch_count}.gif", writer=writer)
+                    ani.save(
+                        f"{str(path)}/gifs/epoch_{epoch_count}-{episode_count}({self.render_counter}).gif",
+                        writer=writer,
+                    )
+
+                else:
+                    plt.show()
+                self.render_counter += 1
+            return
+
+    # def render(
+    #     self,
+    #     save_gif=False,
+    #     path=None,
+    #     epoch_count=None,
+    #     just_env=False,
+    #     obs=None,
+    #     ep_rew=None,
+    #     data=None,
+    #     meas=None,
+    #     params=None,
+    #     loc_est=None,
+    # ):
+    #     """
+    #     Method that produces a gif of the agent interacting in the environment.
+    #     """
+    #     if data and meas:
+    #         self.intensity = params[0]
+    #         self.bkg_intensity = params[1]
+    #         self.src_coords = params[2]
+    #         self.iter_count = len(meas)
+    #         data = np.array(data) / 100
+    #     else:
+    #         data = np.array(self.det_sto) / 100
+    #         meas = self.meas_sto
+
+    #     if just_env:
+    #         current_index = 0
+    #         plt.rc("font", size=14)
+    #         fig, ax1 = plt.subplots(1, 1, figsize=(7, 7), tight_layout=True)
+    #         ax1.scatter(
+    #             self.src_coords[0] / 100,
+    #             self.src_coords[1] / 100,
+    #             60,
+    #             c="red",
+    #             marker="*",
+    #             label="Source",
+    #         )
+    #         ax1.scatter(
+    #             data[current_index, 0],
+    #             data[current_index, 1],
+    #             42,
+    #             c="black",
+    #             marker="^",
+    #             label="Detector",
+    #         )
+    #         ax1.grid()
+    #         if not (obs == []):
+    #             for coord in obs:
+    #                 p_disp = Polygon(coord[0] / 100, color="gray")
+    #                 ax1.add_patch(p_disp)
+    #         if not (loc_est is None):
+    #             ax1.scatter(
+    #                 loc_est[0][current_index][1] / 100,
+    #                 loc_est[0][current_index][2] / 100,
+    #                 42,
+    #                 c="magenta",
+    #                 label="Loc. Pred.",
+    #             )
+    #         ax1.set_xlim(0, self.search_area[1][0] / 100)
+    #         ax1.set_ylim(0, self.search_area[2][1] / 100)
+    #         ax1.set_xlabel("X[m]")
+    #         ax1.set_ylabel("Y[m]")
+    #         ax1.legend(loc="lower left")
+    #     else:
+    #         plt.rc("font", size=12)
+    #         fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 5), tight_layout=True)
+    #         m_size = 25
+
+    #         def update(frame_number, data, ax1, ax2, ax3, src, area_dim, meas):
+    #             current_index = frame_number % (self.iter_count)
+    #             global loc
+    #             if current_index == 0:
+    #                 intensity_sci = "{:.2e}".format(self.intensity)
+    #                 ax1.cla()
+    #                 ax1.set_title("Activity: " + intensity_sci + " [gps] Bkg: " + str(self.bkg_intensity) + " [cps]")
+    #                 data_sub = data[current_index + 1] - data[current_index]
+    #                 orient = math.degrees(math.atan2(data_sub[1], data_sub[0]))
+    #                 ax1.scatter(
+    #                     src[0] / 100,
+    #                     src[1] / 100,
+    #                     m_size,
+    #                     c="red",
+    #                     marker="*",
+    #                     label="Source",
+    #                 )
+    #                 ax1.scatter(
+    #                     data[current_index, 0],
+    #                     data[current_index, 1],
+    #                     m_size,
+    #                     c="black",
+    #                     marker=(3, 0, orient - 90),
+    #                 )
+    #                 ax1.scatter(-1000, -1000, m_size, c="black", marker="^", label="Detector")
+    #                 ax1.grid()
+    #                 if not (obs == []):
+    #                     for coord in obs:
+    #                         p_disp = Polygon(coord[0] / 100, color="gray")
+    #                         ax1.add_patch(p_disp)
+    #                 if not (loc_est is None):
+    #                     loc = ax1.scatter(
+    #                         loc_est[0][current_index][1] / 100,
+    #                         loc_est[0][current_index][2] / 100,
+    #                         m_size,
+    #                         c="magenta",
+    #                         label="Loc. Pred.",
+    #                     )
+    #                 ax1.set_xlim(0, area_dim[1][0] / 100)
+    #                 ax1.set_ylim(0, area_dim[2][1] / 100)
+    #                 ax1.set_xticks(np.linspace(0, area_dim[1][0] / 100 - 2, 5))
+    #                 ax1.set_yticks(np.linspace(0, area_dim[1][0] / 100 - 2, 5))
+    #                 ax1.xaxis.set_major_formatter(FormatStrFormatter("%d"))
+    #                 ax1.yaxis.set_major_formatter(FormatStrFormatter("%d"))
+    #                 ax1.set_xlabel("X[m]")
+    #                 ax1.set_ylabel("Y[m]")
+    #                 ax2.cla()
+    #                 ax2.set_xlim(0, self.iter_count)
+    #                 ax2.xaxis.set_major_formatter(FormatStrFormatter("%d"))
+    #                 ax2.set_ylim(0, max(meas) + 1e-6)
+    #                 ax2.stem([current_index], [meas[current_index]], use_line_collection=True)
+    #                 ax2.set_xlabel("n")
+    #                 ax2.set_ylabel("Counts")
+    #                 ax3.cla()
+    #                 ax3.set_xlim(0, self.iter_count)
+    #                 ax3.xaxis.set_major_formatter(FormatStrFormatter("%d"))
+    #                 ax3.set_ylim(min(ep_rew) - 2, max(ep_rew) + 2)
+    #                 ax3.set_xlabel("n")
+    #                 ax3.set_ylabel("Cumulative Reward")
+    #                 ax1.legend(loc="lower right")
+    #             else:
+    #                 loc.remove()
+    #                 data_sub = data[current_index + 1] - data[current_index]
+    #                 orient = math.degrees(math.atan2(data_sub[1], data_sub[0]))
+    #                 ax1.scatter(
+    #                     data[current_index, 0],
+    #                     data[current_index, 1],
+    #                     m_size,
+    #                     marker=(3, 0, orient - 90),
+    #                     c="black",
+    #                 )
+    #                 ax1.plot(
+    #                     data[current_index - 1 : current_index + 1, 0],
+    #                     data[current_index - 1 : current_index + 1, 1],
+    #                     3,
+    #                     c="black",
+    #                     alpha=0.3,
+    #                     ls="--",
+    #                 )
+    #                 ax2.stem([current_index], [meas[current_index]], use_line_collection=True)
+    #                 ax3.plot(range(current_index), ep_rew[:current_index], c="black")
+    #                 if not (loc_est is None):
+    #                     loc = ax1.scatter(
+    #                         loc_est[0][current_index][1] / 100,
+    #                         loc_est[0][current_index][2] / 100,
+    #                         m_size * 0.8,
+    #                         c="magenta",
+    #                         label="Loc. Pred.",
+    #                     )
+
+    #         ani = animation.FuncAnimation(
+    #             fig,
+    #             update,
+    #             frames=len(ep_rew),
+    #             fargs=(data, ax1, ax2, ax3, self.src_coords, self.search_area, meas),
+    #         )
+    #         if save_gif:
+    #             writer = PillowWriter(fps=5)
+    #             if os.path.isdir(path + "/gifs/"):
+    #                 ani.save(path + f"/gifs/test_{epoch_count}.gif", writer=writer)
+    #             else:
+    #                 os.mkdir(path + "/gifs/")
+    #                 ani.save(path + f"/gifs/test_{epoch_count}.gif", writer=writer)
+    #         else:
+    #             plt.show()
 
     def FIM_step(self, action, agent, coords=None):
         """
