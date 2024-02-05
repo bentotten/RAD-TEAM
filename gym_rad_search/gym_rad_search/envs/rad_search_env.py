@@ -39,13 +39,6 @@ from matplotlib.markers import MarkerStyle  # type: ignore
 
 from typing_extensions import TypeAlias
 
-FPS = 50
-DET_STEP = 100.0  # Detector step size at each timestep in cm/s
-DET_STEP_FRAC = 71.0  # Diagonal detector step size in cm/s
-DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
-DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm
-EPSILON = 0.0000001
-
 
 Point = NewType("Point", Tuple[float, float])
 Polygon = NewType("Polygon", List[Point])
@@ -54,7 +47,233 @@ BBox = NewType("BBox", Tuple[Point, Point, Point, Point])
 Colorcode = NewType("Colorcode", List[int])
 Color = NewType("Color", npt.NDArray[np.float64])
 
+Metadata = TypedDict("Metadata", {"render.modes": List[str], "video.frames_per_second": int})
 
+MAX_CREATION_TRIES = 1000000000
+
+GLOBAL_REWARD = False  # Beat the global minimum shortest path distance or get punished
+PROPORTIONAL_REWARD = (
+    False if GLOBAL_REWARD else False
+)  # Get rewarded for improving your own shortest path, proportional to last time. Closest agent gets saved.
+BASIC_REWARD = (
+    False if (GLOBAL_REWARD or PROPORTIONAL_REWARD) else True
+)  # 0 for every good step; prevents agent from gaining rewards by maximizing the episode length
+ORIGINAL_REWARD = (
+    False if (GLOBAL_REWARD or PROPORTIONAL_REWARD or BASIC_REWARD) else True
+)  # +0.1 for every step that is closer than prev shortest path. Unfortunately rewards agent for extending episode
+
+BASIC_SUC_AMOUNT = 1.0
+
+# These actions correspond to:
+# -1: stay idle
+# 0: left
+# 1: up and left
+# 2: up
+# 3: up and right
+# 4: right
+# 5: down and right
+# 6: down
+# 7: down and left
+Action: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8]
+Directions: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7]
+
+A_SIZE = len(get_args(Action))
+DETECTABLE_DIRECTIONS = len(get_args(Directions))  # Ignores -1 idle state
+DET_STEP = 100.0  # detector step size at each timestep in cm/s
+DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
+DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
+DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm #TODO unused
+EPSILON = 0.0000001  # Parameter for Visilibity function to check if environment is valid
+COLORS = [
+    # Colorcode([148, 0, 211]), # Violet (Removed due to being too similar to indigo)
+    Colorcode([255, 105, 180]),  # Pink
+    Colorcode([75, 0, 130]),  # Indigo
+    Colorcode([0, 0, 255]),  # Blue
+    Colorcode([0, 255, 0]),  # Green
+    Colorcode([255, 127, 0]),  # Orange
+]
+COLOR_FACTOR = 0.75  # How much to lighten previous rendered step by
+
+# Rendering
+ACTION_MAPPING: Dict = {
+    0: "Left",
+    1: "Up Left",
+    2: "Up",
+    3: "Up Right",
+    4: "Right",
+    5: "Down Right",
+    6: "Down",
+    7: "Down Left",
+    8: "Idle",
+}
+FPS = 5
+
+
+def combined_shape(length, shape=None):
+    if shape is None:
+        return (length,)
+    return (length, shape) if np.isscalar(shape) else (length, *shape)
+
+
+def sum_p(p1: Point, p2: Point) -> Point:
+    """
+    Return the sum of the two points.
+    """
+    return Point((p1[0] + p2[0], p1[1] + p2[1]))
+
+
+def sub_p(p1: Point, p2: Point) -> Point:
+    """
+    Return the difference of the two points.
+    """
+    return Point((p1[0] - p2[0], p1[1] - p2[1]))
+
+
+def scale_p(p: Point, s: float) -> Point:
+    """
+    Return the scaled point p by the scalar s.
+    """
+    return Point((p[0] * s, p[1] * s))
+
+
+def dist_p(p1: Point, p2: Point) -> float:
+    """
+    Return the distance between the two points.
+    """
+
+    def dist_sq_p(p1: Point, p2: Point) -> float:
+        """
+        Return the squared distance between the two points.
+        """
+        return float((p1[0] - p2[0]) ** 2) + float((p1[1] - p2[1]) ** 2)
+
+    return math.sqrt(dist_sq_p(p1, p2))
+
+
+def from_vis_p(p: vis.Point) -> Point:
+    """
+    Return a Point from a visilibity Point.
+    """
+    return Point((p.x(), p.y()))  # type: ignore
+
+
+def to_vis_p(p: Point) -> vis.Point:
+    """
+    Return a visilibity Point from a Point.
+    """
+    return vis.Point(p[0], p[1])
+
+
+def from_vis_poly(poly: vis.Polygon) -> Polygon:
+    """
+    Return a Polygon from a visilibity Polygon.
+    """
+    return Polygon(list(map(from_vis_p, poly)))
+
+
+def to_vis_poly(poly: Polygon) -> vis.Polygon:
+    """
+    Return a visilibity Polygon from a Polygon.
+    """
+    return vis.Polygon(list(map(to_vis_p, poly)))
+
+
+def count_matching_p(p1: Point, point_list: List[Point]) -> int:
+    """
+    Count number of times a Point appears in a list
+    """
+    count = 0
+    for p2 in point_list:
+        if p1[0] == p2[0] and p1[1] == p2[1]:
+            count += 1
+    return count
+
+
+def get_step_size(action: Union[Action, int]) -> float:
+    """
+    Return the step size for the given action.
+    """
+
+    return DET_STEP if action % 2 == 0 else DET_STEP_FRAC
+
+
+def get_y_step_coeff(action: Union[Action, int]) -> float:
+    """
+    action (Action): Scalar representing desired travel angle
+    idle_action (Action): Action representing idle state (usually the maximum action)
+    """
+    # return math.sin(2 * math.pi * action / idle_action) if action != idle_action else 0
+    return round(math.sin(math.pi * (1.0 - action / 4.0)))
+
+
+# Get the new X coordinate for an arbritrary action angle
+def get_x_step_coeff(action: Union[Action, int]) -> float:
+    """
+    action (Action): Scalar representing desired travel angle
+    idle_action (Action): Action representing idle state (usually the maximum action)
+    """
+    # return math.cos(2 * math.pi * action / idle_action)
+    return get_y_step_coeff((action + 6) % 8)
+
+
+def get_step(action: Union[Action, int]) -> Point:
+    """
+    Return the step offset for the given action, scaled
+        0: left
+        1: up left
+        2: up
+        3: up right
+        4: right
+        5: down right
+        6: down
+        7: down left
+        8: Idle
+    """
+    if action == A_SIZE - 1:  # if max action
+        return Point((0.0, 0.0))
+    else:
+        return scale_p(
+            Point((get_x_step_coeff(action=action), get_y_step_coeff(action=action))),
+            get_step_size(action),
+        )
+
+
+def create_color(id: int) -> Color:
+    """Pick initial Colorcode based on id number, then offset it"""
+    specific_color: Colorcode = COLORS[id % (len(COLORS))]  #
+    if id > (len(COLORS) - 1):
+        offset: int = (id * 22) % 255  # Create large offset for that base color, bounded by 255
+        specific_color[id % 3] = (255 + specific_color[id % 3] - offset) % 255  # Perform the offset
+    return Color(np.array(specific_color) / 255)
+
+
+def lighten_color(color: Color, factor: float) -> Color:
+    """increase tint of a color"""
+    scaled_color = color * 255  # return to original scale
+    return Color(np.array(list(map(lambda c: (c + (255 - c) * factor) / 255, scaled_color))))
+
+
+def ping():
+    return "PONG!"
+
+
+class StepResult(NamedTuple):
+    observation: Dict[int, npt.NDArray[np.float32]]
+    reward: Dict[int, float]
+    terminal: Dict[int, bool]
+    info: Dict[int, Dict[Any, Any]]
+
+
+### Legacy Globals ###
+
+FPS = 50
+DET_STEP = 100.0  # Detector step size at each timestep in cm/s
+DET_STEP_FRAC = 71.0  # Diagonal detector step size in cm/s
+DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
+DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm
+EPSILON = 0.0000001
+
+### Legacy helper functions ###
 def edges_of(vertices):
     """
     Return the vectors for the edges of the polygon p.
@@ -165,24 +384,268 @@ class Agent:
         self.terminal_sto: List = []
 
 
+@dataclass
 class RadSearch(gym.Env):
-    metadata = {"render.modes": ["human"], "video.frames_per_second": FPS}
+    """
+    bbox is the "bounding box"
+
+    Dimensions of radiation source search area in cm, decreased by observation_area param. to ensure visilibity graph setup is valid.
+
+    observation_area: Interval for each obstruction area in cm. The actual search area will be the bounds box decreased by this amount. This is also
+        used to offset obstacles from one another
+
+    np_random: A random number generator
+
+    obstruction_count: Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions,
+        [1-7] -> 1 to 7 obstructions
+    """
+
+    # Environment
+    #    BBox = NewType("BBox", Tuple[Point, Point, Point, Point])
+    # TODO might be more efficient as an array
+    # bbox: BBox = field(
+    #     default_factory=lambda: BBox(tuple((Point((0.0, 0.0)), Point((2700.0, 0.0)), Point((2700.0, 2700.0)), Point((0.0, 2700.0)))))  # type: ignore
+    # )
+    bbox: BBox = field(
+        default_factory=lambda: np.asarray([[0.0, 0.0], [2700.0, 0.0], [2700.0, 2700.0], [0.0, 2700.0]]) 
+    )
+    observation_area: Interval = field(default_factory=lambda: Interval((200.0, 500.0)))  # Size of obstructions
+    np_random: npr.Generator = field(default_factory=lambda: npr.default_rng(0))
+    obstruction_count: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
+    obstruction_max: int = field(default=7)
+    enforce_grid_boundaries: bool = field(default=False)
+    save_gif: bool = field(default=False)
+    env_ls: List[Polygon] = field(init=False)
+    max_dist: float = field(init=False)
+    line_segs: List[List[vis.Line_Segment]] = field(init=False)
+    poly: List[Polygon] = field(init=False)
+    search_area: BBox = field(init=False)  # Area Detector and Source will spawn in - each must be 1000 cm apart from the source
+    walls: Polygon = field(init=False)
+    world: vis.Environment = field(init=False)
+    vis_graph: vis.Visibility_Graph = field(init=False)
+    intensity: int = field(init=False)
+    bkg_intensity: int = field(init=False)
+    obs_coord: List[List[Point]] = field(init=False)
+
+    # Agents
+    agents: Dict[int, Agent] = field(init=False)
+    step_size = DET_STEP
+    global_min_shortest_path: float = field(init=False)
+
+    # Source
+    # TODO move into own class to easily handle multi-source
+    src_coords: Point = field(init=False)
+    source: vis.Point = field(init=False)
+
+    # Values with default values which are not set in the constructor
+    number_agents: int = 1
+    action_space: spaces.Discrete = spaces.Discrete(A_SIZE)
+    number_actions: int = A_SIZE
+    detectable_directions: int = DETECTABLE_DIRECTIONS
+    background_radiation_bounds: Point = Point((10, 51))
+    continuous: bool = False
+    done: bool = False
+    epoch_cnt: int = 0
+    radiation_intensity_bounds: Point = Point((1e6, 10e6))
+    metadata: Metadata = field(default_factory=lambda: {"render.modes": ["human"], "video.frames_per_second": FPS})  # type: ignore
+    observation_space: spaces.Box = spaces.Box(0, np.inf, shape=(11,), dtype=np.float32)
+    coord_noise: bool = False
+    # seed: Union[int, None] = field( default=None)  # TODO make env generation work with this
+    scale: float = field(init=False)  # Used to deflate and inflate coordinates
+    scaled_grid_max: Tuple = field(default_factory=lambda: (1, 1))  # Max x and max y for grid after deflation
+    # flag to reset/sample new environment parameters. This is necessary when runnning monte carlo evaluations to ensure env is standardized for all
+    #   evaluation, unless indicated.
+    epoch_end: bool = field(
+        default=False
+    )
+
+    # Step return mode
+    step_data_mode: str = field(default="dict")
+
+    # Rendering and print
+    iter_count: int = field(default=0)  # For render function, believe it counts timesteps
+    all_agent_max_count: float = field(init=False)  # Sets y limit for radiation count graph
+    render_counter: int = field(default=0)
+    silent: bool = field(default=False)
+
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    # Stage 1
+    TEST: int = field(default=0)
+    DEBUG: bool = field(default=False)
+    DEBUG_SOURCE_LOCATION: Point = field(default=Point((1, 1)))
+    DEBUG_DETECTOR_LOCATION: Point = Point((1499.0, 1499.0))
+    MIN_STARTING_DISTANCE: float = field(default=1000)  # cm
+
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+    # Legacy rad_ppo variables
+    # metadata = {"render.modes": ["human"], "video.frames_per_second": FPS}
 
     continuous = False
 
-    def __init__(self, bbox, area_obs, obstruct=False, seed=None, coord_noise=False):
-        self.np_random = seed
-        self.bounds = np.asarray(bbox)
+    #bbox # Redefined above
+    area_obs: Interval = field(default=False)
+    obstruct: int = 0
+    seed: int = 0
+    coord_noise: bool = False
+
+    def __post_init__(self) -> None:
+        # Debugging tests
+        # Test 1: 15x15 grid, no obstructions, fixed start and stop points
+        if self.DEBUG:
+            if not self.silent:
+                print(f"Reward Mode - Global: {GLOBAL_REWARD}. Proportional: {PROPORTIONAL_REWARD}. Basic {BASIC_REWARD}. Original: {ORIGINAL_REWARD}")
+                if BASIC_REWARD:
+                    print(f"Basic Reward upon success: {BASIC_SUC_AMOUNT}")
+        if self.TEST == "1":
+            if not self.silent:        
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 1 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.observation_area = Interval((100.0, 100.0))
+            self.obstruction_count = 0
+            self.DEBUG = True
+            self.DEBUG_SOURCE_LOCATION = Point((1, 1))
+            self.DEBUG_DETECTOR_LOCATION = Point((1499.0, 1499.0))
+
+        # Test 2: 15x15 grid, no obstructions, fixed stop point
+        elif self.TEST == "2":
+            if not self.silent:
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 2 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.observation_area = Interval((100.0, 100.0))
+            self.obstruction_count = 0
+            self.DEBUG = True
+            self.DEBUG_SOURCE_LOCATION = Point((1, 1))
+
+        # Test 3: 7x7 grid, no obstructions, fixed start point
+        elif self.TEST == "3":
+            if not self.silent:        
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 3 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0, 0.0)), Point((700.0, 0.0)), Point((700.0, 700.0)), Point((0.0, 700.0))))
+            self.observation_area = Interval((100.0, 100.0))
+            self.obstruction_count = 0
+            self.DEBUG = True
+            self.DEBUG_DETECTOR_LOCATION = Point((699.0, 699.0))
+            self.MIN_STARTING_DISTANCE = 350  # cm
+
+        # Test 4: 7x7 grid, no obstructions
+        elif self.TEST == "4":
+            if not self.silent:        
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 4 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0, 0.0)), Point((700.0, 0.0)), Point((700.0, 700.0)), Point((0.0, 700.0))))
+            self.observation_area = Interval((100.0, 100.0))
+            self.obstruction_count = 0
+            self.DEBUG = True
+            self.MIN_STARTING_DISTANCE = 350  # cm
+
+        # Test 5: 15x15 grid, no obstructions
+        elif self.TEST == "5":
+            if not self.silent: 
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 5 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.observation_area = Interval((100.0, 100.0))
+            self.obstruction_count = 0
+            self.DEBUG = False
+            self.MIN_STARTING_DISTANCE = 500  # cm
+
+        # Test 6: 15x15 grid, 1 obstruction
+        elif self.TEST == "6":
+            if not self.silent: 
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 6 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.observation_area = Interval((100.0, 100.0))
+            self.obstruction_count = 1
+            self.DEBUG = False
+            self.MIN_STARTING_DISTANCE = 500  # cm
+
+        # Test 7: 15x15 grid, 3 obstructions
+        elif self.TEST == "7":
+            if not self.silent: 
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 7 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.observation_area = Interval((100.0, 100.0))
+            self.obstruction_count = 3
+            self.DEBUG = False
+            self.MIN_STARTING_DISTANCE = 500  # cm
+
+        # FULL RUN: 15x15 grid, [1-5] obstructions
+        elif self.TEST == "FULL":
+            if not self.silent: 
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   FULL RUN MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.observation_area = Interval((100.0, 200.0)) # Size of obstructions
+            self.obstruction_count = -1
+            self.DEBUG = False
+            self.MIN_STARTING_DISTANCE = 500  # cm
+            self.obstruction_max = 3
+
+        # FULL RUN: 15x15 grid, [1-5] obstructions
+        elif self.TEST == "ZERO":
+            if not self.silent:             
+                print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   ZERO RUN MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.observation_area = Interval((100.0, 200.0))
+            self.obstruction_count = 0
+            self.DEBUG = False
+            self.MIN_STARTING_DISTANCE = 500  # cm
+
+        self.search_area: BBox = BBox(
+            (
+                Point(
+                    (
+                        self.bbox[0][0] + self.observation_area[0],
+                        self.bbox[0][1] + self.observation_area[0],
+                    )
+                ),
+                Point(
+                    (
+                        self.bbox[1][0] - self.observation_area[1],
+                        self.bbox[1][1] + self.observation_area[0],
+                    )
+                ),
+                Point(
+                    (
+                        self.bbox[2][0] - self.observation_area[1],
+                        self.bbox[2][1] - self.observation_area[1],
+                    )
+                ),
+                Point(
+                    (
+                        self.bbox[3][0] + self.observation_area[0],
+                        self.bbox[3][1] - self.observation_area[1],
+                    )
+                ),
+            )
+        )
+        self.epoch_end = True
+        self.agents = {i: Agent(id=i) for i in range(self.number_agents)}
+        self.max_dist: float = dist_p(self.search_area[2], self.search_area[1])  # Maximum distance between two points within search area
+
+        # Assure there is room to spawn detectors and source with proper spacing
+        assert (
+            self.max_dist > self.MIN_STARTING_DISTANCE
+        ), "Maximum distance available is too small, unable to spawn source and detector 1000 cm apart"
+
+        self.scale = 1 / self.search_area[2][1]  # Needed for CNN network scaling
+
+        # Set initial shortest path to be zero
+        self.global_min_shortest_path = 0
+
+        # self.reset() # TODO
+
+        # Legacy set-up
+        # self.np_random = self.seed  # Need random number generator
+        self.bounds = np.asarray(self.bbox)
         self.search_area = np.array(
             [
-                [self.bounds[0][0] + area_obs[0], self.bounds[0][1] + area_obs[0]],
-                [self.bounds[1][0] - area_obs[1], self.bounds[1][1] + area_obs[0]],
-                [self.bounds[2][0] - area_obs[1], self.bounds[2][1] - area_obs[1]],
-                [self.bounds[3][0] + area_obs[0], self.bounds[3][1] - area_obs[1]],
+                [self.bounds[0][0] + self.observation_area[0], self.bounds[0][1] + self.observation_area[0]],
+                [self.bounds[1][0] - self.observation_area[1], self.bounds[1][1] + self.observation_area[0]],
+                [self.bounds[2][0] - self.observation_area[1], self.bounds[2][1] - self.observation_area[1]],
+                [self.bounds[3][0] + self.observation_area[0], self.bounds[3][1] - self.observation_area[1]],
             ]
         )
-        self.area_obs = area_obs
-        self.obstruct = obstruct
+        self.area_obs = self.observation_area
+        self.obstruct = self.obstruction_count
         self.viewer = None
         self.intensity = None
         self.bkg_intensity = None
@@ -196,7 +659,7 @@ class RadSearch(gym.Env):
         self.meas_sto = None
         self.max_dist = math.sqrt(self.search_area[2][0] ** 2 + self.search_area[2][1] ** 2)
         self._max_episode_steps = 120
-        self.coord_noise = coord_noise
+        self.coord_noise = self.coord_noise
         self.done = False
         self.int_bnd = np.array([1e6, 10e6])
         self.bkg_bnd = np.array([10, 51])
@@ -204,6 +667,8 @@ class RadSearch(gym.Env):
 
         self.observation_space = spaces.Box(0, np.inf, shape=(11,), dtype=np.float32)
         self.action_space = spaces.Discrete(self.a_size)
+
+        self.reset()
 
     def step(self, action):
         """
@@ -273,7 +738,23 @@ class RadSearch(gym.Env):
         self.det_sto.append(self.det_coords.copy())
         self.meas_sto.append(meas)
         self.iter_count += 1
-        return state, np.round(reward, 2), self.done, {}
+
+        #return state, np.round(reward, 2), self.done, {}
+
+        ### Non-legacy compatibility ###
+        # TODO make for multi-agent. Current saving single state for all.
+        aggregate_observation_result = {_: state for _ in self.agents} 
+        aggregate_reward_result = {_:  np.round(reward, 2) for _ in self.agents}
+        max_reward: Union[float, npt.Floating, None] = np.round(reward, 2)
+        aggregate_success_result = {_: self.done for _ in self.agents}
+        aggregate_info_result: Dict = {_: None for _ in self.agents}
+
+        return (
+            aggregate_observation_result,
+            {"team_reward": max_reward, "individual_reward": aggregate_reward_result},
+            aggregate_success_result,
+            aggregate_info_result,
+        )
 
     def reset(self):
         """
@@ -282,6 +763,8 @@ class RadSearch(gym.Env):
         If epoch_end flag is False, then only the source and detector coordinates, source activity and background
         are resampled.
         """
+
+        # Legacy
         self.done = False
         self.oob = False
         self.iter_count = 0
@@ -325,7 +808,7 @@ class RadSearch(gym.Env):
             self.epoch_end = True
             self.reset()
 
-        return self.step(None)[0]
+        return self.step(None)
 
     def check_action(self, action):
         """

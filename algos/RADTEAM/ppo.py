@@ -456,7 +456,7 @@ def ppo(
     # Prepare for interaction with environment
     start_time = time.time()
     o, _, _, _ = env.reset()
-    assert isinstance(o, dict), "Incompatible environment step return mode. Must be in Dict mode."
+    assert isinstance(o, dict), "Incompatible environment step return mode. Must be in Dict mode." # TODO switch back to arrays, faster
 
     # o = o[0]
     ep_ret, ep_len, done_count = 0, 0, 0
