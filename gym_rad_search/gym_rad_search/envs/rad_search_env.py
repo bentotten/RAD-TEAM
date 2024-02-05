@@ -375,6 +375,7 @@ class Agent:
 
     def reset(self) -> None:
         self.detector = vis.Point(0, 0)
+        self.det_coords = None
         self.obstacle_blocking = False
         self.out_of_bounds = False
         self.out_of_bounds_count = 0
@@ -687,7 +688,7 @@ class RadSearch(gym.Env):
             (often used during a environment reset).
         """
 
-        def agent_step(action, agent):
+        def agent_step(action, agent, proposed_coordinates):
             """
             Method that takes an action and updates the detector position accordingly.
             Returns an observation, reward, and whether the termination criteria is met.
@@ -695,9 +696,10 @@ class RadSearch(gym.Env):
             # Initial values
             agent.out_of_bounds = False
             agent.collision = False
-            
+
             # Move detector and make sure it is not in an obstruction
-            in_obs = self.check_action(action, agent)
+            # NOTE: Agent takes action in check_action
+            in_obs = self.check_action(action, agent, proposed_coordinates)
             if not in_obs:
                 if np.any(agent.det_coords < (self.search_area[0])) or np.any(agent.det_coords > (self.search_area[2])):
                     agent.out_of_bounds = True
@@ -757,7 +759,7 @@ class RadSearch(gym.Env):
             else:
                 state = np.append(state, np.zeros(self.a_size))
             agent.oob = False
-            agent.det_sto.append(self.det_coords.copy())
+            agent.det_sto.append(agent.det_coords.copy())
             agent.meas_sto.append(meas)
 
             return state, np.round(reward, 2), self.done, {}
@@ -923,7 +925,7 @@ class RadSearch(gym.Env):
 
         ### Non-legacy ###
         for agent in self.agents.values():
-            agent.det_coords = det_coords
+            agent.det_coords = det_coords.copy()
             agent.detector.set_x(det_coords[0])
             agent.detector.set_y(det_coords[1])
 
@@ -943,105 +945,123 @@ class RadSearch(gym.Env):
 
         return self.step(None)
 
-    def check_action(self, action, agent):
+    def check_action(self, action, agent, proposed_coordinates):
         """
         Method that checks which direction to move the detector based on the action.
         If the action moves the detector into an obstruction, the detector position
         will be reset to the prior position.
         """
         in_obs = False
+
+        ### Non-legacy ###
+        step = get_step(action)
+        tentative_coordinates = sum_p(agent.det_coords, step)
+
+        if self.check_will_collide(tentative_coordinates, proposed_coordinates):
+            agent.collision = True
+            return False
+        
+        # Set tentative coordinates
+        agent.detector = to_vis_p(tentative_coordinates)
+
+        if self.check_out_of_bounds(tentative_coordinates, agent):
+            agent.out_of_bounds = True
+            agent.out_of_bounds_count += 1
+            if self.enforce_grid_boundaries:
+                agent.detector = to_vis_p(agent.det_coords)  # roll back coordinates
+                return False
+
         if action == 0:
             # left
             self.dwell_time = 1
-            agent.detector.set_x(self.det_coords[0] - DET_STEP)
+            agent.detector.set_x(agent.det_coords[0] - DET_STEP)
             in_obs = self.in_obstruction(agent)
             if in_obs:
-                agent.detector.set_x(self.det_coords[0])
+                agent.detector.set_x(agent.det_coords[0])
             else:
-                TODO!
-                self.det_coords[0] = agent.detector.x()
+                agent.det_coords[0] = agent.detector.x()
 
         elif action == 1:
             # up left
             self.dwell_time = 1
-            agent.detector.set_y(self.det_coords[1] + DET_STEP_FRAC)
-            agent.detector.set_x(self.det_coords[0] - DET_STEP_FRAC)
+            agent.detector.set_y(agent.det_coords[1] + DET_STEP_FRAC)
+            agent.detector.set_x(agent.det_coords[0] - DET_STEP_FRAC)
             in_obs = self.in_obstruction(agent)
             if in_obs:
-                agent.detector.set_y(self.det_coords[1])
-                agent.detector.set_x(self.det_coords[0])
+                agent.detector.set_y(agent.det_coords[1])
+                agent.detector.set_x(agent.det_coords[0])
             else:
-                self.det_coords[1] = agent.detector.y()
-                self.det_coords[0] = agent.detector.x()
+                agent.det_coords[1] = agent.detector.y()
+                agent.det_coords[0] = agent.detector.x()
 
         elif action == 2:
             # up
             self.dwell_time = 1
-            agent.detector.set_y(self.det_coords[1] + DET_STEP)
+            agent.detector.set_y(agent.det_coords[1] + DET_STEP)
             in_obs = self.in_obstruction(agent)
             if in_obs:
-                agent.detector.set_y(self.det_coords[1])
+                agent.detector.set_y(agent.det_coords[1])
             else:
-                self.det_coords[1] = agent.detector.y()
+                agent.det_coords[1] = agent.detector.y()
 
         elif action == 3:
             # up right
             self.dwell_time = 1
-            agent.detector.set_y(self.det_coords[1] + DET_STEP_FRAC)
-            agent.detector.set_x(self.det_coords[0] + DET_STEP_FRAC)
+            agent.detector.set_y(agent.det_coords[1] + DET_STEP_FRAC)
+            agent.detector.set_x(agent.det_coords[0] + DET_STEP_FRAC)
             in_obs = self.in_obstruction(agent)
             if in_obs:
-                agent.detector.set_y(self.det_coords[1])
-                agent.detector.set_x(self.det_coords[0])
+                agent.detector.set_y(agent.det_coords[1])
+                agent.detector.set_x(agent.det_coords[0])
             else:
-                self.det_coords[1] = agent.detector.y()
-                self.det_coords[0] = agent.detector.x()
+                agent.det_coords[1] = agent.detector.y()
+                agent.det_coords[0] = agent.detector.x()
 
         elif action == 4:
             # right
             self.dwell_time = 1
-            agent.detector.set_x(self.det_coords[0] + DET_STEP)
+            agent.detector.set_x(agent.det_coords[0] + DET_STEP)
             in_obs = self.in_obstruction(agent)
             if in_obs:
-                agent.detector.set_x(self.det_coords[0])
+                agent.detector.set_x(agent.det_coords[0])
             else:
-                self.det_coords[0] = agent.detector.x()
+                agent.det_coords[0] = agent.detector.x()
 
         elif action == 5:
             # down right
             self.dwell_time = 1
-            agent.detector.set_y(self.det_coords[1] - DET_STEP_FRAC)
-            agent.detector.set_x(self.det_coords[0] + DET_STEP_FRAC)
+            agent.detector.set_y(agent.det_coords[1] - DET_STEP_FRAC)
+            agent.detector.set_x(agent.det_coords[0] + DET_STEP_FRAC)
             in_obs = self.in_obstruction(agent)
             if in_obs:
-                agent.detector.set_y(self.det_coords[1])
-                agent.detector.set_x(self.det_coords[0])
+                agent.detector.set_y(agent.det_coords[1])
+                agent.detector.set_x(agent.det_coords[0])
             else:
-                self.det_coords[1] = agent.detector.y()
-                self.det_coords[0] = agent.detector.x()
+                agent.det_coords[1] = agent.detector.y()
+                agent.det_coords[0] = agent.detector.x()
 
         elif action == 6:
             # down
             self.dwell_time = 1
-            agent.detector.set_y(self.det_coords[1] - DET_STEP)
+            agent.detector.set_y(agent.det_coords[1] - DET_STEP)
             in_obs = self.in_obstruction(agent)
             if in_obs:
-                agent.detector.set_y(self.det_coords[1])
+                agent.detector.set_y(agent.det_coords[1])
             else:
-                self.det_coords[1] = agent.detector.y()
+                agent.det_coords[1] = agent.detector.y()
 
         elif action == 7:
             # down left
             self.dwell_time = 1
-            agent.detector.set_y(self.det_coords[1] - DET_STEP_FRAC)
-            agent.detector.set_x(self.det_coords[0] - DET_STEP_FRAC)
+            agent.detector.set_y(agent.det_coords[1] - DET_STEP_FRAC)
+            agent.detector.set_x(agent.det_coords[0] - DET_STEP_FRAC)
             in_obs = self.in_obstruction(agent)
             if in_obs:
-                agent.detector.set_y(self.det_coords[1])
-                agent.detector.set_x(self.det_coords[0])
+                agent.detector.set_y(agent.det_coords[1])
+                agent.detector.set_x(agent.det_coords[0])
             else:
-                self.det_coords[1] = agent.detector.y()
-                self.det_coords[0] = agent.detector.x()
+                agent.det_coords[1] = agent.detector.y()
+                agent.det_coords[0] = agent.detector.x()
         else:
             self.dwell_time = 1
         return in_obs
@@ -1187,6 +1207,20 @@ class RadSearch(gym.Env):
             return False
         else:
             return False
+
+    def check_out_of_bounds(self, tentative_coordinates, agent):
+        if self.enforce_grid_boundaries:
+            out_of_bounds = (tentative_coordinates[0] < self.bbox[0][0] or tentative_coordinates[1] < self.bbox[0][1]) or 
+                            (self.bbox[2][0] <= tentative_coordinates[0] or self.bbox[2][1] <= tentative_coordinates[1])
+        else:
+            lower_b = agent.det_coords[0] < self.search_area[0][0] or agent.det_coords[1] < self.search_area[0][1]
+            upper_b = self.search_area[2][0] < agent.det_coords[0] or self.search_area[2][1] < agent.det_coords[1]
+            out_of_bounds = (lower_b or upper_b)
+
+        return out_of_bounds
+
+    def check_will_collide(self, tentative_coordinates, proposed_coordinates):
+        return count_matching_p(tentative_coordinates, proposed_coordinates) > 1
 
     def dist_sensors(self, agent):
         """
@@ -1463,7 +1497,7 @@ class RadSearch(gym.Env):
             else:
                 plt.show()
 
-    def FIM_step(self, action, coords=None):
+    def FIM_step(self, action, agent, coords=None):
         """
         Method for the information-driven controller to update detector coordinates in the environment
         without changing the actual detector positon.
@@ -1473,24 +1507,24 @@ class RadSearch(gym.Env):
         coords : coordinates to move the detector from that are different from the current detector coordinates
         """
         if coords is None:
-            det_coords = self.det_coords.copy()
+            det_coords = agent.det_coords.copy()
         else:
-            det_coords = self.det_coords.copy()
+            det_coords = agent.det_coords.copy()
             agent.detector.set_x(coords[0])
             agent.detector.set_y(coords[1])
-            self.det_coords = coords.copy()
+            agent.det_coords = coords.copy()
 
         in_obs = self.check_action(action, agent)
 
         if coords is None:
-            det_ret = self.det_coords
+            det_ret = agent.det_coords
             if not (in_obs):  # If successful movement, return new coords. Set detector back.
-                self.det_coords = det_coords
+                agent.det_coords = det_coords
                 agent.detector.set_x(det_coords[0])
                 agent.detector.set_y(det_coords[1])
         else:
-            det_ret = self.det_coords.copy()
-            self.det_coords = det_coords
+            det_ret = agent.det_coords.copy()
+            agent.det_coords = det_coords
             agent.detector.set_x(det_coords[0])
             agent.detector.set_y(det_coords[1])
 
