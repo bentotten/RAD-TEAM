@@ -3,6 +3,7 @@ import numpy as np
 import math
 import visilibity as vis
 import os
+import sys
 from gym import spaces
 from matplotlib.patches import Polygon
 
@@ -672,82 +673,198 @@ class RadSearch(gym.Env):
 
     def step(self, action):
         """
-        Method that takes an action and updates the detector position accordingly.
-        Returns an observation, reward, and whether the termination criteria is met.
+        Wrapper that captures gymAI env.step() and expands to include multiple agents for one "timestep".
+        Accepts literal action for single agent, or a Dict of agent-IDs and actions.
+
+        Returns dictionary of agent IDs and StepReturns. Agent coodinates are scaled for graph.
+
+        Action:
+        Literal single-action. Empty Action indicates agent is stalling for a timestep.
+
+        action_list:
+        A Dict of agent_IDs and their corresponding Actions. If none passed in, this will return just agents current states
+            (often used during a environment reset).
         """
-        # Move detector and make sure it is not in an obstruction
-        in_obs = self.check_action(action)
-        if not in_obs:
-            if np.any(self.det_coords < (self.search_area[0])) or np.any(self.det_coords > (self.search_area[2])):
-                self.oob = True
-                self.oob_count += 1
 
-            self.sp_dist = self.world.shortest_path(self.source, self.detector, self.vis_graph, EPSILON).length()
-            self.euc_dist = ((self.det_coords - self.src_coords) ** 2).sum()
-            self.intersect = self.is_intersect()
-            if self.intersect:
-                meas = self.np_random.poisson(self.bkg_intensity)
-            else:
-                meas = self.np_random.poisson(lam=(self.intensity / self.euc_dist + self.bkg_intensity))
+        def agent_step(self, action, agent):
+            """
+            Method that takes an action and updates the detector position accordingly.
+            Returns an observation, reward, and whether the termination criteria is met.
+            """
+            # Initial values
+            agent.out_of_bounds = False
+            agent.collision = False
+            
+            # Move detector and make sure it is not in an obstruction
+            in_obs = self.check_action(action)
+            if not in_obs:
+                if np.any(agent.det_coords < (self.search_area[0])) or np.any(agent.det_coords > (self.search_area[2])):
+                    agent.out_of_bounds = True
+                    agent.out_of_bounds_count += 1
 
-            # Reward logic
-            if self.sp_dist < 110:
-                reward = 0.1
-                self.done = True
-            elif self.sp_dist < self.prev_det_dist:
-                reward = 0.1
-                self.prev_det_dist = self.sp_dist
-            else:
-                reward = -0.5 * self.sp_dist / (self.max_dist)
-
-        else:
-            # If detector starts on obs. edge, it won't have the sp_dist calculated
-            if self.iter_count > 0:
-                if self.intersect:
+                agent.sp_dist = self.world.shortest_path(self.source, agent.detector, self.vis_graph, EPSILON).length()
+                agent.euc_dist = ((agent.det_coords - self.src_coords) ** 2).sum()
+                agent.intersect = self.is_intersect(agent)
+                if agent.intersect:
                     meas = self.np_random.poisson(self.bkg_intensity)
                 else:
-                    meas = self.np_random.poisson(lam=(self.intensity / self.euc_dist + self.bkg_intensity))
-            else:
-                self.sp_dist = self.prev_det_dist
-                self.euc_dist = ((self.det_coords - self.src_coords) ** 2).sum()
-                self.intersect = self.is_intersect()
-                if self.intersect:
-                    meas = self.np_random.poisson(self.bkg_intensity)
+                    meas = self.np_random.poisson(lam=(self.intensity / agent.euc_dist + self.bkg_intensity))
+
+                # Reward logic 
+                # TODO adjust so agent is not encouraged to maximize steps by going to corner first
+                if agent.sp_dist < 110:
+                    reward = 0.1
+                    self.done = True
+                elif agent.sp_dist < agent.prev_det_dist:
+                    reward = 0.1
+                    agent.prev_det_dist = agent.sp_dist
                 else:
-                    meas = self.np_random.poisson(lam=(self.intensity / self.euc_dist + self.bkg_intensity))
+                    reward = -0.5 * agent.sp_dist / (self.max_dist)
 
-            reward = -0.5 * self.sp_dist / (self.max_dist)
+            else:
+                # If detector starts on obs. edge, it won't have the sp_dist calculated
+                if self.iter_count > 0:
+                    if agent.intersect:
+                        meas = self.np_random.poisson(self.bkg_intensity)
+                    else:
+                        meas = self.np_random.poisson(lam=(self.intensity / agent.euc_dist + self.bkg_intensity))
+                else:
+                    agent.sp_dist = agent.prev_det_dist
+                    agent.euc_dist = ((agent.det_coords - self.src_coords) ** 2).sum()
+                    agent.intersect = self.is_intersect(agent)
+                    if agent.intersect:
+                        meas = self.np_random.poisson(self.bkg_intensity)
+                    else:
+                        meas = self.np_random.poisson(lam=(self.intensity / agent.euc_dist + self.bkg_intensity))
 
-        # If detector coordinate noise is desired
-        if self.coord_noise:
-            noise = self.np_random.normal(scale=5, size=len(self.det_coords))
+                reward = -0.5 * agent.sp_dist / (self.max_dist)
+
+            # If detector coordinate noise is desired
+            if self.coord_noise:
+                noise = self.np_random.normal(scale=5, size=len(agent.det_coords))
+            else:
+                noise = np.zeros(len(agent.det_coords))
+
+            # Scale detector coordinates by search area of the DRL algorithm
+            det_coord_scaled = (agent.det_coords + noise) / self.search_area[2][1]
+
+            # Observation with the radiation meas., detector coords and detector-obstruction range meas.
+            state = np.append(meas, det_coord_scaled)
+            if self.num_obs > 0:
+                sensor_meas = self.dist_sensors()
+                state = np.append(state, sensor_meas)
+            else:
+                state = np.append(state, np.zeros(self.a_size))
+            agent.oob = False
+            agent.det_sto.append(self.det_coords.copy())
+            agent.meas_sto.append(meas)
+
+            return state, np.round(reward, 2), self.done, {}
+
+        ### Non-legacy compatibility for MARL ###
+        assert action is None or isinstance(action, int) or isinstance(action, dict), "Action not integer or a dictionary of actions."
+
+        if type(action) is int:
+            if action == -1:
+                action = 8
+            assert action in get_args(Action)
+        elif type(action) is dict:
+            for i, a in action.items():
+                assert action[i] in get_args(Action)
+        action_list = action if type(action) is dict else None
+
+        aggregate_observation_result: Union[Dict, npt.NDArray]
+        aggregate_reward_result: Union[Dict, npt.NDArray]
+        aggregate_success_result: Union[Dict, npt.NDArray]
+
+        if self.step_data_mode == "list":
+            aggregate_observation_result = np.zeros(combined_shape(self.number_agents, self.observation_space.shape[0]), dtype=np.float32)
+            aggregate_reward_result = np.zeros((self.number_agents), dtype=np.float32)
+
+        elif self.step_data_mode == "dict":
+            aggregate_observation_result = {_: None for _ in self.agents}
+            aggregate_reward_result = {_: None for _ in self.agents}
         else:
-            noise = np.zeros(len(self.det_coords))
+            raise NotImplementedError("Unknown step data type mode")
 
-        # Scale detector coordinates by search area of the DRL algorithm
-        det_coord_scaled = (self.det_coords + noise) / self.search_area[2][1]
-
-        # Observation with the radiation meas., detector coords and detector-obstruction range meas.
-        state = np.append(meas, det_coord_scaled)
-        if self.num_obs > 0:
-            sensor_meas = self.dist_sensors()
-            state = np.append(state, sensor_meas)
-        else:
-            state = np.append(state, np.zeros(self.a_size))
-        self.oob = False
-        self.det_sto.append(self.det_coords.copy())
-        self.meas_sto.append(meas)
-        self.iter_count += 1
-
-        #return state, np.round(reward, 2), self.done, {}
-
-        ### Non-legacy compatibility ###
-        # TODO make for multi-agent. Current saving single state for all.
-        aggregate_observation_result = {_: state for _ in self.agents} 
-        aggregate_reward_result = {_:  np.round(reward, 2) for _ in self.agents}
-        max_reward: Union[float, npt.Floating, None] = np.round(reward, 2)
-        aggregate_success_result = {_: self.done for _ in self.agents}
+        aggregate_success_result = {_: None for _ in self.agents}
         aggregate_info_result: Dict = {_: None for _ in self.agents}
+        max_reward: Union[float, npt.Floating, None] = None
+        min_distance: Union[float, None] = None
+        winning_id: Union[int, None] = None
+
+        if action_list:
+            proposed_coordinates = [sum_p(self.agents[agent_id].det_coords, get_step(action)) for agent_id, action in action_list.items()]
+
+            for agent_id, a in action_list.items():
+                (
+                    aggregate_observation_result[agent_id],
+                    aggregate_reward_result[agent_id],
+                    aggregate_success_result[agent_id],
+                    aggregate_info_result[agent_id],
+                ) = agent_step(
+                    agent=self.agents[agent_id],
+                    action=a,
+                    proposed_coordinates=proposed_coordinates,
+                )
+
+            self.iter_count += 1
+            # return {k: asdict(v) for k, v in aggregate_step_result.items()}
+        elif not action or type(action) is int:
+            # Provides backwards compatability for single actions instead of action lists for single agents.
+            if isinstance(action, int) and len(self.agents) > 1:
+                print(
+                    "WARNING: Passing single action to mutliple agents during step!",
+                    file=sys.stderr,
+                )
+            # Used during reset to get initial state or during single-agent move
+            for agent_id, agent in self.agents.items():
+                (
+                    aggregate_observation_result[agent_id],
+                    aggregate_reward_result[agent_id],
+                    aggregate_success_result[agent_id],
+                    aggregate_info_result[agent_id],
+                ) = agent_step(
+                    action=action, agent=agent
+                )  # type: ignore
+
+            self.iter_count += 1
+        else:
+            raise ValueError("Incompatible Action type")
+        # Parse rewards
+        if not PROPORTIONAL_REWARD:
+            # if Global shortest path was used as min shortest path distance
+            if self.step_data_mode == "dict":
+                for agent_id in self.agents:
+                    # Calculate team reward
+                    if not max_reward:
+                        max_reward = aggregate_reward_result[agent_id]
+                    elif max_reward < aggregate_reward_result[agent_id]:
+                        max_reward = aggregate_reward_result[agent_id]
+            elif self.step_data_mode == "list":
+                max_reward = aggregate_reward_result.max()  # type: ignore
+            else:
+                raise ValueError("Unknown step data type mode")
+
+        if PROPORTIONAL_REWARD:
+            # If rewards were calculated based on the proportional difference between last and current
+            for id, agent in self.agents.items():
+                if not min_distance:
+                    min_distance = agent.sp_dist
+                    winning_id = id
+                elif min_distance > agent.sp_dist:
+                    min_distance = agent.sp_dist
+                    winning_id = id
+            max_reward = (
+                np.round(aggregate_reward_result[winning_id].item(), decimals=2)
+                if (self.step_data_mode == "list")
+                else aggregate_reward_result[winning_id]
+            )
+
+        # Save cumulative team reward for rendering
+        for agent in self.agents.values():
+            if max_reward or max_reward == 0:
+                agent.team_reward_sto.append(max_reward + agent.team_reward_sto[-1] if len(agent.team_reward_sto) > 0 else max_reward)
 
         return (
             aggregate_observation_result,
@@ -992,7 +1109,9 @@ class RadSearch(gym.Env):
         jj = 0
         num_retry = 0
         while not src_clear:
-            while np.linalg.norm(det - source) < 1000:
+            distance = np.linalg.norm(det - source)
+            while distance < 1000:
+                distance = np.linalg.norm(det - source)
                 source = self.np_random.integers(self.search_area[0][0], self.search_area[1][0], size=2).astype(np.double)
             src_point = vis.Point(source[0], source[1])
             L = vis.Line_Segment(det_point, src_point)
@@ -1017,15 +1136,15 @@ class RadSearch(gym.Env):
 
         return src_point, det_point, det, source
 
-    def is_intersect(self, threshold=0.001):
+    def is_intersect(self, agent, threshold=0.001):
         """
         Method that checks if the line of sight is blocked by any obstructions in the environment.
         """
         inter = False
         kk = 0
-        L = vis.Line_Segment(self.detector, self.source)
+        L = vis.Line_Segment(agent.detector, self.source)
         while not inter and kk < self.num_obs:
-            if vis.boundary_distance(L, self.poly[kk]) < threshold and not math.isclose(math.sqrt(self.euc_dist), self.sp_dist, abs_tol=0.1):
+            if vis.boundary_distance(L, self.poly[kk]) < threshold and not math.isclose(math.sqrt(agent.euc_dist), agent.sp_dist, abs_tol=0.1):
                 inter = True
             kk += 1
         return inter
