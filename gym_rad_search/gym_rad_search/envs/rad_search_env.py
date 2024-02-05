@@ -374,6 +374,7 @@ class Agent:
         self.reset()
 
     def reset(self) -> None:
+        self.detector = vis.Point(0, 0)
         self.obstacle_blocking = False
         self.out_of_bounds = False
         self.out_of_bounds_count = 0
@@ -686,7 +687,7 @@ class RadSearch(gym.Env):
             (often used during a environment reset).
         """
 
-        def agent_step(self, action, agent):
+        def agent_step(action, agent):
             """
             Method that takes an action and updates the detector position accordingly.
             Returns an observation, reward, and whether the termination criteria is met.
@@ -696,7 +697,7 @@ class RadSearch(gym.Env):
             agent.collision = False
             
             # Move detector and make sure it is not in an obstruction
-            in_obs = self.check_action(action)
+            in_obs = self.check_action(action, agent)
             if not in_obs:
                 if np.any(agent.det_coords < (self.search_area[0])) or np.any(agent.det_coords > (self.search_area[2])):
                     agent.out_of_bounds = True
@@ -751,7 +752,7 @@ class RadSearch(gym.Env):
             # Observation with the radiation meas., detector coords and detector-obstruction range meas.
             state = np.append(meas, det_coord_scaled)
             if self.num_obs > 0:
-                sensor_meas = self.dist_sensors()
+                sensor_meas = self.dist_sensors(agent)
                 state = np.append(state, sensor_meas)
             else:
                 state = np.append(state, np.zeros(self.a_size))
@@ -881,6 +882,11 @@ class RadSearch(gym.Env):
         are resampled.
         """
 
+        ### Non-Legacy ### 
+        for agent in self.agents.values():
+            agent.reset()
+        self.all_agent_max_count = 0.0
+
         # Legacy
         self.done = False
         self.oob = False
@@ -906,18 +912,28 @@ class RadSearch(gym.Env):
             # Create Visilibity graph to speed up shortest path computation
             self.vis_graph = vis.Visibility_Graph(self.world, EPSILON)
             self.epoch_cnt += 1
-            self.source, self.detector, self.det_coords, self.src_coords = self.sample_source_loc_pos()
+            self.source, detector, det_coords, self.src_coords = self.sample_source_loc_pos()
             self.intensity = self.np_random.integers(self.int_bnd[0], self.int_bnd[1])
             self.bkg_intensity = self.np_random.integers(self.bkg_bnd[0], self.bkg_bnd[1])
             self.epoch_end = False
         else:
-            self.source, self.detector, self.det_coords, self.src_coords = self.sample_source_loc_pos()
+            self.source, detector, det_coords, self.src_coords = self.sample_source_loc_pos()
             self.intensity = self.np_random.integers(self.int_bnd[0], self.int_bnd[1])
             self.bkg_intensity = self.np_random.integers(self.bkg_bnd[0], self.bkg_bnd[1])
 
-        self.prev_det_dist = self.world.shortest_path(self.source, self.detector, self.vis_graph, EPSILON).length()
-        self.det_sto = []
-        self.meas_sto = []
+        ### Non-legacy ###
+        for agent in self.agents.values():
+            agent.det_coords = det_coords
+            agent.detector.set_x(det_coords[0])
+            agent.detector.set_y(det_coords[1])
+
+            assert agent.detector.x != detector.x  # Ensure different objects
+            assert agent.detector.x() == detector.x()
+            assert agent.detector.y() == detector.y()
+
+            agent.prev_det_dist = self.world.shortest_path(self.source, agent.detector, self.vis_graph, EPSILON).length()
+            agent.det_sto = []  # TODO already in reset function?
+            agent.meas_sto = []
 
         # Check if the environment is valid
         if not (self.world.is_valid(EPSILON)):
@@ -927,7 +943,7 @@ class RadSearch(gym.Env):
 
         return self.step(None)
 
-    def check_action(self, action):
+    def check_action(self, action, agent):
         """
         Method that checks which direction to move the detector based on the action.
         If the action moves the detector into an obstruction, the detector position
@@ -937,94 +953,95 @@ class RadSearch(gym.Env):
         if action == 0:
             # left
             self.dwell_time = 1
-            self.detector.set_x(self.det_coords[0] - DET_STEP)
-            in_obs = self.in_obstruction()
+            agent.detector.set_x(self.det_coords[0] - DET_STEP)
+            in_obs = self.in_obstruction(agent)
             if in_obs:
-                self.detector.set_x(self.det_coords[0])
+                agent.detector.set_x(self.det_coords[0])
             else:
-                self.det_coords[0] = self.detector.x()
+                TODO!
+                self.det_coords[0] = agent.detector.x()
 
         elif action == 1:
             # up left
             self.dwell_time = 1
-            self.detector.set_y(self.det_coords[1] + DET_STEP_FRAC)
-            self.detector.set_x(self.det_coords[0] - DET_STEP_FRAC)
-            in_obs = self.in_obstruction()
+            agent.detector.set_y(self.det_coords[1] + DET_STEP_FRAC)
+            agent.detector.set_x(self.det_coords[0] - DET_STEP_FRAC)
+            in_obs = self.in_obstruction(agent)
             if in_obs:
-                self.detector.set_y(self.det_coords[1])
-                self.detector.set_x(self.det_coords[0])
+                agent.detector.set_y(self.det_coords[1])
+                agent.detector.set_x(self.det_coords[0])
             else:
-                self.det_coords[1] = self.detector.y()
-                self.det_coords[0] = self.detector.x()
+                self.det_coords[1] = agent.detector.y()
+                self.det_coords[0] = agent.detector.x()
 
         elif action == 2:
             # up
             self.dwell_time = 1
-            self.detector.set_y(self.det_coords[1] + DET_STEP)
-            in_obs = self.in_obstruction()
+            agent.detector.set_y(self.det_coords[1] + DET_STEP)
+            in_obs = self.in_obstruction(agent)
             if in_obs:
-                self.detector.set_y(self.det_coords[1])
+                agent.detector.set_y(self.det_coords[1])
             else:
-                self.det_coords[1] = self.detector.y()
+                self.det_coords[1] = agent.detector.y()
 
         elif action == 3:
             # up right
             self.dwell_time = 1
-            self.detector.set_y(self.det_coords[1] + DET_STEP_FRAC)
-            self.detector.set_x(self.det_coords[0] + DET_STEP_FRAC)
-            in_obs = self.in_obstruction()
+            agent.detector.set_y(self.det_coords[1] + DET_STEP_FRAC)
+            agent.detector.set_x(self.det_coords[0] + DET_STEP_FRAC)
+            in_obs = self.in_obstruction(agent)
             if in_obs:
-                self.detector.set_y(self.det_coords[1])
-                self.detector.set_x(self.det_coords[0])
+                agent.detector.set_y(self.det_coords[1])
+                agent.detector.set_x(self.det_coords[0])
             else:
-                self.det_coords[1] = self.detector.y()
-                self.det_coords[0] = self.detector.x()
+                self.det_coords[1] = agent.detector.y()
+                self.det_coords[0] = agent.detector.x()
 
         elif action == 4:
             # right
             self.dwell_time = 1
-            self.detector.set_x(self.det_coords[0] + DET_STEP)
-            in_obs = self.in_obstruction()
+            agent.detector.set_x(self.det_coords[0] + DET_STEP)
+            in_obs = self.in_obstruction(agent)
             if in_obs:
-                self.detector.set_x(self.det_coords[0])
+                agent.detector.set_x(self.det_coords[0])
             else:
-                self.det_coords[0] = self.detector.x()
+                self.det_coords[0] = agent.detector.x()
 
         elif action == 5:
             # down right
             self.dwell_time = 1
-            self.detector.set_y(self.det_coords[1] - DET_STEP_FRAC)
-            self.detector.set_x(self.det_coords[0] + DET_STEP_FRAC)
-            in_obs = self.in_obstruction()
+            agent.detector.set_y(self.det_coords[1] - DET_STEP_FRAC)
+            agent.detector.set_x(self.det_coords[0] + DET_STEP_FRAC)
+            in_obs = self.in_obstruction(agent)
             if in_obs:
-                self.detector.set_y(self.det_coords[1])
-                self.detector.set_x(self.det_coords[0])
+                agent.detector.set_y(self.det_coords[1])
+                agent.detector.set_x(self.det_coords[0])
             else:
-                self.det_coords[1] = self.detector.y()
-                self.det_coords[0] = self.detector.x()
+                self.det_coords[1] = agent.detector.y()
+                self.det_coords[0] = agent.detector.x()
 
         elif action == 6:
             # down
             self.dwell_time = 1
-            self.detector.set_y(self.det_coords[1] - DET_STEP)
-            in_obs = self.in_obstruction()
+            agent.detector.set_y(self.det_coords[1] - DET_STEP)
+            in_obs = self.in_obstruction(agent)
             if in_obs:
-                self.detector.set_y(self.det_coords[1])
+                agent.detector.set_y(self.det_coords[1])
             else:
-                self.det_coords[1] = self.detector.y()
+                self.det_coords[1] = agent.detector.y()
 
         elif action == 7:
             # down left
             self.dwell_time = 1
-            self.detector.set_y(self.det_coords[1] - DET_STEP_FRAC)
-            self.detector.set_x(self.det_coords[0] - DET_STEP_FRAC)
-            in_obs = self.in_obstruction()
+            agent.detector.set_y(self.det_coords[1] - DET_STEP_FRAC)
+            agent.detector.set_x(self.det_coords[0] - DET_STEP_FRAC)
+            in_obs = self.in_obstruction(agent)
             if in_obs:
-                self.detector.set_y(self.det_coords[1])
-                self.detector.set_x(self.det_coords[0])
+                agent.detector.set_y(self.det_coords[1])
+                agent.detector.set_x(self.det_coords[0])
             else:
-                self.det_coords[1] = self.detector.y()
-                self.det_coords[0] = self.detector.x()
+                self.det_coords[1] = agent.detector.y()
+                self.det_coords[0] = agent.detector.x()
         else:
             self.dwell_time = 1
         return in_obs
@@ -1149,43 +1166,43 @@ class RadSearch(gym.Env):
             kk += 1
         return inter
 
-    def in_obstruction(self):
+    def in_obstruction(self, agent):
         """
         Method that checks if the detector position intersects or is inside an obstruction.
         """
         jj = 0
         obs_boundary = False
         while not obs_boundary and jj < self.num_obs:
-            if self.detector._in(self.poly[jj], EPSILON):
+            if agent.detector._in(self.poly[jj], EPSILON):
                 obs_boundary = True
             jj += 1
 
         if obs_boundary:
             bbox = self.poly[jj - 1].bbox()
-            if self.detector.y() > bbox.y_min:
-                if self.detector.y() < bbox.y_max:
-                    if self.detector.x() > bbox.x_min:
-                        if self.detector.x() < bbox.x_max:
+            if agent.detector.y() > bbox.y_min:
+                if agent.detector.y() < bbox.y_max:
+                    if agent.detector.x() > bbox.x_min:
+                        if agent.detector.x() < bbox.x_max:
                             return True
             return False
         else:
             return False
 
-    def dist_sensors(self):
+    def dist_sensors(self, agent):
         """
         Method that generates detector-obstruction range measurements with values between 0-1.
         """
         seg_coords = [
-            vis.Point(self.detector.x() - DIST_TH, self.detector.y()),
-            vis.Point(self.detector.x() - DIST_TH_FRAC, self.detector.y() + DIST_TH_FRAC),
-            vis.Point(self.detector.x(), self.detector.y() + DIST_TH),
-            vis.Point(self.detector.x() + DIST_TH_FRAC, self.detector.y() + DIST_TH_FRAC),
-            vis.Point(self.detector.x() + DIST_TH, self.detector.y()),
-            vis.Point(self.detector.x() + DIST_TH_FRAC, self.detector.y() - DIST_TH_FRAC),
-            vis.Point(self.detector.x(), self.detector.y() - DIST_TH),
-            vis.Point(self.detector.x() - DIST_TH_FRAC, self.detector.y() - DIST_TH_FRAC),
+            vis.Point(agent.detector.x() - DIST_TH, agent.detector.y()),
+            vis.Point(agent.detector.x() - DIST_TH_FRAC, agent.detector.y() + DIST_TH_FRAC),
+            vis.Point(agent.detector.x(), agent.detector.y() + DIST_TH),
+            vis.Point(agent.detector.x() + DIST_TH_FRAC, agent.detector.y() + DIST_TH_FRAC),
+            vis.Point(agent.detector.x() + DIST_TH, agent.detector.y()),
+            vis.Point(agent.detector.x() + DIST_TH_FRAC, agent.detector.y() - DIST_TH_FRAC),
+            vis.Point(agent.detector.x(), agent.detector.y() - DIST_TH),
+            vis.Point(agent.detector.x() - DIST_TH_FRAC, agent.detector.y() - DIST_TH_FRAC),
         ]
-        segs = [vis.Line_Segment(self.detector, seg_coord) for seg_coord in seg_coords]
+        segs = [vis.Line_Segment(agent.detector, seg_coord) for seg_coord in seg_coords]
         dists = np.zeros(len(segs))
         obs_idx_ls = np.zeros(len(self.poly))
         inter = 0
@@ -1215,16 +1232,16 @@ class RadSearch(gym.Env):
         x_check = np.zeros(self.a_size)
         dist = 0.1
         length = 1
-        q0 = vis.Point(self.detector.x(), self.detector.y())
-        q1 = vis.Point(self.detector.x(), self.detector.y())
-        q2 = vis.Point(self.detector.x(), self.detector.y())
-        q3 = vis.Point(self.detector.x(), self.detector.y())
-        q4 = vis.Point(self.detector.x(), self.detector.y())
-        q5 = vis.Point(self.detector.x(), self.detector.y())
-        q6 = vis.Point(self.detector.x(), self.detector.y())
-        q7 = vis.Point(self.detector.x(), self.detector.y())
+        q0 = vis.Point(agent.detector.x(), agent.detector.y())
+        q1 = vis.Point(agent.detector.x(), agent.detector.y())
+        q2 = vis.Point(agent.detector.x(), agent.detector.y())
+        q3 = vis.Point(agent.detector.x(), agent.detector.y())
+        q4 = vis.Point(agent.detector.x(), agent.detector.y())
+        q5 = vis.Point(agent.detector.x(), agent.detector.y())
+        q6 = vis.Point(agent.detector.x(), agent.detector.y())
+        q7 = vis.Point(agent.detector.x(), agent.detector.y())
 
-        # qs = [vis.Point(self.detector.x(),self.detector.y()) for _ in range(self.a_size)]
+        # qs = [vis.Point(agent.detector.x(),agent.detector.y()) for _ in range(self.a_size)]
         dists = np.zeros(self.a_size)
         while np.all(x_check == 0):  # not (xp or xn or yp or yn):
             q0.set_x(q0.x() - dist * length)
@@ -1459,22 +1476,22 @@ class RadSearch(gym.Env):
             det_coords = self.det_coords.copy()
         else:
             det_coords = self.det_coords.copy()
-            self.detector.set_x(coords[0])
-            self.detector.set_y(coords[1])
+            agent.detector.set_x(coords[0])
+            agent.detector.set_y(coords[1])
             self.det_coords = coords.copy()
 
-        in_obs = self.check_action(action)
+        in_obs = self.check_action(action, agent)
 
         if coords is None:
             det_ret = self.det_coords
             if not (in_obs):  # If successful movement, return new coords. Set detector back.
                 self.det_coords = det_coords
-                self.detector.set_x(det_coords[0])
-                self.detector.set_y(det_coords[1])
+                agent.detector.set_x(det_coords[0])
+                agent.detector.set_y(det_coords[1])
         else:
             det_ret = self.det_coords.copy()
             self.det_coords = det_coords
-            self.detector.set_x(det_coords[0])
-            self.detector.set_y(det_coords[1])
+            agent.detector.set_x(det_coords[0])
+            agent.detector.set_y(det_coords[1])
 
         return det_ret
