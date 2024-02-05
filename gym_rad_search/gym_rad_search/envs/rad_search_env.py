@@ -107,7 +107,7 @@ ACTION_MAPPING: Dict = {
     7: "Down Left",
     8: "Idle",
 }
-FPS = 5
+FPS = 3
 
 
 def combined_shape(length, shape=None):
@@ -718,11 +718,15 @@ class RadSearch(gym.Env):
                 if agent.sp_dist < 110:
                     reward = 0.1
                     self.done = True
+                    agent.terminal_sto.append(True)
+
                 elif agent.sp_dist < agent.prev_det_dist:
                     reward = 0.1
-                    agent.prev_det_dist = agent.sp_dist
+                    agent.prev_det_dist = agent.sp_dist                    
+                    agent.terminal_sto.append(False)
                 else:
                     reward = -0.5 * agent.sp_dist / (self.max_dist)
+                    agent.terminal_sto.append(False)
 
             else:
                 # If detector starts on obs. edge, it won't have the sp_dist calculated
@@ -762,7 +766,21 @@ class RadSearch(gym.Env):
             agent.det_sto.append(agent.det_coords.copy())
             agent.meas_sto.append(meas)
 
-            return state, np.round(reward, 2), self.done, {}
+            ### Non-legacy ###
+            # Sanity checks
+            assert meas is not None
+            assert reward is not None
+            agent.meas_sto.append(meas)
+            agent.cum_reward_sto.append(reward + agent.cum_reward_sto[-1] if len(agent.cum_reward_sto) > 0 else reward)
+            agent.action_sto.append(action)
+            info = {
+                "out_of_bounds": agent.out_of_bounds,
+                "out_of_bounds_count": agent.out_of_bounds_count,
+                "blocked": agent.obstacle_blocking,
+                "scale": 1 / self.search_area[2][1],
+            }
+
+            return state, np.round(reward, 2), self.done, info
 
         ### Non-legacy compatibility for MARL ###
         assert action is None or isinstance(action, int) or isinstance(action, dict), "Action not integer or a dictionary of actions."
@@ -1447,8 +1465,7 @@ class RadSearch(gym.Env):
             :param ax2: Radiation counts
             :param ax3: Rewards
             :param src: Source coordinates
-            :param area_dim:
-            :param area_dim: BBox - size of grid
+            :param area_dim: BBox - size of grid # NOTE: still in visilibity points
             :param flattened_rewards: flattened rewards between all agents
             :param silent: Indicate if print frame to render
 
@@ -1498,8 +1515,8 @@ class RadSearch(gym.Env):
                 ax1.grid()
                 if not (obstacles == []) and obstacles is not None:
                     for coord in obstacles:
-                        # p_disp = PolygonPatches(coord[0] / 100, color="gray")
-                        p_disp = PolygonPatches(np.array(coord) / 100, color="gray")
+                        p_disp = PolygonPatches(coord[0] / 100, color="gray")
+                        # p_disp = PolygonPatches(np.array(coord) / 100, color="gray")
                         ax1.add_patch(p_disp)
 
                 # Plot location prediction
@@ -1513,11 +1530,12 @@ class RadSearch(gym.Env):
                 #         label="Loc. Pred.",
                 #     )
 
-                # Finish setting up grids
-                ax1.set_xlim(0, area_dim[1][0] / 100)
-                ax1.set_ylim(0, area_dim[2][1] / 100)
-                ax1.set_xticks(np.linspace(0, area_dim[1][0] / 100 - 2, 5))
-                ax1.set_yticks(np.linspace(0, area_dim[1][0] / 100 - 2, 5))
+                # Finish setting up grids # TODO search area instead?
+                ax1.set_xlim(0, area_dim[1].x() / 100)
+                ax1.set_ylim(0, area_dim[2].y() / 100)
+                ax1.set_xticks(np.linspace(0, area_dim[1].x() / 100 - 2, 5))
+                ax1.set_yticks(np.linspace(0, area_dim[2].y() / 100 - 2, 5))
+
                 ax1.xaxis.set_major_formatter(FormatStrFormatter("%d"))
                 ax1.yaxis.set_major_formatter(FormatStrFormatter("%d"))
                 ax1.set_xlabel("X[m]")
@@ -1745,7 +1763,8 @@ class RadSearch(gym.Env):
             ax1.grid()
             if not (obstacles == []):
                 for coord in obstacles:
-                    p_disp = PolygonPatches((np.array(coord) / 100), color="gray")
+                    # p_disp = PolygonPatches((np.array(coord) / 100), color="gray")
+                    p_disp = PolygonPatches(coord[0] / 100, color="gray")
                     ax1.add_patch(p_disp)
 
             # TODO Make multi-agent and fix

@@ -1443,7 +1443,6 @@ class RadSearch(gym.Env):
             :param ax2: Radiation counts
             :param ax3: Rewards
             :param src: Source coordinates
-            :param area_dim:
             :param area_dim: BBox - size of grid
             :param flattened_rewards: flattened rewards between all agents
             :param silent: Indicate if print frame to render

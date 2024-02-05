@@ -61,7 +61,8 @@ class CliArgs:
     #: Number of timesteps before performing a gradient update with accumulated results from episodes. Note that an episode can be cut-off
     #   by an epoch end. This episode configuration will be repeated at the beginning of the next epoch, after learning has been applied.
     steps_per_epoch: int
-    # steps_per_episode: int # TODO: Uncomment when all variables are available to CLI
+    #: Maximum number of steps an agent can take in an episode
+    steps_per_episode: int # TODO: Uncomment when all variables are available to CLI
     #: Number of epochs to train agent with.
     epochs: int
     #: The name of the experiment (for logging and saving purposes).
@@ -132,6 +133,9 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cpu", type=int, default=1, help="Number of cores/environments to train the agent with")
     parser.add_argument(
         "--steps_per_epoch", type=int, default=480, help="Number of timesteps per epoch per cpu. Default is equal to 4 episodes per cpu per epoch."
+    )
+    parser.add_argument(
+        "--steps_per_episode", type=int, default=120, help="Number of timesteps per episode."
     )
     parser.add_argument("--epochs", type=int, default=1000, help="Number of epochs to train the agent")
     parser.add_argument(
@@ -206,6 +210,7 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         seed=args.seed,
         cpu=args.cpu,
         steps_per_epoch=args.steps_per_epoch,
+        steps_per_episode=args.steps_per_episode,
         epochs=args.epochs,
         exp_name=args.exp_name,
         dims=args.dims,
@@ -277,6 +282,7 @@ if __name__ == "__main__":
             alpha=args.alpha,
             seed=robust_seed,
             steps_per_epoch=args.steps_per_epoch,
+            max_ep_len=args.steps_per_episode,
             epochs=args.epochs,
             dims=init_dims,
             logger_kwargs=logger_kwargs,
