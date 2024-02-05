@@ -688,7 +688,7 @@ class RadSearch(gym.Env):
             (often used during a environment reset).
         """
 
-        def agent_step(action, agent, proposed_coordinates):
+        def agent_step(action, agent, proposed_coordinates=[]):
             """
             Method that takes an action and updates the detector position accordingly.
             Returns an observation, reward, and whether the termination criteria is met.
@@ -954,6 +954,8 @@ class RadSearch(gym.Env):
         in_obs = False
 
         ### Non-legacy ###
+        if action is None:
+            return False
         step = get_step(action)
         tentative_coordinates = sum_p(agent.det_coords, step)
 
@@ -1210,8 +1212,10 @@ class RadSearch(gym.Env):
 
     def check_out_of_bounds(self, tentative_coordinates, agent):
         if self.enforce_grid_boundaries:
-            out_of_bounds = (tentative_coordinates[0] < self.bbox[0][0] or tentative_coordinates[1] < self.bbox[0][1]) or 
-                            (self.bbox[2][0] <= tentative_coordinates[0] or self.bbox[2][1] <= tentative_coordinates[1])
+            out_of_bounds = (
+                (tentative_coordinates[0] < self.bbox[0].x() or tentative_coordinates[1] < self.bbox[0].y()) or
+                (self.bbox[2].x() <= tentative_coordinates[0] or self.bbox[2].y() <= tentative_coordinates[1])
+            )
         else:
             lower_b = agent.det_coords[0] < self.search_area[0][0] or agent.det_coords[1] < self.search_area[0][1]
             upper_b = self.search_area[2][0] < agent.det_coords[0] or self.search_area[2][1] < agent.det_coords[1]
