@@ -17,13 +17,15 @@ Generate documentation with `sphinx-build -b html docs doc_build` from root dire
 
 It is recommended to use the Anaconda package manager. The author did all development with [Micromamba](https://mamba.readthedocs.io/en/latest/installation.html), a fast and light-weight implementation of Anaconda. To use Micromamba, simply replace `conda` commands with `micromamba`. To do a command-line install, simple add `-c conda-forge` or `-c pytorch` or another channel to specify the correct channel.
 
-1. Clone repository.
+*. Clone repository.
 
-2. Create a virtual environment with the required packages `conda env create -f <PATH-TO-ALGORTIHM>/environment.yml`.
+*. Ensure `gcc` is installed. If not, install with preferred package manager i.e. `sudo apt update && sudo apt install gcc g++`.
 
-3. Activate this environment with `conda activate <ENV_NAME>`.
+*. Create a virtual environment with the required packages `conda env create -f <PATH-TO-ALGORTIHM>/environment.yml`.
 
-4. \*\* Note: The RAD-A2C implementation requires [OpenMPI](https://www.open-mpi.org/software/ompi/v4.1/) for parallel processing.
+*. Activate this environment with `conda activate <ENV_NAME>`.
+
+*. \*\* Note: The RAD-A2C implementation requires [OpenMPI](https://www.open-mpi.org/software/ompi/v4.1/) for parallel processing.
 
 ## Debugging
 
