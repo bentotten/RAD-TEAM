@@ -1263,10 +1263,10 @@ class RadSearch(gym.Env):
                         seg_dist.fill(0)
                 inter = 0
             if (dists == 1.0).sum() > 3:
-                dists = self.correct_coords(self.poly[obs_idx_ls.argmax()])
+                dists = self.correct_coords(self.poly[obs_idx_ls.argmax()], agent)
         return dists
 
-    def correct_coords(self, poly):
+    def correct_coords(self, poly, agent):
         """
         Method that corrects the detector-obstruction range measurement if more than the correct
         number of directions are being activated due to the Visilibity implementation.
