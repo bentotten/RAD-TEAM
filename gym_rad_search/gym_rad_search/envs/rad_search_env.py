@@ -501,9 +501,9 @@ class RadSearch(gym.Env):
                 if BASIC_REWARD:
                     print(f"Basic Reward upon success: {BASIC_SUC_AMOUNT}")
         if self.TEST == "1":
-            if not self.silent:        
+            if not self.silent:
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 1 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.bbox = np.asarray([[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]])
             self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 0
             self.DEBUG = True
@@ -514,7 +514,7 @@ class RadSearch(gym.Env):
         elif self.TEST == "2":
             if not self.silent:
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 2 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.bbox = np.asarray([[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]])
             self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 0
             self.DEBUG = True
@@ -524,7 +524,7 @@ class RadSearch(gym.Env):
         elif self.TEST == "3":
             if not self.silent:        
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 3 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            self.bbox = BBox((Point((0.0, 0.0)), Point((700.0, 0.0)), Point((700.0, 700.0)), Point((0.0, 700.0))))
+            self.bbox = np.asarray([[0.0, 0.0], [700.0, 0.0], [700.0, 700.0], [0.0, 700.0]])
             self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 0
             self.DEBUG = True
@@ -535,7 +535,7 @@ class RadSearch(gym.Env):
         elif self.TEST == "4":
             if not self.silent:        
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 4 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            self.bbox = BBox((Point((0.0, 0.0)), Point((700.0, 0.0)), Point((700.0, 700.0)), Point((0.0, 700.0))))
+            self.bbox = np.asarray([[0.0, 0.0], [700.0, 0.0], [700.0, 700.0], [0.0, 700.0]])
             self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 0
             self.DEBUG = True
@@ -545,7 +545,7 @@ class RadSearch(gym.Env):
         elif self.TEST == "5":
             if not self.silent: 
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 5 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.bbox = np.asarray([[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]])
             self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 0
             self.DEBUG = False
@@ -555,7 +555,7 @@ class RadSearch(gym.Env):
         elif self.TEST == "6":
             if not self.silent: 
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 6 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.bbox = np.asarray([[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]])
             self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 1
             self.DEBUG = False
@@ -565,7 +565,7 @@ class RadSearch(gym.Env):
         elif self.TEST == "7":
             if not self.silent: 
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 7 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.bbox = np.asarray([[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]])
             self.observation_area = Interval((100.0, 100.0))
             self.obstruction_count = 3
             self.DEBUG = False
@@ -575,8 +575,8 @@ class RadSearch(gym.Env):
         elif self.TEST == "FULL":
             if not self.silent: 
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   FULL RUN MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
-            self.observation_area = Interval((100.0, 200.0)) # Size of obstructions
+            self.bbox = np.asarray([[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]])
+            self.observation_area = Interval((100.0, 200.0))  # Size of obstructions
             self.obstruction_count = -1
             self.DEBUG = False
             self.MIN_STARTING_DISTANCE = 500  # cm
@@ -586,7 +586,7 @@ class RadSearch(gym.Env):
         elif self.TEST == "ZERO":
             if not self.silent:             
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   ZERO RUN MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-            self.bbox = BBox((Point((0.0, 0.0)), Point((1500.0, 0.0)), Point((1500.0, 1500.0)), Point((0.0, 1500.0))))
+            self.bbox = np.asarray([[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]])
             self.observation_area = Interval((100.0, 200.0))
             self.obstruction_count = 0
             self.DEBUG = False
