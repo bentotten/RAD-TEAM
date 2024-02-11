@@ -11,12 +11,12 @@ def setup_pytorch_for_mpi():
     Avoid slowdowns caused by each separate process's PyTorch using
     more than its fair share of CPU resources.
     """
-    #print('Proc %d: Reporting original number of Torch threads as %d.'%(proc_id(), torch.get_num_threads()), flush=True)
+    print('Proc %d: Reporting original number of Torch threads as %d.'%(proc_id(), torch.get_num_threads()), flush=True)
     if torch.get_num_threads()==1:
         return
     fair_num_threads = max(int(torch.get_num_threads() / num_procs()), 1)
     torch.set_num_threads(fair_num_threads)
-    #print('Proc %d: Reporting new number of Torch threads as %d.'%(proc_id(), torch.get_num_threads()), flush=True)
+    print('Proc %d: Reporting new number of Torch threads as %d.'%(proc_id(), torch.get_num_threads()), flush=True)
 
 def mpi_avg_grads(module):
     """ Average contents of gradient buffers across MPI processes. """
