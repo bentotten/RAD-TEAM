@@ -417,7 +417,7 @@ class RadSearch(gym.Env):
     max_dist: float = field(init=False)
     line_segs: List[List[vis.Line_Segment]] = field(init=False)
     poly: List[Polygon] = field(init=False)
-    search_area: BBox = field(init=False)  # Area Detector and Source will spawn in - each must be 1000 cm apart from the source
+    search_area: BBox = field(init=False)  # Area Detector and Source will spawn in - each must be MIN_STARTING_DISTANCE cm apart from the source
     walls: Polygon = field(init=False)
     world: vis.Environment = field(init=False)
     vis_graph: vis.Visibility_Graph = field(init=False)
@@ -618,7 +618,7 @@ class RadSearch(gym.Env):
         self.max_dist: float = dist_p(self.search_area[2], self.search_area[1])  # Maximum distance between two points within search area
 
         # Assure there is room to spawn detectors and source with proper spacing
-        assert self.max_dist > self.MIN_STARTING_DISTANCE, "Maximum distance available is too small, unable to spawn source and detector 1000 cm apart"
+        assert self.max_dist > self.MIN_STARTING_DISTANCE, "Maximum distance available is too small, unable to spawn source and detector {self.MIN_STARTING_DISTANCE} cm apart"
 
         self.scale = 1 / self.search_area[2][1]  # Needed for CNN network scaling
 
@@ -1123,7 +1123,7 @@ class RadSearch(gym.Env):
     def sample_source_loc_pos(self):
         """
         Method that randomly generate the detector and source starting locations.
-        Locations can not be inside obstructions and must be at least 1000 cm apart
+        Locations can not be inside obstructions and must be at least MIN_STARTING_DISTANCE cm apart
         """
         det_clear = False
         src_clear = False
@@ -1154,7 +1154,7 @@ class RadSearch(gym.Env):
         num_retry = 0
         while not src_clear:
             distance = np.linalg.norm(det - source)
-            while distance < 1000:
+            while distance < self.MIN_STARTING_DISTANCE:
                 distance = np.linalg.norm(det - source)
                 source = self.np_random.integers(self.search_area[0][0], self.search_area[1][0], size=2).astype(np.double)
             src_point = vis.Point(source[0], source[1])
