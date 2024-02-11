@@ -53,12 +53,8 @@ Metadata = TypedDict("Metadata", {"render.modes": List[str], "video.frames_per_s
 MAX_CREATION_TRIES = 1000000000
 
 GLOBAL_REWARD = False  # Beat the global minimum shortest path distance or get punished
-PROPORTIONAL_REWARD = (
-    False if GLOBAL_REWARD else False
-)  # Get rewarded for improving your own shortest path, proportional to last time. Closest agent gets saved.
-BASIC_REWARD = (
-    False if (GLOBAL_REWARD or PROPORTIONAL_REWARD) else True
-)  # 0 for every good step; prevents agent from gaining rewards by maximizing the episode length
+PROPORTIONAL_REWARD = False if GLOBAL_REWARD else False  # Get rewarded for improving your own shortest path, proportional to last time. Closest agent gets saved.
+BASIC_REWARD = False if (GLOBAL_REWARD or PROPORTIONAL_REWARD) else True  # 0 for every good step; prevents agent from gaining rewards by maximizing the episode length
 ORIGINAL_REWARD = (
     False if (GLOBAL_REWARD or PROPORTIONAL_REWARD or BASIC_REWARD) else True
 )  # +0.1 for every step that is closer than prev shortest path. Unfortunately rewards agent for extending episode
@@ -274,6 +270,7 @@ DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
 DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm
 EPSILON = 0.0000001
 
+
 ### Legacy helper functions ###
 def edges_of(vertices):
     """
@@ -409,9 +406,7 @@ class RadSearch(gym.Env):
     # bbox: BBox = field(
     #     default_factory=lambda: BBox(tuple((Point((0.0, 0.0)), Point((2700.0, 0.0)), Point((2700.0, 2700.0)), Point((0.0, 2700.0)))))  # type: ignore
     # )
-    bbox: BBox = field(
-        default_factory=lambda: np.asarray([[0.0, 0.0], [2700.0, 0.0], [2700.0, 2700.0], [0.0, 2700.0]]) 
-    )
+    bbox: BBox = field(default_factory=lambda: np.asarray([[0.0, 0.0], [2700.0, 0.0], [2700.0, 2700.0], [0.0, 2700.0]]))
     observation_area: Interval = field(default_factory=lambda: Interval((200.0, 500.0)))  # Size of obstructions
     np_random: npr.Generator = field(default_factory=lambda: npr.default_rng(0))
     obstruction_count: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
@@ -458,9 +453,7 @@ class RadSearch(gym.Env):
     scaled_grid_max: Tuple = field(default_factory=lambda: (1, 1))  # Max x and max y for grid after deflation
     # flag to reset/sample new environment parameters. This is necessary when runnning monte carlo evaluations to ensure env is standardized for all
     #   evaluation, unless indicated.
-    epoch_end: bool = field(
-        default=False
-    )
+    epoch_end: bool = field(default=False)
 
     # Step return mode
     step_data_mode: str = field(default="dict")
@@ -486,7 +479,7 @@ class RadSearch(gym.Env):
 
     continuous = False
 
-    #bbox # Redefined above
+    # bbox # Redefined above
     area_obs: Interval = field(default=False)
     obstruct: int = 0
     seed: int = 0
@@ -522,7 +515,7 @@ class RadSearch(gym.Env):
 
         # Test 3: 7x7 grid, no obstructions, fixed start point
         elif self.TEST == "3":
-            if not self.silent:        
+            if not self.silent:
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 3 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = np.asarray([[0.0, 0.0], [700.0, 0.0], [700.0, 700.0], [0.0, 700.0]])
             self.observation_area = Interval((100.0, 100.0))
@@ -533,7 +526,7 @@ class RadSearch(gym.Env):
 
         # Test 4: 7x7 grid, no obstructions
         elif self.TEST == "4":
-            if not self.silent:        
+            if not self.silent:
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 4 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = np.asarray([[0.0, 0.0], [700.0, 0.0], [700.0, 700.0], [0.0, 700.0]])
             self.observation_area = Interval((100.0, 100.0))
@@ -543,7 +536,7 @@ class RadSearch(gym.Env):
 
         # Test 5: 15x15 grid, no obstructions
         elif self.TEST == "5":
-            if not self.silent: 
+            if not self.silent:
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 5 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = np.asarray([[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]])
             self.observation_area = Interval((100.0, 100.0))
@@ -553,7 +546,7 @@ class RadSearch(gym.Env):
 
         # Test 6: 15x15 grid, 1 obstruction
         elif self.TEST == "6":
-            if not self.silent: 
+            if not self.silent:
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 6 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = np.asarray([[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]])
             self.observation_area = Interval((100.0, 100.0))
@@ -563,7 +556,7 @@ class RadSearch(gym.Env):
 
         # Test 7: 15x15 grid, 3 obstructions
         elif self.TEST == "7":
-            if not self.silent: 
+            if not self.silent:
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   TEST 7 MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = np.asarray([[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]])
             self.observation_area = Interval((100.0, 100.0))
@@ -573,7 +566,7 @@ class RadSearch(gym.Env):
 
         # FULL RUN: 15x15 grid, [1-5] obstructions
         elif self.TEST == "FULL":
-            if not self.silent: 
+            if not self.silent:
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   FULL RUN MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = np.asarray([[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]])
             self.observation_area = Interval((100.0, 200.0))  # Size of obstructions
@@ -584,7 +577,7 @@ class RadSearch(gym.Env):
 
         # FULL RUN: 15x15 grid, [1-5] obstructions
         elif self.TEST == "ZERO":
-            if not self.silent:             
+            if not self.silent:
                 print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   ZERO RUN MODE   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
             self.bbox = np.asarray([[0.0, 0.0], [1500.0, 0.0], [1500.0, 1500.0], [0.0, 1500.0]])
             self.observation_area = Interval((100.0, 200.0))
@@ -625,9 +618,7 @@ class RadSearch(gym.Env):
         self.max_dist: float = dist_p(self.search_area[2], self.search_area[1])  # Maximum distance between two points within search area
 
         # Assure there is room to spawn detectors and source with proper spacing
-        assert (
-            self.max_dist > self.MIN_STARTING_DISTANCE
-        ), "Maximum distance available is too small, unable to spawn source and detector 1000 cm apart"
+        assert self.max_dist > self.MIN_STARTING_DISTANCE, "Maximum distance available is too small, unable to spawn source and detector 1000 cm apart"
 
         self.scale = 1 / self.search_area[2][1]  # Needed for CNN network scaling
 
@@ -713,7 +704,7 @@ class RadSearch(gym.Env):
                 else:
                     meas = self.np_random.poisson(lam=(self.intensity / agent.euc_dist + self.bkg_intensity))
 
-                # Reward logic 
+                # Reward logic
                 # TODO adjust so agent is not encouraged to maximize steps by going to corner first
                 if agent.sp_dist < 110:
                     reward = 0.1
@@ -722,7 +713,7 @@ class RadSearch(gym.Env):
 
                 elif agent.sp_dist < agent.prev_det_dist:
                     reward = 0.1
-                    agent.prev_det_dist = agent.sp_dist                    
+                    agent.prev_det_dist = agent.sp_dist
                     agent.terminal_sto.append(False)
                 else:
                     reward = -0.5 * agent.sp_dist / (self.max_dist)
@@ -876,11 +867,7 @@ class RadSearch(gym.Env):
                 elif min_distance > agent.sp_dist:
                     min_distance = agent.sp_dist
                     winning_id = id
-            max_reward = (
-                np.round(aggregate_reward_result[winning_id].item(), decimals=2)
-                if (self.step_data_mode == "list")
-                else aggregate_reward_result[winning_id]
-            )
+            max_reward = np.round(aggregate_reward_result[winning_id].item(), decimals=2) if (self.step_data_mode == "list") else aggregate_reward_result[winning_id]
 
         # Save cumulative team reward for rendering
         for agent in self.agents.values():
@@ -902,7 +889,7 @@ class RadSearch(gym.Env):
         are resampled.
         """
 
-        ### Non-Legacy ### 
+        ### Non-Legacy ###
         for agent in self.agents.values():
             agent.reset()
         self.all_agent_max_count = 0.0
@@ -980,7 +967,7 @@ class RadSearch(gym.Env):
         if self.check_will_collide(tentative_coordinates, proposed_coordinates):
             agent.collision = True
             return False
-        
+
         # Set tentative coordinates
         agent.detector = to_vis_p(tentative_coordinates)
 
@@ -1230,14 +1217,13 @@ class RadSearch(gym.Env):
 
     def check_out_of_bounds(self, tentative_coordinates, agent):
         if self.enforce_grid_boundaries:
-            out_of_bounds = (
-                (tentative_coordinates[0] < self.bbox[0].x() or tentative_coordinates[1] < self.bbox[0].y()) or
-                (self.bbox[2].x() <= tentative_coordinates[0] or self.bbox[2].y() <= tentative_coordinates[1])
+            out_of_bounds = (tentative_coordinates[0] < self.bbox[0].x() or tentative_coordinates[1] < self.bbox[0].y()) or (
+                self.bbox[2].x() <= tentative_coordinates[0] or self.bbox[2].y() <= tentative_coordinates[1]
             )
         else:
             lower_b = agent.det_coords[0] < self.search_area[0][0] or agent.det_coords[1] < self.search_area[0][1]
             upper_b = self.search_area[2][0] < agent.det_coords[0] or self.search_area[2][1] < agent.det_coords[1]
-            out_of_bounds = (lower_b or upper_b)
+            out_of_bounds = lower_b or upper_b
 
         return out_of_bounds
 
@@ -1349,6 +1335,7 @@ class RadSearch(gym.Env):
         Load saved test environment parameters from dictionary
         into the current instantiation of environment
         """
+
         def to_vis_p(p) -> vis.Point:
             """
             Return a visilibity Point from a Point.
@@ -1448,16 +1435,7 @@ class RadSearch(gym.Env):
         # global location_estimate
         # location_estimate = None # TODO Trying to get out of global scope; this is for source prediction
 
-        def update(
-            frame_number: int,
-            ax1: plt.Axes,
-            ax2: plt.Axes,
-            ax3: plt.Axes,
-            src: Point,
-            area_dim: BBox,
-            flattened_rewards: List,
-            max_frames: int
-        ) -> None:
+        def update(frame_number: int, ax1: plt.Axes, ax2: plt.Axes, ax3: plt.Axes, src: Point, area_dim: BBox, flattened_rewards: List, max_frames: int) -> None:
             """
             Renders each frame
 
@@ -1671,7 +1649,7 @@ class RadSearch(gym.Env):
                     # Plots cumulative rewards
                     ax3.plot(
                         [current_index - 1, current_index],
-                        agent.team_reward_sto[current_index - 1: current_index + 1],
+                        agent.team_reward_sto[current_index - 1 : current_index + 1],
                         c=agent.marker_color,
                         label=f"Detector {agent_id}",
                     )  # Cumulative line graph
@@ -1795,7 +1773,7 @@ class RadSearch(gym.Env):
             else:
                 plt.show()
             # Figure is not reused, ok to close
-            plt.close('all')
+            plt.close("all")
             return
 
         else:
@@ -1817,15 +1795,7 @@ class RadSearch(gym.Env):
                     update,
                     # frames=reward_length,
                     frames=data_length,
-                    fargs=(
-                        ax1,
-                        ax2,
-                        ax3,
-                        self.src_coords,
-                        self.bbox,
-                        flattened_rewards,
-                        data_length+1  # Additional frame for gif extraction of last step
-                    ),
+                    fargs=(ax1, ax2, ax3, self.src_coords, self.bbox, flattened_rewards, data_length + 1),  # Additional frame for gif extraction of last step
                 )
                 if self.save_gif or save_gif:
                     if self.DEBUG:
