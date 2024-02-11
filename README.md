@@ -21,7 +21,9 @@ It is recommended to use the Anaconda package manager. The author did all develo
 
 1. Ensure `gcc` is installed. If not, install with preferred package manager i.e. `sudo apt update && sudo apt install gcc g++`.
 
-1. [RECOMMENDED] For multi-threaded processing, it is highly highly recommended that you install MPI [[link](https://www.open-mpi.org/software/ompi/v4.1/)].
+1. [RECOMMENDED] For multi-threaded processing, it is highly highly recommended that you install MPI [[link](https://www.open-mpi.org/)].
+
+1.1. `sudo apt install openmpi-bin openmpi-doc libopenmpi-dev`
 
 1. Create a virtual environment with the required packages `conda env create -f <PATH-TO-ALGORTIHM>/environment.yml`.
 
