@@ -17,7 +17,6 @@ dependencies:
   - cudatoolkit
   - sphinx
   - pip
-  - ray
   - joblib
   - mpi4py
   - psutil
