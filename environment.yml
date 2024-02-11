@@ -1,4 +1,4 @@
-name: multi_ppo_pytorch
+name: rad_team
 channels:
   - numba
   - pytorch
