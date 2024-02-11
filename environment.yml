@@ -11,7 +11,7 @@ dependencies:
   - numba
   - black
   - swig
-  - numpy
+  - numpy=1.23
   - matplotlib
   - pytorch-lightning
   - cudatoolkit
