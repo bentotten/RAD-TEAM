@@ -266,7 +266,7 @@ if __name__ == "__main__":
     init_dims["np_random"] = rng
 
     # Setup logger for tracking training metrics
-    logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed, data_dir="../../models/train", env_name=args.env_name)
+    logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed, data_dir="./models/train", env_name=args.env_name)
 
     ac_kwargs = dict(
         predictor_hidden_size=args.hid_rec[0],

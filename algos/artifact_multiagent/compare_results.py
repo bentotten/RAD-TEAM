@@ -228,7 +228,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', type=str,help='Directory where results are saved. Ex: ../models/train/gru_8_acts/bpf/model_dir',
-                        default='../../models/pre_train/gru_8_acts/bpf/loc32_hid32_pol32_val32_alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh_ep3000_steps4800_s1/')
+                        default='./models/pre_train/gru_8_acts/bpf/loc32_hid32_pol32_val32_alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh_ep3000_steps4800_s1/')
     parser.add_argument('--save', type=bool,default=True)
     parser.add_argument('--smooth', type=int, default=-1,help='Moving average filter, if less than -1 than no averaging is applied')
     parser.add_argument('--average_window', type=int,default=100, help='Number of epochs to average over for comparison')

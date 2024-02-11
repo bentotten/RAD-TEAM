@@ -529,7 +529,7 @@ if __name__ == '__main__':
 
     #Setup logger for tracking training metrics
     from rl_tools.run_utils import setup_logger_kwargs # type: ignore
-    logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed,data_dir='../../models/train',env_name=args.env_name)
+    logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed,data_dir='./models/train',env_name=args.env_name)
     
     ac_kwargs = dict(
         #hidden_sizes_pol=[args.hid_pol]*args.l_pol,

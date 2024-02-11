@@ -485,12 +485,12 @@ def main() -> None:
     logger_kwargs = {
         "exp_name": exp_name,
         "seed": args.seed,
-        "data_dir": "../../models/train",
+        "data_dir": "./models/train",
         "env_name": save_dir_name,
     }
 
     save_path = [
-        f"../../models/train/{save_dir_name}",
+        f"./models/train/{save_dir_name}",
         f"{exp_name}_s{args.seed}",
     ]  # TODO turn into a parameter
 

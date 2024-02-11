@@ -25,7 +25,7 @@ jobs:
       - name: Run Python
         run: |
           cd algos/ppo/
-          python main.py --seed 0 --exp-name "exp1-epochs${{ matrix.num-epochs }}" --epochs ${{ matrix.num-epochs }} | tee ../../output.txt
+          python main.py --seed 0 --exp-name "exp1-epochs${{ matrix.num-epochs }}" --epochs ${{ matrix.num-epochs }} | tee ./output.txt
       - name: Log output to summary
         run: |
           echo "# Epoch results" >> $GITHUB_STEP_SUMMARY
