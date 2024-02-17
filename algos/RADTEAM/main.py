@@ -130,7 +130,8 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--l_val", type=int, default=1, help="Number of layers for Critic MLP")
     parser.add_argument("--gamma", type=float, default=0.99, help="Reward attribution for advantage estimator")
     parser.add_argument("--seed", "-s", type=int, default=2, help="Random seed control")
-    parser.add_argument("--cpu", type=int, default=1, help="Number of cores/environments to train the agent with")
+    # TODO rename CPUs to better reflect actual situation. Will still train the deep network on multiple cpus if this is set to 1.
+    parser.add_argument("--cpu", type=int, default=1, help="Number of parallel cores/environments for the agent to train with via PPO. NOTE: Pytorch will also take advantage of a multiple cpus during the deep learning part of this.") 
     parser.add_argument(
         "--steps_per_epoch", type=int, default=480, help="Number of timesteps per epoch per cpu. Default is equal to 4 episodes per cpu per epoch."
     )
@@ -259,7 +260,9 @@ if __name__ == "__main__":
         print(f"Sys cpus (avail, using): ({os.cpu_count()},{args.cpu}), Steps set to {args.steps_per_epoch}")
         # run parallel code with mpi
         mpi_fork(args.cpu)
-
+    # Check that MPI is installed. 
+    if not os.environ.get("OMPI_COMM_WORLD_SIZE "):
+        print("WARNING: MPI MAY NOT BE INSTALLED! This program will run single threaded, which is very very slow!")
     # Generate a large random seed and random generator object for reproducibility
     robust_seed = _int_list_from_bigint(hash_seed((1 + proc_id()) * args.seed))[0]
     rng = np.random.default_rng(robust_seed)
