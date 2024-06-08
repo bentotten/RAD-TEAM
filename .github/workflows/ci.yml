@@ -1,7 +1,13 @@
+# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
 name: Build and run
 
 on:
   push:
+    branches:
+      - main
+  pull_request:
     branches:
       - main
 
@@ -10,45 +16,39 @@ defaults:
     shell: bash -l {0}
 
 jobs:
-  ci:
+  build:
+    env:
+      TERM: xterm-256color
+      FORCE_COLOR: 1
+
+    runs-on: ubuntu-latest
+
     strategy:
       matrix:
-        num-epochs: [10, 25, 50, 100]
-    runs-on: ubuntu-latest
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
     steps:
       - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
       - name: Install Conda environment from environment.yml
         uses: mamba-org/provision-with-micromamba@v11
         with:
           environment-file: environment.yml
-          environment-name: ppo_rad
-      - name: Run Python
+          environment-name: rad-team
+
+      - name: Lint with ruff
         run: |
-          cd algos/ppo/
-          python main.py --seed 0 --exp-name "exp1-epochs${{ matrix.num-epochs }}" --epochs ${{ matrix.num-epochs }} | tee ../../output.txt
-      - name: Log output to summary
+          make lint
+
+      - name: Check codestyle
         run: |
-          echo "# Epoch results" >> $GITHUB_STEP_SUMMARY
-          echo >> $GITHUB_STEP_SUMMARY
-          for file in $(find . -type f -iname "progress.txt"); do
-            echo "## $file" >> $GITHUB_STEP_SUMMARY
-            echo >> $GITHUB_STEP_SUMMARY
-            cp $file $file.md
-            awk -F'|' '{
-              gsub("\t", "|", $0);
-              print FS $0 FS;
-              if (NR==1) {
-                header_separator=FS;
-                for (i=0; i<NF; i++) {
-                  header_separator=header_separator ":-" FS;
-                }
-                print header_separator;
-              }
-            }' $file.md >> $GITHUB_STEP_SUMMARY
-            echo >> $GITHUB_STEP_SUMMARY
-          done
-      - uses: actions/upload-artifact@v3
-        with:
-          path: |
-            output.txt
-            models
+          make check-codestyle
+      - name: Type check
+        run: |
+          make type
+      - name: Test with pytest
+        run: |
+          make pytest
