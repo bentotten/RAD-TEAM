@@ -1,5 +1,8 @@
 # RAD-TEAM 
 
+## Notice
+This repository is undergoing a major refactor. For thesis code, see the Masters thesis branch.
+
 ## Prerequisites 
 - [Optional] Environment manager: 
     - [Recommended] [Micromamba](https://mamba.readthedocs.io/en/latest/installation.html)
