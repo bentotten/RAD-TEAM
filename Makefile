@@ -8,7 +8,6 @@ format:
 	# Reformat using black
 	black ${LINT_PATHS}
 
-
 test:
 	./runtests
 
