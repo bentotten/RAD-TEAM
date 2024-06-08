@@ -8,6 +8,7 @@ format:
 	# Reformat using black
 	black ${LINT_PATHS}
 
+
 test:
 	./runtests
 
@@ -18,7 +19,7 @@ lint:
 	ruff check ${LINT_PATHS} --select=E9,F63,F7,F82 --output-format=full
 	# exit-zero treats all errors as warnings.
 	ruff check ${LINT_PATHS} --exit-zero
-
+	@echo 'If issues, try make format'
 check-codestyle:
 	# Sort imports
 	ruff check --select I ${LINT_PATHS}
