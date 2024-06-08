@@ -58,7 +58,7 @@ jobs:
         run: |
           make type
 
-      - name: Test with pytest
+      - name: Pytests
         shell: micromamba-shell {0}
         run: |
-          make pytest
+          make test
