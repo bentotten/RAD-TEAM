@@ -1,1 +1,0 @@
-This contains RAD-A2C code from the (rad-a2c)[https://github.com/peproctor/radiation_ppo] framework that has been adapted to work with the MARL radiation environment. As few changed were made as possible to ensure it stayed true to the original.
