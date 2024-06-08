@@ -1,0 +1,31 @@
+[project]
+name = "RAD-TEAM"
+version = "1.0.0"
+description = "TBD"
+readme = "README.md"
+
+authors = [
+  {name = "Ben Totten", email = "ttotten@pdx.edu"},
+]
+maintainers = [
+  {name = "Ben Totten", email = "ttotten@pdx.edu"},
+]
+
+requires-python = ">= 3.10"
+
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Researchers",
+  "Programming Language :: Python :: 3.10",
+]
+
+[project.urls]
+Code = "https://github.com/bentotten/RAD-TEAM"
+Documentation = "https://github.com/bentotten/RAD-TEAM"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
