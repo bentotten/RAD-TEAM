@@ -9,10 +9,12 @@ This repository is undergoing a major refactor. For thesis code, see the Masters
 
 ## Setup
 1. Initialize environment 
-    a. With micromamba
-        `micromamba create --file env.yml`
+    1. [Option 1] with environment manager
 
-    b. With pip
+        `micromamba create --file environment.yml`
+
+    1. [Option 2] with pip
+
         `pip install -e .`
 
 1. Activate environment
@@ -20,6 +22,12 @@ This repository is undergoing a major refactor. For thesis code, see the Masters
 
 ## Testing
 Run all tests with `make test`
+
+## Clean
+Refresh with `make clean`
+
+## Docs
+Generate docs with `make docs`. These will generate in the docs/build/html folder.
 
 ## Development
 See DEVELOPMENT.md
