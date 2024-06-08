@@ -17,3 +17,6 @@
 
 ## Testing
 Run all tests with `make test`
+
+## Development
+See DEVELOPMENT.md
