@@ -11,13 +11,15 @@ This repository is undergoing a major refactor. For thesis code, see the Masters
 1. Initialize environment 
     1. [Option 1] with environment manager
 
-        `micromamba create --file environment.yml`
+        `micromamba create --file environment.yml && micromamba activate rad-team`
+
 
     1. [Option 2] with pip
 
         `pip install -e .`
 
-1. Activate environment
+## Training
+Dont forget to activate any python environments
     `micromamba activate rad-team`
 
 ## Testing
@@ -31,3 +33,10 @@ Generate docs with `make docs`. These will generate in the docs/build/html folde
 
 ## Development
 See DEVELOPMENT.md
+
+## Structure
+
+### Utils
+This directory contains useful tools including
+- normalizers
+- standardizers
