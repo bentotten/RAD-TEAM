@@ -1,26 +1,27 @@
-name: multi_ppo_pytorch
+name: RAD-TEAM
 channels:
   - numba
   - pytorch
   - conda-forge
+  - nvidia
 dependencies:
-  - python
+  - python=3.10
   - pytorch
-  - scipy
-  - gym=0.21.0
-  - numba
-  - black
-  - swig
-  - numpy
   - matplotlib
-  - pytorch-lightning
-  - cudatoolkit
+  - gymnasium
+  # Docs
   - sphinx
+  # Testing
+  - pytest
+  - pytest-cov
+  - pytest-env
+  - pytest-xdist
+  # Linting/Type checking
+  - mypy
+  - ruff
+  - black
+  # Setup
+  - setuptools
   - pip
-  - ray
-  - joblib
-  - mpi4py
-  - psutil
   - pip:
-      - -e ./gym_rad_search
-      - sphinx-rtd-theme
+    - -e .

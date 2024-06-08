@@ -1,1 +1,0 @@
-This directory contains a well-documented, but ultimately buggy refactor attempt. It is being preserved because the documentation and structure is much more clear than what was ultimately used for my thesis. It is an eventual goal to slowly rebuild into this format.

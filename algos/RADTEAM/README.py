@@ -1,1 +1,0 @@
-This contains the RAD-TEAM neural network files and the RAD-TEAM PPO implementation.
