@@ -23,9 +23,29 @@ classifiers = [
 Code = "https://github.com/bentotten/RAD-TEAM"
 Documentation = "https://github.com/bentotten/RAD-TEAM"
 
+# setup
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+# pytest
+[tool.coverage.run]
+disable_warnings = ["couldnt-parse"]
+branch = false
+omit = [
+    "setup.py",
+    "__init__.py",
+    "tests/*"
+]
+
+[tool.pytest.ini_options]
+# Deterministic ordering for tests; useful for pytest-xdist.
+env = [
+	"PYTHONHASHSEED=0"
+]
+markers = [
+    "expensive: marks tests as expensive (deselect with '-m \"not expensive\"')"
+]

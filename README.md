@@ -14,3 +14,6 @@
 
 1. Activate environment
     `micromamba activate rad-team`
+
+## Testing
+Run all tests with `make test`
