@@ -39,6 +39,7 @@ jobs:
         with:
           micromamba-version: '1.5.8-0' # any version from https://github.com/mamba-org/micromamba-releases
           environment-file: environment.yml
+          environment-name: rad-team
           init-shell: >-
             bash
             powershell
