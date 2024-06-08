@@ -11,6 +11,10 @@ dependencies:
   - gymnasium
   # Docs
   - sphinx
+  - sphinxcontrib-spelling
+  - sphinx-autobuild
+  - sphinx-rtd-theme
+  - sphinx-copybutton
   # Testing
   - pytest
   - pytest-cov

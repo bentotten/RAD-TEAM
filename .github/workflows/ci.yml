@@ -41,10 +41,8 @@ jobs:
           micromamba-version: '1.5.8-0' # any version from https://github.com/mamba-org/micromamba-releases
           environment-file: environment.yml
           environment-name: rad-team
-          init-shell: >-
-            bash
-            powershell
-          cache-environment: true
+          init-shell: bash
+          cache-environment: false
 
       - name: Lint with ruff
         shell: micromamba-shell {0}
