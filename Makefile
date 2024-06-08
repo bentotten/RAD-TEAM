@@ -27,7 +27,7 @@ check-codestyle:
 
 # Type Checking
 type:
-	mypy ${LINT_PATHS}
+	mypy --disallow-untyped-calls --disallow-untyped-defs --ignore-missing-imports ${LINT_PATHS}
 
 # Pre-checks 
 commit-checks: check-codestyle type lint
