@@ -6,3 +6,5 @@ Hopes and dreams for the wild and wonderous future of this project
 - Use Webots environment instead of custom
 - Federated learning
 - Memristors
+- Moving radiation
+- Multiple sources
