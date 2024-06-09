@@ -1,6 +1,6 @@
 import pytest
 
-from src.utils.normalize import Normalizer
+from src.utils.normalize import Normalizer, BensLogNormalizer
 
 
 class Test_Normalizer:
@@ -38,8 +38,8 @@ class Test_Normalizer:
 
     # @pytest.mark.filterwarnings("ignore:mismatch")
     def test_LogNormalize(self) -> None:
-        """Test the normalization function. Should put between range of [0,1]"""
-        normalizer = Normalizer()
+        """Test the logrithmic normalization function. Should put between range of [0,1]"""
+        normalizer = BensLogNormalizer()
 
         # Test invalid inputs
         with pytest.raises(AssertionError):

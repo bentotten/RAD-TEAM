@@ -10,7 +10,7 @@ class WelfordsOnlineStandardization:
     Calculates mean and variance from an estimated running sample. Used for standardizing readings when an Agent collects observations online and does not know the range of intensity values it will encounter
     beforehand.
 
-    (B. Welford, "Note on a method for calculating corrected sums of squares and products")
+    (B. Totten, "Multi-Agent Deep Reinforcement Learning", Section 3.4.1: Radiation Intensity Heatmap)
     """
 
     #: Running mean of entire dataset, represented by mu

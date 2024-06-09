@@ -6,7 +6,12 @@ from typing import Optional, Union
 
 @dataclass
 class Normalizer:
-    """Normalization methods"""
+    """
+    Mix-max normalization. Method to do min-max normalization to the range [0,1]. If min is below zero, the data will be shifted by the absolute value of the minimum
+
+
+    (B. Totten, "Multi-Agent Deep Reinforcement Learning", Section 3.4.1: Obstacle Detection Heatmap)
+    """
 
     # Private
     # First base value that is used for class. The max value represents the maximum possible value (steps per episode multiplied by the number
@@ -19,8 +24,6 @@ class Normalizer:
 
     def normalize(self, current_value: float, max: float, min: Optional[float] = None) -> float:
         """
-        Method to do min-max normalization to the range [0,1]. If min is below zero, the data will be shifted by the absolute value of the minimum
-
         :param current_value: (Any) value to be normalized
         :param max: (Any) Maximum possible
         :returns: (float) Normalized value for current_value input via min-max method.
@@ -51,16 +54,32 @@ class Normalizer:
         assert result >= 0 and result <= 1, "Normalization error"
         return result
 
+
+@dataclass
+class BensLogNormalizer:
+    """
+    Method to normalize on a logarithmic scale. This is specifically for a value that increases incrementally every time.
+    For RAD-TEAM, every time an agent accesses a grid coordinate, a visits count shadow table is incremented by 1.
+    That value is multiplied by the step_size (here using 2 due to log(1) == 0) and the log is taken. This value
+    is then multiplied by 1/ the increment value multiplied by the max in order to put it between 0 and 1. The max is
+    the maximum number of possible steps in an episode multiplied by the number of agents.
+
+    (B. Totten, "Multi-Agent Deep Reinforcement Learning", Section 3.4.1: Exploration Map)
+    """
+
+    # Private
+    # First base value that is used for class. The max value represents the maximum possible value (steps per episode multiplied by the number
+    #   of agents).
+    _base_max: Union[float, int, None] = field(default=None)
+
+    # First increment value that is used for class. The increment value represents the amount that the existing value from shadow table is expected to
+    #   increment by this amount every time.
+    _base_step_size: Optional[int] = field(default=None)
+
     def normalize_incremental_logscale(
         self, current_value: Union[float, int], max: Union[float, int], step_size: int = 2
     ) -> float:
         """
-        Method to normalize on a logarithmic scale. This is specifically for a value that increases incrementally every time.
-        For TEAM-RAD, every time an agent accesses a grid coordinate, a visits count shadow table is incremented by 1.
-        That value is multiplied by the step_size (here using 2 due to log(1) == 0) and the log is taken. This value
-        is then multiplied by 1/ the increment value multiplied by the max in order to put it between 0 and 1. The max is
-        the maximum number of possible steps in an episode multiplied by the number of agents.
-
         :param current_value: (Any) value to be normalized
         :param max: (Any) Maximum possible value (steps per episode multiplied by the number of agents)
         :param step_size (int): Value from shadow table is expected to increment by this amount every time
