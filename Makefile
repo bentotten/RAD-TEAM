@@ -24,6 +24,7 @@ clean-test:
 	rm -fr htmlcov/
 	rm -fr .pytest_cache/
 	rm -fr .mypy_cache/
+	rm -fr .ruff_cache/
 
 clean-docs:
 	cd docs && make clean
