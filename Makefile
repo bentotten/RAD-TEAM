@@ -84,4 +84,9 @@ dist: clean
 	ls -l dist
 
 install: clean
-	micromamba create --file environment.yml
+	micromamba create --file environment.yml && eval "$(micromamba shell hook --shell bash)" && micromamba activate RAD-TEAM
+
+# Rebuild the environment eggs
+build: clean
+	pip install -e  .
+	pip install -e  src/envs

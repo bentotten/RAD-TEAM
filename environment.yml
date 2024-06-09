@@ -7,8 +7,10 @@ channels:
 dependencies:
   - python=3.10
   - pytorch
-  - matplotlib
   - gymnasium
+  # Rendering
+  - matplotlib
+  - pygame=2.1.*
   # Docs
   - sphinx
   - sphinxcontrib-spelling
@@ -29,3 +31,5 @@ dependencies:
   - pip
   - pip:
     - -e .
+    # Custom environments need this seperately
+    - -e src/envs
