@@ -61,7 +61,7 @@ type:
 	mypy --disallow-untyped-calls --disallow-untyped-defs --ignore-missing-imports ${LINT_PATHS}
 
 # Pre-checks 
-commit-checks: lint type check-codestyle 
+commit-checks: test lint type check-codestyle
 
 .PHONY: docs spelling
 
