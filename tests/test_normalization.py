@@ -1,9 +1,9 @@
 import pytest
 
-from src.utils.normalize import Normalizer, BensLogNormalizer
+from src.math_utils.normalize import BensLogNormalizer, Normalizer
 
 
-class Test_Normalizer:
+class Test_Normalizers:
     def test_Normalize(self) -> None:
         """Test the normalization function. Should put between range of [0,1]"""
         normalizer = Normalizer()
