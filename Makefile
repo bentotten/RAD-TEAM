@@ -24,6 +24,7 @@ clean-test:
 	rm -fr htmlcov/
 	rm -fr .pytest_cache/
 	rm -fr .mypy_cache/
+	rm -fr .ruff_cache/
 
 clean-docs:
 	cd docs && make clean
@@ -61,7 +62,7 @@ type:
 	mypy --disallow-untyped-calls --disallow-untyped-defs --ignore-missing-imports ${LINT_PATHS}
 
 # Pre-checks 
-commit-checks: lint type check-codestyle 
+commit-checks: test lint type check-codestyle
 
 .PHONY: docs spelling
 
@@ -83,4 +84,9 @@ dist: clean
 	ls -l dist
 
 install: clean
-	micromamba create --file environment.yml
+	micromamba create --file environment.yml && eval "$(micromamba shell hook --shell bash)" && micromamba activate RAD-TEAM
+
+# Rebuild the environment eggs
+build: clean
+	pip install -e  .
+	pip install -e  src/envs
