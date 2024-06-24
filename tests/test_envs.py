@@ -20,8 +20,8 @@ class Test_SimpleGrid:
     @pytest.fixture(autouse=True)
     def setup(self) -> None:
         """Setup the env"""
-        self.start: npt.NDArray = np.array([5, 5], dtype=np.int32)
-        self.terminal: npt.NDArray = np.array([0, 0], dtype=np.int32)
+        self.start: npt.NDArray = np.array([5, 5], dtype=np.float32)
+        self.terminal: npt.NDArray = np.array([0, 0], dtype=np.float32)
         self.env: SimpleGrid = SimpleGrid(self.start, self.terminal, render_mode="rgb_array")
         self.original_distance = get_manhattan_distance(self.start, self.terminal)
         self.env.reset()
@@ -32,7 +32,7 @@ class Test_SimpleGrid:
 
     def test_gym_make(self) -> None:
         """Ensure Gymnasium successfully makes environment and functionality matches manual initialization"""
-        gym_env = gymnasium.make("SimpleGrid", start=self.start, terminal=self.terminal, render_mode="rgb_array")
+        gym_env = gymnasium.make("SimpleGrid-v0", start=self.start, terminal=self.terminal, render_mode="rgb_array")
         assert self.env is not gym_env
 
         # Check API functionality matches explicitly declared class

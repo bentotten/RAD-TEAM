@@ -57,12 +57,12 @@ class SimpleGrid(Env):
     #   - Environment API: https://gymnasium.farama.org/api/env/
     #   - Spaces Datatypes: https://gymnasium.farama.org/api/spaces/fundamental/
 
-    start: npt.NDArray[np.int32]
-    terminal: npt.NDArray[np.int32]
+    start: npt.NDArray[np.float32]
+    terminal: npt.NDArray[np.float32]
     size: int
 
     #: The agent that will be moving around this environment. This is represented by its (x, y) coordinates
-    agent: npt.NDArray[np.int32]
+    agent: npt.NDArray[np.float32]
     #: The previous distance between the agent and the terminal position
     agent_previous_dist: np.float32
     #: The Space object corresponding to valid actions, all valid actions should be contained within the space.
@@ -88,8 +88,8 @@ class SimpleGrid(Env):
 
     def __init__(
         self,
-        start: npt.NDArray[np.int32] = np.array((0,0)),
-        terminal: npt.NDArray[np.int32] = np.array((0,0)),
+        start: npt.NDArray[np.float32] = np.array((0, 0), dtype=np.float32),
+        terminal: npt.NDArray[np.float32] = np.array((0, 0), dtype=np.float32),
         size: int = 10,
         render_mode: Optional[str] = None,
     ) -> None:
@@ -103,7 +103,7 @@ class SimpleGrid(Env):
 
         # Setup spaces
         self.action_space = Spaces.MultiDiscrete([act.value for act in Action], seed=self.np_random)
-        self.observation_space = Spaces.Box(low=0, high=self.size - 1, shape=(2,), dtype=np.int32, seed=self.np_random)
+        self.observation_space = Spaces.Box(low=0, high=self.size - 1, shape=(2,), dtype=np.float32, seed=self.np_random)
         # Unbounded reward range
         self.reward_range = (np.NINF, np.inf)
 
@@ -115,7 +115,7 @@ class SimpleGrid(Env):
 
     def reset(
         self, seed: Optional[int] = None, options: Optional[Dict] = None
-    ) -> tuple[npt.NDArray[np.int32], dict[str, Any]]:
+    ) -> tuple[npt.NDArray[np.float32], dict[str, Any]]:
         """Resets the environment to an initial state, required before calling step. Returns the first agent observation for an episode and information, i.e. metrics, debug info."""
         # Note: Environment already has a prng, no need to reset with a seed
         super().reset(seed=seed, options=options)
@@ -130,17 +130,18 @@ class SimpleGrid(Env):
 
         return observation, info
 
-    def step(self, action: int) -> Tuple[npt.NDArray[np.int32], int, bool, bool, Dict[str, Any]]:
+    def step(self, action: int) -> Tuple[npt.NDArray[np.float32], float, bool, bool, Dict[str, Any]]:
         """
         Updates an environment with actions returning the next agent observation, the reward for taking that actions, if the environment has terminated or truncated due to the latest action and information from the environment about the step, i.e. metrics, debug info.
         :param action: int, an int that cooresponds to a specific movement in the gridworld
 
         :returns observation, reward, done, Truncated, info
         """
+        reward: float
         action = Action(action)  # Convert to internal action
 
         # Use np.clip to make sure agent doesnt leave the grid
-        self.agent = np.clip(self.agent + ActionDirectionMap[action], 0, self.size - 1)
+        self.agent = np.clip(self.agent + ActionDirectionMap[action], 0, self.size - 1, dtype=np.float32)
 
         # Calculate rewards and determine if "done" state has been reached
         distance: np.float32 = self._get_distance()
@@ -148,12 +149,12 @@ class SimpleGrid(Env):
         done = False
         if distance <= 1.0:
             done = True
-            reward = 1
+            reward = 1.0
         # Note: previous distance for first step is set in the reset function
         elif distance < self.agent_previous_dist:
-            reward = 0
+            reward = 0.0
         elif distance >= self.agent_previous_dist:
-            reward = -1
+            reward = -1.0
         else:
             raise Exception("Something has gone wrong in the step function")
 
@@ -183,11 +184,11 @@ class SimpleGrid(Env):
         """Get the manhattan distance between the agent and the target"""
         return np.linalg.norm(self.agent - self.terminal, ord=1)
 
-    def _get_oracle_obs(self) -> Dict[str, npt.NDArray[np.int32]]:
+    def _get_oracle_obs(self) -> Dict[str, npt.NDArray[np.float32]]:
         """Get an "Oracle" observation of the environment state. Includes agent and terminal positions."""
         return {"agent": self.agent, "target": self.terminal}
 
-    def _get_obs(self) -> npt.NDArray[np.int32]:
+    def _get_obs(self) -> npt.NDArray[np.float32]:
         """Get an the agents observation of the environment state."""
         return self.agent
 
@@ -210,13 +211,17 @@ class SimpleGrid(Env):
         canvas.fill((255, 255, 255))
         pix_square_size = self.window_size / self.size  # The size of a single grid square in pixels
 
+        # pygame needs these to be ints to render
+        terminal_as_ints = self.terminal.astype(np.int32)
+        agent_as_ints = self.agent.astype(np.int32)
+
         # First we draw the target
         # TODO: sort out type signature issues
         pygame.draw.rect(
             canvas,
             (255, 0, 0),
             pygame.Rect(
-                pix_square_size * self.terminal,  # type: ignore
+                pix_square_size * terminal_as_ints,  # type: ignore
                 (pix_square_size, pix_square_size),
             ),
         )
@@ -225,7 +230,7 @@ class SimpleGrid(Env):
         pygame.draw.circle(
             canvas,
             (0, 0, 255),
-            (self.agent + 0.5) * pix_square_size,  # type: ignore
+            (agent_as_ints + 0.5) * pix_square_size,  # type: ignore
             pix_square_size / 3,
         )
 
