@@ -51,6 +51,8 @@ class SimpleGrid(Env):
     (https://gymnasium.farama.org/tutorials/gymnasium_basics/environment_creation)
     """
 
+    env_id = "SimpleGrid-v0"
+
     # See Gymnasium documentation for more details:
     #   - Environment API: https://gymnasium.farama.org/api/env/
     #   - Spaces Datatypes: https://gymnasium.farama.org/api/spaces/fundamental/
@@ -86,8 +88,8 @@ class SimpleGrid(Env):
 
     def __init__(
         self,
-        start: npt.NDArray[np.int32],
-        terminal: npt.NDArray[np.int32],
+        start: npt.NDArray[np.int32] = np.array((0,0)),
+        terminal: npt.NDArray[np.int32] = np.array((0,0)),
         size: int = 10,
         render_mode: Optional[str] = None,
     ) -> None:
