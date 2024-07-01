@@ -34,6 +34,11 @@ Generate docs with `make docs`. These will generate in the docs/build/html folde
 ## Development
 See DEVELOPMENT.md
 
+## Background
+I recommend the following resources
+- Reinforcement Learning by Sutton and Barto
+- Google scholar, search for the latest survey papers
+
 ## Structure
 
 ### Utils
