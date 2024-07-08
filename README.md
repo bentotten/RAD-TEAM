@@ -1,7 +1,6 @@
 # RAD-TEAM 
 [Multi-Agent Deep Reinforcement Learning for
-Radiation Localization Radiation Localization 
-by Ben Totten](https://pdxscholar.library.pdx.edu/cgi/viewcontent.cgi?article=7590&context=open_access_etds)
+Radiation Localization Radiation Localization](https://pdxscholar.library.pdx.edu/cgi/viewcontent.cgi?article=7590&context=open_access_etds) by Ben Totten
 
 ## Notice
 This repository is undergoing a major refactor. For thesis code, see the Masters thesis branch.
